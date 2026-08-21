@@ -95,9 +95,7 @@ class CARRA2Source(Source):
                 )
                 client.retrieve(self.dataset, request, str(target))
                 field_lists.append(
-                    from_source(
-                        "file", str(target), stream=True, read_all=True
-                    )
+                    from_source("file", str(target), stream=True, read_all=True)
                 )
 
         return MultiFieldList(field_lists)
