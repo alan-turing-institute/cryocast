@@ -116,7 +116,7 @@ An empty list of target variables (e.g. `sic-osisaf: []`) selects every input va
 
 IceNet-MP includes a `carra2` ingestion source backed by the Copernicus Climate Data Store. The source submits one `reanalysis-pan-carra` request for each exact date/time requested by Anemoi, avoiding accidental Cartesian combinations of days and times.
 
-A sample native-grid recipe is available as `samp_weathernorth_carra2_2p5km_2020_2024_24h_v1`. It requests a small set of surface weather variables at 12:00 UTC for the sample date ranges. Custom recipes can select other CARRA2 variables, level types, level locations, output formats, or geographic subsets:
+A sample native-grid recipe is available as `samp_weathernorth_carra2_2p5km_2020_2024_24h_v1`. It requests a small set of surface weather variables at 12:00 UTC for the sample date ranges. Custom recipes can select other CARRA2 variables, level types, level locations, or geographic subsets. The source currently uses GRIB output so downloaded fields can be materialised safely before temporary files are removed:
 
 ```yaml
 input:
