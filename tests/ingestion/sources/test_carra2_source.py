@@ -94,7 +94,10 @@ def test_carra2_execute_downloads_each_requested_time(
             "data_format",
         ),
         (
-            {"variables": ["2m_temperature"], "area": [81.0, 15.0, 76.0, 35.0, 40.0]},
+            {
+                "variables": ["2m_temperature"],
+                "area": [81.0, 15.0, 76.0, 35.0, 40.0],
+            },
             "area",
         ),
     ],
