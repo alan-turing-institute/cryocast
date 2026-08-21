@@ -8,6 +8,7 @@ from icenet_mp.ingestion.sources import CARRA2Source, register_sources
 
 
 def test_carra2_builds_request_for_exact_analysis_time() -> None:
+    """Build a CARRA2 request for the exact requested analysis time."""
     source = CARRA2Source(
         MagicMock(),
         variables=["temperature"],
@@ -33,6 +34,7 @@ def test_carra2_builds_request_for_exact_analysis_time() -> None:
 
 
 def test_carra2_request_omits_optional_fields_when_unset() -> None:
+    """Omit optional request fields when they are not configured."""
     source = CARRA2Source(MagicMock(), variables=["2m_temperature"])
 
     request = source._request_for_date(datetime.datetime(2026, 1, 2, 3, 0, 0))
@@ -59,11 +61,13 @@ def test_carra2_request_omits_optional_fields_when_unset() -> None:
 def test_carra2_rejects_invalid_configuration(
     kwargs: dict[str, object], message: str
 ) -> None:
+    """Reject invalid CARRA2 source configurations."""
     with pytest.raises(ValueError, match=message):
         CARRA2Source(MagicMock(), **kwargs)  # type: ignore[arg-type]
 
 
 def test_carra2_source_is_registered_with_anemoi() -> None:
+    """Register CARRA2 with the Anemoi source registry."""
     register_sources()
 
     assert "carra2" in source_registry.registered
