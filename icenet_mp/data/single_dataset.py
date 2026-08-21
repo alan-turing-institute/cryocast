@@ -2,6 +2,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
+from itertools import pairwise
 from pathlib import Path
 from typing import ClassVar, TypeVar, cast
 
@@ -290,9 +291,7 @@ class SingleDataset(Dataset):
         all_available = all(date in self._date2idx for date in normalised_dates)
         consecutive = all(
             current - previous == self.frequency
-            for previous, current in zip(
-                normalised_dates, normalised_dates[1:], strict=False
-            )
+            for previous, current in pairwise(normalised_dates)
         )
         if all_available and consecutive:
             return self.get_tchw_slice(
