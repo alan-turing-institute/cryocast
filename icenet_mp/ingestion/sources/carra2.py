@@ -41,8 +41,8 @@ class CARRA2Source(Source):
         if not variables:
             msg = "At least one CARRA2 variable must be requested."
             raise ValueError(msg)
-        if data_format not in {"grib", "netcdf"}:
-            msg = "CARRA2 data_format must be either 'grib' or 'netcdf'."
+        if data_format != "grib":
+            msg = "CARRA2 data_format must be 'grib'."
             raise ValueError(msg)
         if area is not None and len(area) != 4:  # noqa: PLR2004
             msg = "CARRA2 area must contain [north, west, south, east]."
@@ -81,12 +81,11 @@ class CARRA2Source(Source):
     def execute(self, argument: list[datetime] | GroupOfDates) -> FieldList:
         """Download requested CARRA2 dates and return them as an Earthkit FieldList."""
         field_lists: list[FieldList] = []
-        extension = "grib" if self.data_format == "grib" else "nc"
 
         with TemporaryDirectory() as tmpdir:
             client = cdsapi.Client()
             for date in argument:
-                target = Path(tmpdir) / f"carra2-{date:%Y%m%d%H%M}.{extension}"
+                target = Path(tmpdir) / f"carra2-{date:%Y%m%d%H%M}.grib"
                 request = self._request_for_date(date)
                 logger.info(
                     "Downloading CARRA2 %s with %d variable(s).",
