@@ -9,6 +9,7 @@ from icenet_mp.data.single_dataset import SingleDataset
 def test_single_dataset_fills_unavailable_dates(
     mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
 ) -> None:
+    """Fill unavailable dates while preserving available conditioning values."""
     dataset = SingleDataset(name="conditioning", input_files=[mock_dataset])
     dataset.dates = [date for date in dates_as_np if date != dates_as_np[1]]
 
@@ -23,6 +24,7 @@ def test_single_dataset_fills_unavailable_dates(
 def test_missing_conditioning_data_does_not_remove_target_windows(
     mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
 ) -> None:
+    """Keep valid target windows when only conditioning dates are missing."""
     target = SingleDataset(name="target", input_files=[mock_dataset])
     conditioning = SingleDataset(name="conditioning", input_files=[mock_dataset])
     conditioning.dates = list(dates_as_np[2:])
@@ -45,6 +47,7 @@ def test_missing_conditioning_data_does_not_remove_target_windows(
 def test_missing_target_history_still_removes_window(
     mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
 ) -> None:
+    """Remove a window when mandatory target history is unavailable."""
     target = SingleDataset(name="target", input_files=[mock_dataset])
     target.dates = [date for date in dates_as_np if date != dates_as_np[1]]
     conditioning = SingleDataset(name="conditioning", input_files=[mock_dataset])
