@@ -72,7 +72,9 @@ def test_carra2_execute_downloads_each_requested_time(
     client_factory.assert_called_once_with()
     assert client.retrieve.call_count == 2
     first_dataset, first_request, first_target = client.retrieve.call_args_list[0].args
-    second_dataset, second_request, second_target = client.retrieve.call_args_list[1].args
+    second_dataset, second_request, second_target = client.retrieve.call_args_list[
+        1
+    ].args
     assert first_dataset == second_dataset == "reanalysis-pan-carra"
     assert first_request["time"] == ["03:00"]
     assert second_request["time"] == ["06:00"]
