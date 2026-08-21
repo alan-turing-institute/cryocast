@@ -80,8 +80,8 @@ def test_carra2_execute_downloads_each_requested_time(
     assert second_request["time"] == ["06:00"]
     assert first_target.endswith("carra2-202601020300.grib")
     assert second_target.endswith("carra2-202601020600.grib")
-    load_fields.assert_any_call("file", first_target)
-    load_fields.assert_any_call("file", second_target)
+    load_fields.assert_any_call("file", first_target, stream=True, read_all=True)
+    load_fields.assert_any_call("file", second_target, stream=True, read_all=True)
     combine.assert_called_once_with(fields)
 
 
