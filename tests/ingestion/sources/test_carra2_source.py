@@ -44,6 +44,45 @@ def test_carra2_request_omits_optional_fields_when_unset() -> None:
     assert request["time"] == ["03:00"]
 
 
+def test_carra2_execute_downloads_each_requested_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retrieve each requested valid time and combine the loaded field lists."""
+    source = CARRA2Source(MagicMock(), variables=["2m_temperature"])
+    dates = [
+        datetime.datetime(2026, 1, 2, 3, 0, 0),
+        datetime.datetime(2026, 1, 2, 6, 0, 0),
+    ]
+    client = MagicMock()
+    client_factory = MagicMock(return_value=client)
+    fields = [MagicMock(), MagicMock()]
+    load_fields = MagicMock(side_effect=fields)
+    combined_fields = MagicMock()
+    combine = MagicMock(return_value=combined_fields)
+
+    monkeypatch.setattr(
+        "icenet_mp.ingestion.sources.carra2.cdsapi.Client", client_factory
+    )
+    monkeypatch.setattr("icenet_mp.ingestion.sources.carra2.from_source", load_fields)
+    monkeypatch.setattr("icenet_mp.ingestion.sources.carra2.MultiFieldList", combine)
+
+    result = source.execute(dates)
+
+    assert result is combined_fields
+    client_factory.assert_called_once_with()
+    assert client.retrieve.call_count == 2
+    first_dataset, first_request, first_target = client.retrieve.call_args_list[0].args
+    second_dataset, second_request, second_target = client.retrieve.call_args_list[1].args
+    assert first_dataset == second_dataset == "reanalysis-pan-carra"
+    assert first_request["time"] == ["03:00"]
+    assert second_request["time"] == ["06:00"]
+    assert first_target.endswith("carra2-202601020300.grib")
+    assert second_target.endswith("carra2-202601020600.grib")
+    load_fields.assert_any_call("file", first_target)
+    load_fields.assert_any_call("file", second_target)
+    combine.assert_called_once_with(fields)
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
