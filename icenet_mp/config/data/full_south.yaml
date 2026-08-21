@@ -5,3 +5,5 @@ defaults:
     - full_weathersouth_era5_25p0km_1979_2025_24h_v3
   - split: full_dataset
   - _self_
+
+allow_missing_inputs: true

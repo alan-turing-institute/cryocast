@@ -5,3 +5,5 @@ defaults:
     - samp_weathersouth_era5_25p0km_2020_2024_24h_v4
   - split: sample_dataset
   - _self_
+
+allow_missing_inputs: true

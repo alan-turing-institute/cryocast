@@ -54,6 +54,9 @@ class CommonDataModule(LightningDataModule):
         )
 
         # Set periods for prediction, testing, training and validation
+        self.allow_missing_inputs = bool(
+            config["data"].get("allow_missing_inputs", False)
+        )
         self.batch_size = int(config["window"]["batch_size"])
         self.predict_periods = self._normalise(config["data"]["split"]["predict"])
         self.test_periods = self._normalise(config["data"]["split"]["test"])
@@ -266,6 +269,7 @@ class CommonDataModule(LightningDataModule):
             n_history_steps=self.n_history_steps,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
+            allow_missing_inputs=self.allow_missing_inputs,
             climatology=self.climatology.mean if self.climatology else None,
         )
         # The variables used for validation have already been logged for training

@@ -112,6 +112,16 @@ variables:
 
 An empty list of target variables (e.g. `sic-osisaf: []`) selects every input variable in that dataset group.
 
+### Training with missing input dates
+
+Sparse conditioning datasets such as Argo can contain gaps that would otherwise remove an entire training window. Set `allow_missing_inputs: true` in the selected data config to retain windows where the prediction target is complete even if a non-target input is unavailable:
+
+```yaml
+allow_missing_inputs: true
+```
+
+Missing non-target input timesteps are filled with `-1` after normalisation, keeping the sentinel outside the usual `[0, 1]` input range. Target history and forecast ground truth are still required for every retained window.
+
 ### Generating Argo float missing dates
 
 Some dates have no Argo float data. When specifying a new Argo float dataset for the first time it is necessary to generate a list of missing dates for a dataset. This can be done as follows:

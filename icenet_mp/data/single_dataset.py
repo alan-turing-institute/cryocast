@@ -271,6 +271,49 @@ class SingleDataset(Dataset):
             )
         )
 
+    def get_tchw_with_fill(
+        self, dates: Sequence[np.datetime64], *, fill_value: float = -1.0
+    ) -> ArrayTCHW:
+        """Return data for requested dates, filling unavailable timesteps.
+
+        Available timesteps are returned with the dataset's usual normalisation. Missing
+        timesteps are filled after normalisation so ``fill_value=-1`` stays outside the
+        normalised [0, 1] data range and can be used as an explicit missing-data sentinel.
+        """
+        normalised_dates = [normalise_date(date) for date in dates]
+        if not normalised_dates:
+            return cast(
+                "ArrayTCHW",
+                np.empty((0, *self.space.chw), dtype=np.float32),
+            )
+
+        all_available = all(date in self._date2idx for date in normalised_dates)
+        consecutive = all(
+            current - previous == self.frequency
+            for previous, current in zip(
+                normalised_dates, normalised_dates[1:], strict=False
+            )
+        )
+        if all_available and consecutive:
+            return self.get_tchw_slice(
+                normalised_dates[0], len(normalised_dates), check=False
+            )
+        if all_available:
+            return self.get_tchw(normalised_dates)
+
+        available: dict[int, ArrayCHW] = {
+            idx: self[self._date2idx[date]]
+            for idx, date in enumerate(normalised_dates)
+            if date in self._date2idx
+        }
+        dtype = next(iter(available.values())).dtype if available else np.float32
+        result = np.full(
+            (len(normalised_dates), *self.space.chw), fill_value, dtype=dtype
+        )
+        for idx, value in available.items():
+            result[idx] = value
+        return cast("ArrayTCHW", result)
+
     def get_tchw_slice(
         self, start_date: np.datetime64, n_steps: int, *, check: bool = True
     ) -> ArrayTCHW:
