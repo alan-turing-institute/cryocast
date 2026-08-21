@@ -44,3 +44,21 @@ You define a latent space `(H_latent, W_latent)` and the framework automatically
 |---|---|
 | **Pros** | Inputs are converted into a common latent space, freeing up the model to learn time evolution. |
 | **Cons** | Latent space representation may lose some spatial correlations present in the inputs. |
+
+### ConvLSTM processor
+
+`ConvLSTMProcessor` keeps the time dimension explicit instead of flattening the history window into channels. It consumes encoded history frames sequentially, maintains spatial hidden and cell states, and then generates forecast frames autoregressively by feeding each prediction back into the recurrent state.
+
+A residual forecast head is enabled by default so the processor learns a latent-space tendency around persistence. Set `residual: false` to predict the next latent frame directly.
+
+```yaml
+processor:
+  _target_: icenet_mp.models.processors.ConvLSTMProcessor
+  hidden_channels: 128
+  kernel_size: 3
+  n_layers: 2
+  dropout: 0.1
+  residual: true
+```
+
+A complete example is available as `model=cnn_convlstm_cnn`.
