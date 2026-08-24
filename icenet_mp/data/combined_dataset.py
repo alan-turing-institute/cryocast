@@ -19,6 +19,7 @@ class CombinedDataset(Dataset):
         *,
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
+        step_stride: int = 1,
         climatology: ArrayTCHW | None = None,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
@@ -33,6 +34,9 @@ class CombinedDataset(Dataset):
             target_variables: The names of the target variables.
             n_forecast_steps: The number of forecast steps.
             n_history_steps: The number of history steps.
+            step_stride: Number of native dataset timesteps between consecutive
+                history/forecast states. For daily data, ``step_stride=7`` gives
+                weekly-spaced model steps.
             climatology: Optional [366, C, H, W] table of calendar-day means of the
                 target variables (29 February holds its own slot). When given, each
                 batch also contains a ``climatology`` key holding the calendar-day
@@ -42,9 +46,14 @@ class CombinedDataset(Dataset):
         """
         super().__init__()
 
+        if step_stride < 1:
+            msg = f"step_stride must be at least 1, got {step_stride}."
+            raise ValueError(msg)
+
         # Store the number of forecast and history steps
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
+        self.step_stride = step_stride
 
         # Optional climatology table (calendar-day means of the target variables)
         self.climatology = climatology
@@ -61,6 +70,7 @@ class CombinedDataset(Dataset):
             msg = f"Cannot combine datasets with different frequencies: {frequencies}."
             raise ValueError(msg)
         self.frequency = frequencies[0]
+        self.step_frequency = self.frequency * self.step_stride
 
     @cached_property
     def dates(self) -> list[np.datetime64]:
@@ -125,15 +135,26 @@ class CombinedDataset(Dataset):
 
         """
         start_date = self.dates[idx]
-        batch: dict[str, ArrayTCHW] = {
-            ds.name: ds.get_tchw_slice(start_date, self.n_history_steps, check=False)
-            for ds in self.inputs
-        }
-        batch["target"] = self.target.get_tchw_slice(
-            start_date + self.n_history_steps * self.frequency,
-            self.n_forecast_steps,
-            check=False,
-        )
+        if self.step_stride == 1:
+            batch: dict[str, ArrayTCHW] = {
+                ds.name: ds.get_tchw_slice(
+                    start_date, self.n_history_steps, check=False
+                )
+                for ds in self.inputs
+            }
+            batch["target"] = self.target.get_tchw_slice(
+                start_date + self.n_history_steps * self.frequency,
+                self.n_forecast_steps,
+                check=False,
+            )
+        else:
+            history_dates = self.get_history_steps(start_date)
+            forecast_dates = self.get_forecast_steps(start_date)
+            batch = {
+                ds.name: ds.get_tchw(history_dates) for ds in self.inputs
+            }
+            batch["target"] = self.target.get_tchw(forecast_dates)
+
         if (climatology := self.climatology_for(start_date)) is not None:
             batch["climatology"] = climatology
         return batch
@@ -162,16 +183,17 @@ class CombinedDataset(Dataset):
         return self.climatology[day_indices]
 
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
-        """Return list of consecutive forecast dates for a given start date."""
+        """Return forecast dates at the configured temporal stride."""
         return [
-            start_date + (idx + self.n_history_steps) * self.frequency
+            start_date + (idx + self.n_history_steps) * self.step_frequency
             for idx in range(self.n_forecast_steps)
         ]
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
-        """Return list of consecutive history dates for a given start date."""
+        """Return history dates at the configured temporal stride."""
         return [
-            start_date + idx * self.frequency for idx in range(self.n_history_steps)
+            start_date + idx * self.step_frequency
+            for idx in range(self.n_history_steps)
         ]
 
     def variable_list(self) -> list[str]:
