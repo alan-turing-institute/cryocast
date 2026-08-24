@@ -1,5 +1,6 @@
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -12,8 +13,8 @@ RECIPE_PATH = files("icenet_mp.config") / "data" / "datasets" / (
 )
 
 
-def _load_recipe() -> dict:
-    config = yaml.safe_load(RECIPE_PATH.read_text())
+def _load_recipe() -> dict[str, Any]:
+    config: dict[str, dict[str, Any]] = yaml.safe_load(RECIPE_PATH.read_text())
     return config[DATASET_NAME]
 
 
@@ -34,6 +35,6 @@ def test_seas5_recipe_uses_cds_forecast_trajectory() -> None:
     assert mars["use_cdsapi_dataset"] == "seasonal-original-single-levels"
     assert mars["origin"] == "ecmf"
     assert mars["system"] == "51"
-    assert mars["param"] == [31.128]
+    assert mars["param"] == ["31.128"]
     assert mars["type"] == "fc"
     assert mars["stream"] == "mmsf"
