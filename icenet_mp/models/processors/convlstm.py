@@ -7,11 +7,15 @@ from icenet_mp.types import ProcessorOutput, TensorNTCHW
 
 from .base_processor import BaseProcessor
 
+_NTCHW_NDIM = 5
+
 
 class ConvLSTMCell(nn.Module):
     """Convolutional LSTM cell for spatial latent-state evolution."""
 
-    def __init__(self, in_channels: int, hidden_channels: int, kernel_size: int) -> None:
+    def __init__(
+        self, in_channels: int, hidden_channels: int, kernel_size: int
+    ) -> None:
         """Initialise a ConvLSTM cell."""
         super().__init__()
         if in_channels <= 0:
@@ -32,9 +36,7 @@ class ConvLSTMCell(nn.Module):
             padding=kernel_size // 2,
         )
 
-    def forward(
-        self, x: Tensor, state: tuple[Tensor, Tensor]
-    ) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, state: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         """Advance hidden and cell state by one timestep."""
         hidden, cell = state
         input_gate, forget_gate, candidate, output_gate = self.gates(
@@ -127,18 +129,14 @@ class ConvLSTMProcessor(BaseProcessor):
 
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
         """Consume history and autoregressively forecast future latent frames."""
-        if x.ndim != 5:
+        if x.ndim != _NTCHW_NDIM:
             msg = f"Expected NTCHW input with 5 dimensions, got shape {tuple(x.shape)}."
             raise ValueError(msg)
         if x.shape[1] != self.n_history_steps:
-            msg = (
-                f"Expected {self.n_history_steps} history steps, got {x.shape[1]}."
-            )
+            msg = f"Expected {self.n_history_steps} history steps, got {x.shape[1]}."
             raise ValueError(msg)
         if x.shape[2] != self.data_space.channels:
-            msg = (
-                f"Expected {self.data_space.channels} latent channels, got {x.shape[2]}."
-            )
+            msg = f"Expected {self.data_space.channels} latent channels, got {x.shape[2]}."
             raise ValueError(msg)
 
         current = x[:, 0]

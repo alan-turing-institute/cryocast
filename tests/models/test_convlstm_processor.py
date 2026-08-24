@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 
@@ -6,6 +8,7 @@ from icenet_mp.types import DataSpace, ProcessorOutput
 
 
 def test_convlstm_cell_preserves_spatial_shape_and_backpropagates() -> None:
+    """Verify spatial shape preservation and gradient flow."""
     cell = ConvLSTMCell(in_channels=3, hidden_channels=5, kernel_size=3)
     x = torch.randn(2, 3, 8, 10, requires_grad=True)
     hidden = torch.zeros(2, 5, 8, 10)
@@ -25,6 +28,7 @@ def test_convlstm_cell_preserves_spatial_shape_and_backpropagates() -> None:
 def test_convlstm_processor_rollout_shape(
     n_history_steps: int, n_forecast_steps: int
 ) -> None:
+    """Verify the configured rollout output shape."""
     latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
     processor = ConvLSTMProcessor(
         data_space=latent_space,
@@ -45,6 +49,7 @@ def test_convlstm_processor_rollout_shape(
 
 
 def test_convlstm_processor_backpropagates_through_history() -> None:
+    """Verify gradients flow through the full input history."""
     latent_space = DataSpace(name="latent", channels=2, shape=(6, 6))
     processor = ConvLSTMProcessor(
         data_space=latent_space,
@@ -67,6 +72,7 @@ def test_convlstm_processor_backpropagates_through_history() -> None:
 
 
 def test_zero_residual_head_reduces_to_persistence() -> None:
+    """Verify a zero residual projection reduces to persistence."""
     latent_space = DataSpace(name="latent", channels=2, shape=(5, 5))
     processor = ConvLSTMProcessor(
         data_space=latent_space,
@@ -78,6 +84,7 @@ def test_zero_residual_head_reduces_to_persistence() -> None:
         residual=True,
     )
     torch.nn.init.zeros_(processor.output_projection.weight)
+    assert processor.output_projection.bias is not None
     torch.nn.init.zeros_(processor.output_projection.bias)
     x = torch.randn(1, 3, 2, 5, 5)
 
@@ -98,8 +105,9 @@ def test_zero_residual_head_reduces_to_persistence() -> None:
     ],
 )
 def test_convlstm_processor_rejects_invalid_configuration(
-    kwargs: dict[str, int | float], message: str
+    kwargs: dict[str, Any], message: str
 ) -> None:
+    """Reject invalid ConvLSTM processor configurations."""
     latent_space = DataSpace(name="latent", channels=2, shape=(4, 4))
     with pytest.raises(ValueError, match=message):
         ConvLSTMProcessor(
@@ -111,6 +119,7 @@ def test_convlstm_processor_rejects_invalid_configuration(
 
 
 def test_convlstm_processor_validates_input_shape() -> None:
+    """Reject invalid history and latent-channel dimensions."""
     latent_space = DataSpace(name="latent", channels=2, shape=(4, 4))
     processor = ConvLSTMProcessor(
         data_space=latent_space,
