@@ -59,9 +59,7 @@ def test_strided_getitem_reads_exact_requested_dates(
     requested: list[list[np.datetime64]] = []
     original_get_tchw = SingleDataset.get_tchw
 
-    def record_dates(
-        self: SingleDataset, dates: list[np.datetime64]
-    ) -> np.ndarray:
+    def record_dates(self: SingleDataset, dates: list[np.datetime64]) -> np.ndarray:
         requested.append(list(dates))
         return original_get_tchw(self, dates)
 
