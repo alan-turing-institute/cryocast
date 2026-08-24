@@ -28,7 +28,7 @@ demo-sicnorth-seas5-1p0-2024-2024-24h-v1:
       type: fc
       levtype: sfc
       param:
-      - 31.128  # sea-ice cover
+      - '31.128'  # sea-ice cover
       grid: '1.0 / 1.0'
       area: '90/-180/20/180'
 
