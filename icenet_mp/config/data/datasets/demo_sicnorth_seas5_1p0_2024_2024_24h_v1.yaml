@@ -1,0 +1,36 @@
+demo-sicnorth-seas5-1p0-2024-2024-24h-v1:
+  name: demo-sicnorth-seas5-1p0-2024-2024-24h-v1
+  description: ECMWF SEAS5.1 sea-ice cover forecast for a northern-hemisphere download smoke test
+  attribution: ECMWF/C3S
+  licence: Copernicus Products Licence
+
+  # SEAS5 is forecast-indexed data, so preserve the forecast initialisation
+  # and lead-time axes rather than flattening it into analysis-style dates.
+  base_dates:
+    start: '2024-01-01T00:00:00'
+    end: '2024-01-01T00:00:00'
+    frequency: 24h
+
+  steps:
+    start: 24h
+    end: 168h
+    frequency: 24h
+
+  input:
+    mars:
+      use_cdsapi_dataset: seasonal-original-single-levels
+      class: c3
+      expver: '0001'
+      origin: ecmf
+      system: '51'
+      method: '1'
+      stream: mmsf
+      type: fc
+      levtype: sfc
+      param:
+      - 31.128  # sea-ice cover
+      grid: '1.0 / 1.0'
+      area: '90/-180/20/180'
+
+  output:
+    layout: trajectories
