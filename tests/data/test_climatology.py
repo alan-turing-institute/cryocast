@@ -128,8 +128,10 @@ def test_save_daily_climatology_preserves_data_and_provenance(tmp_path: Path) ->
         years=2,
     )
 
-    path = save_daily_climatology(result, tmp_path / "baseline.npz")
+    path = save_daily_climatology(result, tmp_path / "baseline")
 
+    assert path.suffix == ".npz"
+    assert path.exists()
     with np.load(path) as saved:
         np.testing.assert_allclose(saved["climatology"], result.values, equal_nan=True)
         np.testing.assert_array_equal(saved["sample_count"], result.sample_count)
