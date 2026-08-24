@@ -109,6 +109,8 @@ def generate_daily_climatology(
 def save_daily_climatology(climatology: DailyClimatology, path: Path) -> Path:
     """Save a daily climatology and its provenance to a compressed NumPy archive."""
     path = path.resolve()
+    if path.suffix != ".npz":
+        path = path.with_suffix(".npz")
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         path,
