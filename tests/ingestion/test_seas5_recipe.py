@@ -6,10 +6,12 @@ import yaml
 
 from icenet_mp.ingestion.data_downloader import DataDownloader
 
-
 DATASET_NAME = "demo-sicnorth-seas5-1p0-2024-2024-24h-v1"
-RECIPE_PATH = files("icenet_mp.config") / "data" / "datasets" / (
-    "demo_sicnorth_seas5_1p0_2024_2024_24h_v1.yaml"
+RECIPE_PATH = (
+    files("icenet_mp.config")
+    / "data"
+    / "datasets"
+    / "demo_sicnorth_seas5_1p0_2024_2024_24h_v1.yaml"
 )
 
 
@@ -19,6 +21,7 @@ def _load_recipe() -> dict[str, Any]:
 
 
 def test_seas5_recipe_is_accepted_by_data_downloader(tmp_path: Path) -> None:
+    """Construct the SEAS5 recipe through DataDownloader without network access."""
     recipe = _load_recipe()
 
     downloader = DataDownloader(DATASET_NAME, tmp_path, recipe)
@@ -28,6 +31,7 @@ def test_seas5_recipe_is_accepted_by_data_downloader(tmp_path: Path) -> None:
 
 
 def test_seas5_recipe_uses_cds_forecast_trajectory() -> None:
+    """Keep the critical CDS trajectory request fields configured for SEAS5."""
     recipe = _load_recipe()
     mars = recipe["input"]["mars"]
 
