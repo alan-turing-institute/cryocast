@@ -20,6 +20,17 @@ To create the synthetic dataset, use:
 uv run imp datasets create --config-name synthetic
 ```
 
+To exercise forecast-indexed ingestion with the small SEAS5 trajectory recipe, use:
+
+```bash
+uv run imp datasets create --config-name seas5_demo
+uv run imp datasets inspect --config-name seas5_demo
+```
+
+This is an ingestion smoke test for Anemoi's trajectory layout: it preserves the
+forecast initialisation and lead-time axes instead of flattening them into analysis
+dates. It is not yet a training configuration for IceNet-MP.
+
 ## `datasets inspect`
 
 ```bash

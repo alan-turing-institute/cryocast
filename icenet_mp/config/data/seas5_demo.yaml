@@ -1,0 +1,4 @@
+defaults:
+  - datasets:
+    - demo_sicnorth_seas5_1p0_2024_2024_24h_v1
+  - _self_

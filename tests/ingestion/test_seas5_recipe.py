@@ -2,6 +2,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import yaml
 
 from icenet_mp.ingestion.data_downloader import DataDownloader
@@ -42,3 +43,16 @@ def test_seas5_recipe_uses_cds_forecast_trajectory() -> None:
     assert mars["param"] == ["31.128"]
     assert mars["type"] == "fc"
     assert mars["stream"] == "mmsf"
+
+
+def test_seas5_statistics_cover_the_complete_demo_trajectory(tmp_path: Path) -> None:
+    """Keep the full forecast trajectory inside Anemoi's statistics envelope."""
+    downloader = DataDownloader(DATASET_NAME, tmp_path, _load_recipe())
+    base_dates = np.array(["2024-01-01T00:00:00"], dtype="datetime64[s]")
+    steps = np.arange(1, 8) * np.timedelta64(24, "h")
+
+    stats_filter = downloader.recipe.statistics.trajectory_statistics_filter(
+        base_dates, steps
+    )
+
+    assert stats_filter.mask(base_dates).tolist() == [True]
