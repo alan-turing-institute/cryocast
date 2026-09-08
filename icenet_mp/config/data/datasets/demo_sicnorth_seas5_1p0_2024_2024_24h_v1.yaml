@@ -1,5 +1,6 @@
 demo-sicnorth-seas5-1p0-2024-2024-24h-v1:
   name: demo-sicnorth-seas5-1p0-2024-2024-24h-v1
+  group_as: sic-seas5
   description: ECMWF SEAS5.1 sea-ice cover forecast for a northern-hemisphere download smoke test
   attribution: ECMWF/C3S
   licence: Copernicus Products Licence

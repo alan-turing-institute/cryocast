@@ -1,0 +1,20 @@
+# Structural split for the ingestion-only SEAS5 demo configuration.
+# The demo is not intended for model training; each stage therefore exposes the
+# complete tiny dataset rather than claiming a meaningful statistical partition.
+batch_size: 1
+
+predict:
+  - start: null
+    end: null
+
+test:
+  - start: null
+    end: null
+
+train:
+  - start: null
+    end: null
+
+validate:
+  - start: null
+    end: null
