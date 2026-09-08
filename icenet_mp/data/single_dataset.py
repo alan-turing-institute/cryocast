@@ -281,7 +281,7 @@ class SingleDataset(Dataset):
         timesteps are filled after normalisation so ``fill_value=-1`` stays outside the
         normalised [0, 1] data range and can be used as an explicit missing-data sentinel.
         """
-        normalised_dates = [normalise_date(date) for date in dates]
+        normalised_dates = [self.normalise_date(date) for date in dates]
         if not normalised_dates:
             return cast(
                 "ArrayTCHW",
