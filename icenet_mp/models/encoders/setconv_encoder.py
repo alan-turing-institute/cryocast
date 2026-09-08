@@ -3,9 +3,12 @@
 from collections.abc import Callable
 from typing import Any
 
+import numpy as np
 import torch
+from haversine import Unit
 from torch import nn
 
+from icenet_mp.geotools import pairwise_haversine_distances
 from icenet_mp.types import DataSpace, TensorNCHW
 
 from .base_encoder import BaseEncoder
@@ -57,20 +60,22 @@ class SetConvEncoder(BaseEncoder):
         self.project_to = project_to
         self._validate_coordinates()
 
-        self.register_buffer(
-            "input_xyz",
-            self._latlon_to_xyz(
-                self.latitudes[self.project_from], self.longitudes[self.project_from]
-            ),
-            persistent=False,
+        input_latlons = np.column_stack(
+            (
+                self.latitudes[self.project_from],
+                self.longitudes[self.project_from],
+            )
         )
-        self.register_buffer(
-            "output_xyz",
-            self._latlon_to_xyz(
-                self.latitudes[self.project_to], self.longitudes[self.project_to]
-            ),
-            persistent=False,
+        output_latlons = np.column_stack(
+            (self.latitudes[self.project_to], self.longitudes[self.project_to])
         )
+        angular_distances = torch.tensor(
+            pairwise_haversine_distances(
+                input_latlons, output_latlons, unit=Unit.RADIANS
+            ),
+            dtype=torch.float32,
+        )
+        self.register_buffer("_angular_distances", angular_distances, persistent=False)
 
         self.log_length_scale_degrees = nn.Parameter(
             torch.tensor(length_scale_degrees).log(),
@@ -82,16 +87,6 @@ class SetConvEncoder(BaseEncoder):
             kernel_size=1,
         )
 
-    @staticmethod
-    def _latlon_to_xyz(latitudes: list[float], longitudes: list[float]) -> torch.Tensor:
-        """Convert latitude/longitude degrees to unit-sphere Cartesian coordinates."""
-        lat = torch.deg2rad(torch.tensor(latitudes, dtype=torch.float32))
-        lon = torch.deg2rad(torch.tensor(longitudes, dtype=torch.float32))
-        cos_lat = torch.cos(lat)
-        return torch.stack(
-            (cos_lat * torch.cos(lon), cos_lat * torch.sin(lon), torch.sin(lat)), dim=-1
-        )
-
     def _validate_coordinates(self) -> None:
         """Validate that source and target coordinate counts match their data spaces."""
         for name, expected in (
@@ -101,7 +96,10 @@ class SetConvEncoder(BaseEncoder):
             if name not in self.latitudes or name not in self.longitudes:
                 msg = f"Missing coordinates for dataset '{name}'."
                 raise ValueError(msg)
-            if len(self.latitudes[name]) != expected or len(self.longitudes[name]) != expected:
+            if (
+                len(self.latitudes[name]) != expected
+                or len(self.longitudes[name]) != expected
+            ):
                 msg = (
                     f"Dataset '{name}' has an incompatible coordinate count; "
                     f"expected {expected} latitude/longitude pairs."
@@ -110,16 +108,14 @@ class SetConvEncoder(BaseEncoder):
 
     def _kernel(self, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         """Return Gaussian weights from every output point to every input point."""
-        input_xyz = self.input_xyz.to(device=device, dtype=dtype)
-        output_xyz = self.output_xyz.to(device=device, dtype=dtype)
-        squared_distance = torch.sum(
-            (output_xyz[:, None, :] - input_xyz[None, :, :]) ** 2, dim=-1
+        angular_distances = self.get_buffer("_angular_distances").to(
+            device=device, dtype=dtype
         )
-
-        # Convert the learnable angular scale into a unit-sphere chord distance.
-        angle = torch.deg2rad(self.log_length_scale_degrees.exp()).to(dtype=dtype)
-        chord_scale = (2 * torch.sin(angle / 2)).clamp_min(torch.finfo(dtype).eps)
-        return torch.exp(-0.5 * squared_distance / chord_scale.square())
+        length_scale = torch.deg2rad(self.log_length_scale_degrees.exp()).to(
+            device=device, dtype=dtype
+        )
+        length_scale = length_scale.clamp_min(torch.finfo(dtype).eps)
+        return torch.exp(-0.5 * angular_distances.square() / length_scale.square())
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
         """Interpolate finite observations onto the latent grid and project channels."""

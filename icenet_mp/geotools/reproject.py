@@ -3,11 +3,33 @@ import time
 from itertools import product
 
 import numpy as np
-from haversine import haversine_vector
+from haversine import Unit, haversine_vector
 
 from icenet_mp.types import ArrayHWV, ArrayIndices2D
 
 logger = logging.getLogger(__name__)
+
+
+def pairwise_haversine_distances(
+    input_latlons: np.ndarray,
+    output_latlons: np.ndarray,
+    *,
+    unit: Unit = Unit.KILOMETERS,
+) -> np.ndarray:
+    """Return pairwise great-circle distances from output to input coordinates.
+
+    Both arrays must have shape ``[points, 2]`` with latitude then longitude.
+    The returned matrix has shape ``[n_output, n_input]``.
+    """
+    if input_latlons.ndim != 2 or input_latlons.shape[1] != 2:  # noqa: PLR2004
+        msg = f"Input lat/lons must have shape [points, 2], got {input_latlons.shape}"
+        raise ValueError(msg)
+    if output_latlons.ndim != 2 or output_latlons.shape[1] != 2:  # noqa: PLR2004
+        msg = f"Output lat/lons must have shape [points, 2], got {output_latlons.shape}"
+        raise ValueError(msg)
+    return np.asarray(
+        haversine_vector(input_latlons, output_latlons, unit=unit, comb=True)
+    )
 
 
 def nearest_neighbour_indices(
