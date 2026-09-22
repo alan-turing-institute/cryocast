@@ -235,3 +235,59 @@ class TestEncodeProcessDecode:
         assert result.loss.item() == pytest.approx(expected.item())
         # Guard against a degenerate case where weighting makes no difference
         assert result.loss.item() != pytest.approx(per_step.mean().item())
+
+
+def test_latent_target_uses_target_input_encoder(
+    cfg_decoder: DictConfig,
+    cfg_encoders: DictConfig,
+    cfg_input_space: DictConfig,
+    cfg_loss: DictConfig,
+    cfg_metrics: list[dict[str, Any]],
+) -> None:
+    """Latent supervision uses the same target-dataset encoder as history."""
+    output_space = DictConfig(
+        {
+            "channels": 1,
+            "name": cfg_input_space["name"],
+            "shape": cfg_input_space["shape"],
+        }
+    )
+    processor = DictConfig(
+        {
+            "_target_": "icenet_mp.models.processors.NullProcessor",
+            "computes_loss_in_latent_space": True,
+        }
+    )
+    model = EncodeProcessDecode(
+        name="shared-target-latent",
+        encoders=cfg_encoders,
+        processor=processor,
+        decoder=cfg_decoder,
+        hemisphere="north",
+        input_spaces=[cfg_input_space],
+        loss=cfg_loss,
+        metrics=cfg_metrics,
+        n_forecast_steps=2,
+        n_history_steps=2,
+        output_space=output_space,
+        optimizer=DictConfig({}),
+        scheduler=DictConfig({}),
+        lr_scheduler=DictConfig({}),
+        target_variable_indices=[2],
+    )
+    model.eval()
+
+    target_input_encoder = model.encoders[0]
+    assert model.target_input_encoder is target_input_encoder
+    assert model.processor.data_space_target == target_input_encoder.data_space_out
+    assert model.processor.data_space_target != model.target_encoder.data_space_out
+
+    history = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
+    target = torch.rand(2, 2, 1, 16, 16)
+    full_target = history[:, -1:].expand(-1, 2, -1, -1, -1).clone()
+    full_target[:, :, 2:3] = target
+
+    expected = target_input_encoder.rollout(full_target)
+    actual = model.encode_target_latent({cfg_input_space["name"]: history}, target)
+
+    torch.testing.assert_close(actual, expected)

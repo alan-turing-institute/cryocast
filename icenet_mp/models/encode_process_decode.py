@@ -154,13 +154,19 @@ class EncodeProcessDecode(BaseModel):
             channels=sum(encoder.data_space_out.channels for encoder in self.encoders),
             shape=latent_shapes.pop(),
         )
+        target_input_encoder = self.target_input_encoder
+        target_latent_space = (
+            target_input_encoder.data_space_out
+            if target_input_encoder is not None
+            else self.target_encoder.data_space_out
+        )
         self.processor: BaseProcessor = (
             processor
             if isinstance(processor, BaseProcessor)
             else hydra.utils.instantiate(
                 processor,
                 data_space=combined_latent_space,
-                data_space_target=self.target_encoder.data_space_out,
+                data_space_target=target_latent_space,
                 n_forecast_steps=self.n_forecast_steps,
                 n_history_steps=self.n_history_steps,
                 target_channel_offset=self._find_target_channel_offset(),
@@ -242,6 +248,48 @@ class EncodeProcessDecode(BaseModel):
                 return offset
             offset += encoder.data_space_out.channels
         return None
+
+    @property
+    def target_input_encoder(self) -> BaseEncoder | None:
+        """Return the input encoder whose dataset contains the forecast target."""
+        for encoder, input_space in zip(self.encoders, self.input_spaces, strict=True):
+            if input_space.name == self.output_space.name:
+                return encoder
+        return None
+
+    def encode_target_latent(
+        self, inputs: dict[str, TensorNTCHW], target: TensorNTCHW
+    ) -> TensorNTCHW:
+        """Encode a forecast target in the decoder-compatible latent space."""
+        if tuple(target.shape[2:]) != self.output_space.chw:
+            msg = (
+                f"Target CHW {tuple(target.shape[2:])} does not match output space "
+                f"(C, H, W)={self.output_space.chw}."
+            )
+            raise ValueError(msg)
+
+        target_input_encoder = self.target_input_encoder
+        if target_input_encoder is None:
+            return self.target_encoder.rollout(target)
+
+        target_input = inputs[self.output_space.name]
+        if tuple(target_input.shape[2:]) != target_input_encoder.data_space_in.chw:
+            msg = (
+                f"Target input CHW {tuple(target_input.shape[2:])} does not match "
+                f"'{target_input_encoder.name}' encoder input (C, H, W)="
+                f"{target_input_encoder.data_space_in.chw}."
+            )
+            raise ValueError(msg)
+
+        # The forecast target may contain only a subset of the target dataset's
+        # physical variables. Persist omitted variables from the last observed
+        # frame so target supervision uses the same encoder/coordinate system as
+        # the history that the processor and decoder see.
+        full_target = (
+            target_input[:, -1:].expand(-1, target.shape[1], -1, -1, -1).clone()
+        )
+        full_target[:, :, self.target_variable_indices, :, :] = target
+        return target_input_encoder.rollout(full_target)
 
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.
@@ -428,21 +476,20 @@ class EncodeProcessDecode(BaseModel):
 
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
-            expected_chw = self.target_encoder.data_space_in.chw
-            if tuple(target.shape[2:]) != expected_chw:
+            if tuple(target.shape[2:]) != self.output_space.chw:
                 msg = (
-                    f"Target CHW shape ({tuple(target.shape[2:])}) does not match the "
-                    f"shape expected by the '{self.target_encoder.name}' encoder "
-                    f"({expected_chw})"
+                    f"Target CHW {tuple(target.shape[2:])} does not match output space "
+                    f"(C, H, W)={self.output_space.chw}."
                 )
                 raise ValueError(msg)
 
-            # Encode inputs into latent space
+            # Encode inputs and target into decoder-compatible latent space.
             latent_input_combined = self._encode_inputs(batch)
+            target_latent = self.encode_target_latent(batch, target)
 
             # Process in latent space
             processor_output = self.processor.rollout(
-                latent_input_combined, self.target_encoder.rollout(target)
+                latent_input_combined, target_latent
             )
 
             # Get the loss from the processor output
