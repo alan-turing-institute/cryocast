@@ -28,7 +28,19 @@ uv run imp datasets create data=downscaling_north
 ```
 
 The stored target is the smallest rectangular window on the native CARRA2 2.5 km
-grid that covers this latitude/longitude box.
+grid that covers this latitude/longitude box. The same configuration also loads the
+paired OSI SAF 25 km sea-ice concentration needed to train the downscaler.
+
+Train the downscaler with:
+
+```bash
+uv run imp train --config-name downscaling_north
+```
+
+The model starts from a coordinate-aligned bilinear interpolation baseline and learns a
+high-resolution residual against CARRA2. A trained `Downscaler` can also be attached to
+an existing forecast `ModelService` with `build_downscaling_pipeline()` so each
+low-resolution forecast lead time is downscaled onto the CARRA2 ROI grid.
 
 ## `datasets inspect`
 

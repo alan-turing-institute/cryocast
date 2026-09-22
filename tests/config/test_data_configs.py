@@ -70,9 +70,13 @@ class TestDataConfigs:
             config.data.roi.east,
         ] == [81.0, 15.0, 76.0, 35.0]
 
-        assert len(config.data.datasets) == 1
-        dataset = next(iter(config.data.datasets.values()))
-        assert dataset.group_as == "sic-carra2"
+        groups = {dataset.group_as for dataset in config.data.datasets.values()}
+        assert groups == {"sic-osisaf", "sic-carra2"}
+        dataset = next(
+            dataset
+            for dataset in config.data.datasets.values()
+            if dataset.group_as == "sic-carra2"
+        )
         cds = dataset.input.pipe[0].cds
         assert cds.dataset == "reanalysis-pan-carra"
         assert cds.time_from_dates is True
@@ -89,3 +93,7 @@ class TestDataConfigs:
             35.0,
         ]
         assert dataset.dates.start.endswith("T12:00:00")
+        assert (
+            dataset.postprocessors.finite_value_masks._target_
+            == "cryocast.ingestion.postprocessors.FiniteValueMaskGenerator"
+        )
