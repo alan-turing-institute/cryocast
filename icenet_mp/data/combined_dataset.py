@@ -13,7 +13,7 @@ MISSING_INPUT_VALUE = -1.0
 
 
 class CombinedDataset(Dataset):
-    def __init__(
+    def __init__(  # noqa: PLR0913 - dataset construction mirrors config knobs
         self,
         datasets: Sequence[SingleDataset],
         target_group_name: str,
