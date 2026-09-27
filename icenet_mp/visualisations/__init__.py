@@ -1,11 +1,8 @@
 from imageio_ffmpeg import get_ffmpeg_exe
 from matplotlib import rcParams
 
-from .dataset_plotting import plot_variables_static, plot_variables_video
-from .helpers import DEFAULT_SIC_SPEC
-from .plotter import Plotter
-from .plotting_core import compute_standardised_difference
-from .plotting_static import plot_static_uncertainty
+from .dataset_media_writer import DatasetMediaWriter
+from .media_publisher import MediaPublisher
 
 
 def register_animation_backends() -> None:
@@ -14,10 +11,7 @@ def register_animation_backends() -> None:
 
 
 __all__ = [
-    "DEFAULT_SIC_SPEC",
-    "Plotter",
-    "compute_standardised_difference",
-    "plot_static_uncertainty",
-    "plot_variables_static",
-    "plot_variables_video",
+    "DatasetMediaWriter",
+    "MediaPublisher",
+    "register_animation_backends",
 ]

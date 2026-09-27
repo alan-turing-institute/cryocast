@@ -140,19 +140,17 @@ class OptunaSweep:
         OmegaConf.set_struct(base_config, value=True)
         for parameter, value in overrides:
             OmegaConf.update(base_config, parameter.name, value, merge=True)
-        # Struct mode must come back off before merging in loggers.wandb.config below:
-        # unlike the overrides above, that key is expected to be genuinely new.
-        # Also add the sampled values to the W&B config under the sanitised key
-        # names, so they show up as columns in the sweep GUI. These are new keys, so we
-        # turn struct mode off before merging them in.
+        # Disable struct mode before merging in wandb config, which is a new key
         OmegaConf.set_struct(base_config, value=False)
         wandb_overrides = OmegaConf.create(
             {
-                "loggers": {
-                    "wandb": {
-                        "config": {
-                            parameter.sanitised_name: value
-                            for parameter, value in overrides
+                "reporting": {
+                    "loggers": {
+                        "wandb": {
+                            "config": {
+                                parameter.sanitised_name: value
+                                for parameter, value in overrides
+                            }
                         }
                     }
                 }
@@ -216,7 +214,7 @@ class OptunaSweep:
                 for k, v in parameter.sweep_cfg().items()
             },
         }
-        wandb_cfg = model_cfg.get("loggers", {}).get("wandb", {})
+        wandb_cfg = model_cfg.get("reporting", {}).get("loggers", {}).get("wandb", {})
         self._entity = wandb_cfg.get("entity") or os.environ.get("WANDB_ENTITY")
         # Start the sweep
         return wandb.sweep(sweep_config, entity=self.entity, project="train")

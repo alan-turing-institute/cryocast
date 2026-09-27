@@ -5,8 +5,9 @@ from typing import Annotated
 import typer
 from omegaconf import DictConfig
 
+from icenet_mp.data import SingleDataset
 from icenet_mp.ingestion import build_downloaders
-from icenet_mp.visualisations import plot_variables_static, plot_variables_video
+from icenet_mp.visualisations import DatasetMediaWriter
 
 from .hydra import hydra_adaptor
 
@@ -74,27 +75,31 @@ def plot(
     ] = 10,
 ) -> None:
     """Plot one timestep of configured datasets."""
-    base_path = Path(config["base_path"]).resolve()
-    matched_dataset = False
-    for downloader in build_downloaders(config):
-        if dataset is not None and downloader.name != dataset:
-            continue
-        matched_dataset = True
+    writer = DatasetMediaWriter(Path(config["base_path"]).resolve())
+    downloaders = [
+        d for d in build_downloaders(config) if dataset is None or d.name == dataset
+    ]
+    if dataset is not None and not downloaders:
+        logger.error("Configured dataset %s was not found.", dataset)
+        raise typer.Exit(1)
+    for downloader in downloaders:
         logger.info("Plotting dataset %s.", downloader.name)
         if downloader.path_dataset.exists():
+            ds = SingleDataset(
+                name=downloader.name,
+                input_files=[downloader.path_dataset],
+                group=downloader.group,
+                normalise=False,
+            )
             n_saved = (
-                plot_variables_video(
-                    base_path=base_path,
-                    dataset_name=downloader.name,
-                    dataset_path=downloader.path_dataset,
+                writer.video(
+                    dataset=ds,
                     n_steps=n_steps,
                     timestep=timestep,
                 )
                 if video
-                else plot_variables_static(
-                    base_path=base_path,
-                    dataset_name=downloader.name,
-                    dataset_path=downloader.path_dataset,
+                else writer.static(
+                    dataset=ds,
                     timestep=timestep,
                 )
             )
@@ -103,9 +108,6 @@ def plot(
             logger.error(
                 "Dataset %s not found at %s", downloader.name, downloader.path_dataset
             )
-    if dataset is not None and not matched_dataset:
-        logger.error("Configured dataset %s was not found.", dataset)
-        raise typer.Exit(1)
 
 
 @datasets_cli.command("masks")

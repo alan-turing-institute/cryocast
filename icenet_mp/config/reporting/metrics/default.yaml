@@ -1,0 +1,13 @@
+- accuracy
+- centroid_error
+- diiee
+- fss_neighbourhood_size_1
+- fss_neighbourhood_size_15
+- fss_neighbourhood_size_5
+- iiee
+- mae
+- rmse
+- sieerror
+- spatial_mean_ground_truth
+- spatial_mean_prediction
+- ssim

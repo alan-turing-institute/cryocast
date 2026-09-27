@@ -1,8 +1,7 @@
-"""CentroidError metric: pixel distance between predicted and target centroids."""
-
 import torch
 
-from .daily_metrics import BaseErrorMetricDaily
+from .base_daily_metric import BaseDailyMetric
+from .helpers import SicOnlyMetricMixin
 
 # Frames whose target has less total mass than this are treated as empty (undefined
 # centroid) and excluded from the average; it also floors the denominator so the
@@ -10,7 +9,7 @@ from .daily_metrics import BaseErrorMetricDaily
 _EMPTY_MASS_THRESHOLD = 1e-8
 
 
-class CentroidErrorPerForecastDay(BaseErrorMetricDaily):
+class CentroidErrorPerForecastDay(SicOnlyMetricMixin, BaseDailyMetric):
     """Euclidean distance (in pixels) between the predicted and target centroids.
 
     The centroid of a (batch, time) frame is its value-weighted center of mass over
@@ -42,10 +41,24 @@ class CentroidErrorPerForecastDay(BaseErrorMetricDaily):
         return torch.stack([row_centroid, col_centroid], dim=-1), mass
 
     def _compute_batch_stats(
-        self, preds: torch.Tensor, target: torch.Tensor
+        self, preds: torch.Tensor, targets: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        pred_centroids, _ = self._centroids(preds.clamp(min=0))
-        target_centroids, target_mass = self._centroids(target.clamp(min=0))
+        self.ensure_single_channel(preds, targets)
+        preds_values = preds.clamp(min=0)
+        target_values = targets.clamp(min=0)
+        land_mask = getattr(self, "land_mask", None)
+        if land_mask is not None:
+            # `torch.where`, not `* land_mask`: multiplying can't zero out a NaN
+            # (0 * NaN = NaN), which would otherwise poison the whole centroid.
+            preds_values = torch.where(
+                land_mask, preds_values, torch.zeros_like(preds_values)
+            )
+            target_values = torch.where(
+                land_mask, target_values, torch.zeros_like(target_values)
+            )
+
+        pred_centroids, _ = self._centroids(preds_values)
+        target_centroids, target_mass = self._centroids(target_values)
 
         distances = torch.linalg.norm(pred_centroids - target_centroids, dim=-1)
         valid = (target_mass > _EMPTY_MASS_THRESHOLD).float()

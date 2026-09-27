@@ -16,6 +16,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
     ) -> None:
@@ -33,6 +34,7 @@ class TestEncodeProcessDecode:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
             loss=cfg_loss,
+            metrics=cfg_metrics,
             target_variable_indices=[0],
         )
 
@@ -55,6 +57,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
         test_batch_size: int,
         test_n_forecast_steps: int,
         test_n_history_steps: int,
@@ -67,6 +70,7 @@ class TestEncodeProcessDecode:
             hemisphere="north",
             input_spaces=[cfg_input_space],
             loss=cfg_loss,
+            metrics=cfg_metrics,
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             output_space=cfg_output_space,
@@ -109,6 +113,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
     ) -> None:
@@ -120,6 +125,7 @@ class TestEncodeProcessDecode:
             hemisphere="north",
             input_spaces=[cfg_input_space],
             loss=cfg_loss,
+            metrics=cfg_metrics,
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             output_space=cfg_output_space,
@@ -138,6 +144,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
     ) -> None:
@@ -152,6 +159,7 @@ class TestEncodeProcessDecode:
             hemisphere="north",
             input_spaces=[cfg_input_space],
             loss=cfg_loss,
+            metrics=cfg_metrics,
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             output_space=cfg_output_space,

@@ -1747,6 +1747,10 @@ full-sicnorth-osisaf-25p0km-1979-2025-24h-v1:
     - '2013-05-13T12:00:00'
     - '2018-06-08T12:00:00'
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       - concat:
