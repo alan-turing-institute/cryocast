@@ -5,7 +5,7 @@ from itertools import product
 import numpy as np
 from haversine import haversine_vector
 
-from icenet_mp.types.typedefs import ArrayHWV, ArrayIndices2D
+from icenet_mp.types import ArrayHWV, ArrayIndices2D
 
 logger = logging.getLogger(__name__)
 

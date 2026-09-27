@@ -42,20 +42,21 @@ class TestHydraConfigLoading:
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         cfg = compose_config()
-        assert cfg.loggers.wandb.offline is False
+        assert cfg.reporting.loggers.wandb.offline is False
 
-        cfg = compose_config(overrides=["loggers.wandb.offline=true"])
-        assert cfg.loggers.wandb.offline is True
+        cfg = compose_config(overrides=["reporting.loggers.wandb.offline=true"])
+        assert cfg.reporting.loggers.wandb.offline is True
 
     def test_csv_logger_override(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
-        cfg = compose_config(overrides=["loggers=csv"])
-        assert "wandb" not in cfg.loggers
+        cfg = compose_config(overrides=["reporting/loggers=csv"])
+        assert "wandb" not in cfg.reporting.loggers
         assert (
-            cfg.loggers.csv._target_ == "lightning.pytorch.loggers.csv_logs.CSVLogger"
+            cfg.reporting.loggers.csv._target_
+            == "lightning.pytorch.loggers.csv_logs.CSVLogger"
         )
-        assert cfg.loggers.csv.name == "loss_logs"
+        assert cfg.reporting.loggers.csv.name == "loss_logs"
 
     def test_config_group_override_swaps_loss(
         self, compose_config: Callable[..., DictConfig]
@@ -63,13 +64,25 @@ class TestHydraConfigLoading:
         cfg = compose_config(overrides=["loss=mse"])
         assert cfg.loss._target_ == "torch.nn.MSELoss"
 
+    def test_climatology_baseline_composes(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(config_name="baseline/00_climatology")
+        assert cfg.model._target_ == "icenet_mp.models.Climatology"
+        assert cfg.model.name == "climatology"
+        assert cfg.train.trainer.max_epochs == 1
+        assert cfg.train.trainer.gradient_clip_val is None
+
     def test_synthetic_config_uses_local_logger(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         cfg = compose_config(config_name="synthetic")
-        assert "local_files" in cfg.loggers
-        assert "wandb" not in cfg.loggers
-        assert cfg.loggers.local_files._target_ == "icenet_mp.loggers.LocalFileLogger"
+        assert "local_files" in cfg.reporting.loggers
+        assert "wandb" not in cfg.reporting.loggers
+        assert (
+            cfg.reporting.loggers.local_files._target_
+            == "icenet_mp.loggers.LocalFileLogger"
+        )
         assert "metric_summary" not in cfg.train.callbacks
         assert "metric_summary" not in cfg.evaluate.callbacks
 

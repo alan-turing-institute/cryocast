@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from icenet_mp.types import ArrayHW, ArrayTHW, PlotSpec
+from icenet_mp.types import ArrayHW, ArrayTHW, Hemisphere, PlotSpec
 from icenet_mp.visualisations.land_mask import LandMask
 
 # Suppress Matplotlib animation warning during tests; we intentionally do not keep
@@ -41,24 +41,6 @@ def sic_pair_2d(
     """
     ground_truth_stream, prediction_stream, dates = sic_pair_3d_stream
     return ground_truth_stream[0], prediction_stream[0], dates[0]
-
-
-@pytest.fixture
-def sic_pair_warning_2d() -> tuple[ArrayHW, ArrayHW, date]:
-    """Construct arrays that should trigger range_check-report warnings.
-
-    Ground truth stays in [0,1]. Prediction has a stripe with values > 1.5 to
-    ensure >5% of values are outside the display range when using shared 0..1.
-    """
-    height, width = 64, 64
-    gt = np.clip(np.random.default_rng(42).random((height, width)), 0.0, 1.0).astype(
-        np.float32
-    )
-    pred = gt.copy()
-    # Make a vertical stripe out-of-range ~25% of pixels
-    stripe_cols = slice(width // 4, width // 2)
-    pred[:, stripe_cols] = 1.6
-    return gt, pred, TEST_DATE
 
 
 def make_varying_sic_stream(
@@ -171,10 +153,8 @@ def sic_pair_3d_stream() -> tuple[ArrayTHW, ArrayTHW, list[date]]:
 def base_plot_spec() -> PlotSpec:
     """Base plotting specification for raw inputs."""
     return PlotSpec(
-        colourbar_location="vertical",
         colourmap="viridis",
-        hemisphere="south",
-        variable="raw_inputs",
+        hemisphere=Hemisphere.SOUTH,
     )
 
 
@@ -191,40 +171,12 @@ def no_land_mask() -> LandMask:
 
 
 @pytest.fixture
-def mock_land_mask() -> LandMask:
-    """Create a simple circular land mask for testing [H, W]."""
-    land_mask = LandMask(None)
-    dist = make_central_distance_grid(TEST_HEIGHT, TEST_WIDTH)
-    radius = min(TEST_HEIGHT, TEST_WIDTH) * 0.25
-    land_mask.add_mask((dist >= radius).astype(bool))
-    return land_mask
-
-
-@pytest.fixture
 def era5_temperature_2d() -> ArrayHW:
     """Generate synthetic ERA5 2m temperature data (K) [H, W]."""
     rng = np.random.default_rng(100)
     # Temperature centreed around 273.15K (0°C) with realistic variation
     base_temp = 273.15 + rng.normal(0, 10, size=(TEST_HEIGHT, TEST_WIDTH))
     return base_temp.astype(np.float32)
-
-
-@pytest.fixture
-def era5_humidity_2d() -> ArrayHW:
-    """Generate synthetic ERA5 specific humidity data (kg/kg) [H, W]."""
-    rng = np.random.default_rng(100)
-    # Humidity values are very small (0.001 to 0.01)
-    humidity = rng.uniform(0.0005, 0.015, size=(TEST_HEIGHT, TEST_WIDTH))
-    return humidity.astype(np.float32)
-
-
-@pytest.fixture
-def era5_wind_u_2d() -> ArrayHW:
-    """Generate synthetic ERA5 u-wind component (m/s) [H, W]."""
-    rng = np.random.default_rng(100)
-    # Wind centreed around 0 with realistic variation
-    wind = rng.normal(0, 5, size=(TEST_HEIGHT, TEST_WIDTH))
-    return wind.astype(np.float32)
 
 
 @pytest.fixture
@@ -249,37 +201,12 @@ def era5_temperature_thw(test_dates_short: list[date]) -> ArrayTHW:
 
 
 @pytest.fixture
-def multi_channel_hw() -> dict[str, ArrayHW]:
-    """Generate multiple channels of raw input data."""
-    rng = np.random.default_rng(100)
-    return {
-        # temperature
-        "era5:2t": rng.uniform(270, 280, size=(TEST_HEIGHT, TEST_WIDTH)).astype(
-            np.float32
-        ),
-        # u-wind
-        "era5:10u": rng.normal(0, 5, size=(TEST_HEIGHT, TEST_WIDTH)).astype(np.float32),
-        # v-wind
-        "era5:10v": rng.normal(0, 5, size=(TEST_HEIGHT, TEST_WIDTH)).astype(np.float32),
-        # ice conc
-        "osisaf-south:ice_conc": rng.uniform(
-            0, 1, size=(TEST_HEIGHT, TEST_WIDTH)
-        ).astype(np.float32),
-    }
-
-
-@pytest.fixture
 def variable_styles() -> dict[str, dict[str, Any]]:
     """Sample variable styling configuration for raw inputs."""
     return {
-        "era5:2t": {
-            "cmap": "RdBu_r",
-            "two_slope_centre": 273.15,
-            "units": "K",
-            "decimals": 1,
-        },
-        "era5:10u": {"cmap": "RdBu_r", "two_slope_centre": 0.0, "units": "m/s"},
-        "era5:10v": {"cmap": "RdBu_r", "two_slope_centre": 0.0, "units": "m/s"},
-        "era5:q_10": {"cmap": "viridis", "decimals": 4, "units": "kg/kg"},
+        "era5:2t": {"cmap": "RdBu_r", "units": "K"},
+        "era5:10u": {"cmap": "RdBu_r", "units": "m/s"},
+        "era5:10v": {"cmap": "RdBu_r", "units": "m/s"},
+        "era5:q_10": {"cmap": "viridis", "units": "kg/kg"},
         "osisaf-south:ice_conc": {"cmap": "Blues_r"},
     }

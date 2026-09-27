@@ -10,6 +10,10 @@ full-weathersouth-era5-25p0km-1979-2025-24h-v3:
     end: '2025-12-31T23:00:00'
     frequency: 24h
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       - join:

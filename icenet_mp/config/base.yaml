@@ -2,12 +2,11 @@
 defaults:
   - data: sample_south
   - evaluate: default
-  - loggers:
-    - wandb
   - loss: amse
   - model: quick_test
   - predict: sic-osisaf-2d
   - random: default
+  - reporting: default
   - train: default
   - platform: default
   - _self_

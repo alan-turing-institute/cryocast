@@ -1,12 +1,11 @@
 # @package _global_
 defaults:
   - /base
-  - override /loss: huber
   - override /model: unet
   - _self_
 
 # Reduce learning rate and increase weight decay to reduce overfitting
 train:
   optimizer:
-    lr: 1e-3
-    weight_decay: 0.05
+    lr: 1.5e-4
+    weight_decay: 1.5e-3
