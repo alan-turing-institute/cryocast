@@ -90,7 +90,7 @@ def test_daily_climatology_requires_every_reference_year() -> None:
         {np.datetime64("2000-01-01"): np.ones((2, 2), dtype=np.float32)}
     )
 
-    with pytest.raises(ValueError, match="missing years:.*2001"):
+    with pytest.raises(ValueError, match=r"missing years:.*2001"):
         generate_daily_climatology(
             dataset,
             variable="ice_conc",
