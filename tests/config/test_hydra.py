@@ -2,7 +2,7 @@ import inspect
 from collections.abc import Callable
 
 import pytest
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from icenet_mp.cli.hydra import hydra_adaptor
 
@@ -103,7 +103,9 @@ class TestHydraConfigLoading:
         assert baseline.random.seed == 123
         assert baseline.random.fully_deterministic is True
         for key in ("data", "loss", "predict", "train", "evaluate", "random"):
-            assert baseline[key] == naive[key]
+            assert OmegaConf.to_container(
+                baseline[key], resolve=False
+            ) == OmegaConf.to_container(naive[key], resolve=False)
 
 
 class TestHydraAdaptor:
