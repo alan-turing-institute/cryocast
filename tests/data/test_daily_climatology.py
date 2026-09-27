@@ -1,10 +1,15 @@
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import pytest
 
-from icenet_mp.data import generate_daily_climatology, save_daily_climatology
+from icenet_mp.data import (
+    SingleDataset,
+    generate_daily_climatology,
+    save_daily_climatology,
+)
 
 
 class _FakeDataset:
@@ -31,19 +36,22 @@ class _FakeDataset:
         return np.stack([self._values[date][None, ...] for date in dates], axis=0)
 
 
-def _dataset() -> _FakeDataset:
-    return _FakeDataset(
-        {
-            np.datetime64("2000-01-01"): np.array(
-                [[1.0, np.nan], [3.0, 4.0]], dtype=np.float32
-            ),
-            np.datetime64("2000-02-29"): np.array(
-                [[5.0, 6.0], [7.0, 8.0]], dtype=np.float32
-            ),
-            np.datetime64("2001-01-01"): np.array(
-                [[3.0, 2.0], [5.0, 6.0]], dtype=np.float32
-            ),
-        }
+def _dataset() -> SingleDataset:
+    return cast(
+        "SingleDataset",
+        _FakeDataset(
+            {
+                np.datetime64("2000-01-01"): np.array(
+                    [[1.0, np.nan], [3.0, 4.0]], dtype=np.float32
+                ),
+                np.datetime64("2000-02-29"): np.array(
+                    [[5.0, 6.0], [7.0, 8.0]], dtype=np.float32
+                ),
+                np.datetime64("2001-01-01"): np.array(
+                    [[3.0, 2.0], [5.0, 6.0]], dtype=np.float32
+                ),
+            }
+        ),
     )
 
 
@@ -86,8 +94,9 @@ def test_daily_climatology_keeps_february_29_separate() -> None:
 
 def test_daily_climatology_requires_every_reference_year() -> None:
     """Reject a requested climatology period if an entire reference year is absent."""
-    dataset = _FakeDataset(
-        {np.datetime64("2000-01-01"): np.ones((2, 2), dtype=np.float32)}
+    dataset = cast(
+        "SingleDataset",
+        _FakeDataset({np.datetime64("2000-01-01"): np.ones((2, 2), dtype=np.float32)}),
     )
 
     with pytest.raises(ValueError, match=r"missing years:.*2001"):
