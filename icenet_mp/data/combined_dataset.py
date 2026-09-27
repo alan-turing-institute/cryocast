@@ -11,7 +11,7 @@ from .single_dataset import SingleDataset
 
 
 class CombinedDataset(Dataset):
-    def __init__(
+    def __init__(  # noqa: PLR0913 - dataset construction mirrors config knobs
         self,
         datasets: Sequence[SingleDataset],
         target_group_name: str,
@@ -70,7 +70,6 @@ class CombinedDataset(Dataset):
             msg = f"Cannot combine datasets with different frequencies: {frequencies}."
             raise ValueError(msg)
         self.frequency = frequencies[0]
-        self.step_frequency = self.frequency * self.step_stride
 
     @cached_property
     def dates(self) -> list[np.datetime64]:
@@ -135,7 +134,7 @@ class CombinedDataset(Dataset):
 
         """
         start_date = self.dates[idx]
-        if self.step_stride == 1:
+        if getattr(self, "step_stride", 1) == 1:
             batch: dict[str, ArrayTCHW] = {
                 ds.name: ds.get_tchw_slice(
                     start_date, self.n_history_steps, check=False
@@ -150,9 +149,7 @@ class CombinedDataset(Dataset):
         else:
             history_dates = self.get_history_steps(start_date)
             forecast_dates = self.get_forecast_steps(start_date)
-            batch = {
-                ds.name: ds.get_tchw(history_dates) for ds in self.inputs
-            }
+            batch = {ds.name: ds.get_tchw(history_dates) for ds in self.inputs}
             batch["target"] = self.target.get_tchw(forecast_dates)
 
         if (climatology := self.climatology_for(start_date)) is not None:
@@ -185,14 +182,17 @@ class CombinedDataset(Dataset):
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return forecast dates at the configured temporal stride."""
         return [
-            start_date + (idx + self.n_history_steps) * self.step_frequency
+            start_date
+            + (idx + self.n_history_steps)
+            * self.frequency
+            * getattr(self, "step_stride", 1)
             for idx in range(self.n_forecast_steps)
         ]
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return history dates at the configured temporal stride."""
         return [
-            start_date + idx * self.step_frequency
+            start_date + idx * self.frequency * getattr(self, "step_stride", 1)
             for idx in range(self.n_history_steps)
         ]
 

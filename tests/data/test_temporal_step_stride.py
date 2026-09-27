@@ -83,11 +83,11 @@ def test_temporal_stride_rejects_nonpositive_values(mock_dataset: Path) -> None:
         )
 
 
-def test_common_data_module_reads_predict_step_stride(
+def test_common_data_module_reads_window_step_stride(
     cfg_common_data_module: DictConfig,
 ) -> None:
-    """Expose temporal spacing through the prediction configuration."""
-    cfg_common_data_module["predict"]["step_stride"] = 7
+    """Expose temporal spacing through the window configuration."""
+    cfg_common_data_module["window"]["step_stride"] = 7
 
     data_module = CommonDataModule(cfg_common_data_module)
 
@@ -98,7 +98,7 @@ def test_common_data_module_defaults_to_daily_stride(
     cfg_common_data_module: DictConfig,
 ) -> None:
     """Preserve current daily behaviour when no stride is configured."""
-    cfg_common_data_module["predict"].pop("step_stride", None)
+    cfg_common_data_module["window"].pop("step_stride", None)
 
     data_module = CommonDataModule(cfg_common_data_module)
 
