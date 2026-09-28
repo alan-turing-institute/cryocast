@@ -39,10 +39,21 @@ class TestDecoderStage:
 
     def test_process_batch_extracts_expected_timesteps(
         self,
-        decoder_stage: DecoderStage,
+        encoder_stage: EncoderStage,
+        *,
+        cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
     ) -> None:
+        # Predict only channel 2 of a 3-channel target group, so that the selection of
+        # target variables is visible in the processed batch
+        decoder_stage = DecoderStage.from_template(
+            decoder=cfg_decoder,
+            encoders=[encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
+            target_dataset_name="target",
+            target_variable_indices=[2],
+        )
         # t=-2 feeds the encoders and the persistence skip connection; t=-1 is the
         # forecast target. Using three history steps makes the -2/-1 split unambiguous.
         batch_size = 2
@@ -53,21 +64,16 @@ class TestDecoderStage:
             cfg_input_space["channels"],
             *cfg_input_space["shape"],
         )
-        target = torch.rand(
-            batch_size,
-            n_history_steps,
-            cfg_output_space["channels"],
-            *cfg_output_space["shape"],
-        )
+        target = torch.rand(batch_size, n_history_steps, 3, *cfg_output_space["shape"])
 
         processed = decoder_stage.process_batch(
             {"test-input": test_input, "target": target}
         )
 
         assert torch.equal(processed["test-input"], test_input[:, -2].unsqueeze(1))
-        assert torch.equal(processed["target"], target[:, -1, [0], :, :].unsqueeze(1))
+        assert torch.equal(processed["target"], target[:, -1, [2], :, :].unsqueeze(1))
         assert torch.equal(
-            processed["persistence"], target[:, -2, [0], :, :].unsqueeze(1)
+            processed["persistence"], target[:, -2, [2], :, :].unsqueeze(1)
         )
 
     def test_requires_at_least_two_history_steps(

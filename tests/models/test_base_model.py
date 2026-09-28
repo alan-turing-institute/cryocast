@@ -167,7 +167,7 @@ class TestBaseModel:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
         )
-        assert model.name == "fake data"
+        assert getattr(model.train_metrics["accuracy"], "land_mask", None) is None
 
     def test_init_mask_dir_with_land_mask_is_used(self, tmp_path: Path) -> None:
         np.save(tmp_path / "land_mask.npy", np.ones((2, 2), dtype=np.uint8))
@@ -232,8 +232,11 @@ class TestBaseModel:
         cfg_optimizer: DictConfig,
         cfg_output_space: DictConfig,
         cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
     ) -> None:
+        # Use non-default values so that the test fails if the config is ignored
+        lr_scheduler = DictConfig(
+            {"frequency": 2, "interval": "step", "monitor": "validation_loss"}
+        )
         model = FakeDataModel(
             name="dummy",
             input_spaces=[cfg_input_space],
@@ -242,7 +245,7 @@ class TestBaseModel:
             output_space=cfg_output_space,
             optimizer=cfg_optimizer,
             scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
+            lr_scheduler=lr_scheduler,
         )
         opt_sched_cfg = model.configure_optimizers()
         assert isinstance(opt_sched_cfg, dict)
@@ -253,8 +256,9 @@ class TestBaseModel:
         assert isinstance(scheduler, torch.optim.lr_scheduler.LinearLR)
         assert scheduler.start_factor == 0.2
         assert scheduler.end_factor == 0.8
-        assert lr_scheduler_cfg.get("frequency") == 1
-        assert lr_scheduler_cfg.get("interval") == "epoch"
+        assert lr_scheduler_cfg.get("frequency") == 2
+        assert lr_scheduler_cfg.get("interval") == "step"
+        assert lr_scheduler_cfg.get("monitor") == "validation_loss"
 
     def test_test_step(
         self,

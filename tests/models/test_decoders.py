@@ -161,13 +161,20 @@ class TestDecoderMask:
             mask_type=mask_type,
         )
 
-        assert decoder.mask.mask.shape == output_space.shape
-        out = decoder.rollout(
-            torch.randn(2, 1, latent_space.channels, *latent_space.shape),
-            None,
+        # An identical decoder without a mask gives the unmasked reference output
+        unmasked_decoder = NaiveLinearDecoder(
+            data_space_in=latent_space,
+            data_space_out=output_space,
         )
+        unmasked_decoder.load_state_dict(decoder.state_dict())
+
+        assert decoder.mask.mask.shape == output_space.shape
+        latent = torch.randn(2, 1, latent_space.channels, *latent_space.shape)
+        out = decoder.rollout(latent, None)
+        reference = unmasked_decoder.rollout(latent, None)
         # Every masked cell must be exactly zero; unmasked cells are untouched.
         assert torch.all(out[..., :8, :] == 0).item()
+        assert torch.equal(out[..., 8:, :], reference[..., 8:, :])
 
     def test_use_mask_without_file_raises(self, tmp_path) -> None:  # noqa: ANN001
         latent_space, output_space = self._spaces()
@@ -214,15 +221,22 @@ class TestDecoderMask:
             mask_type="active",
             restrict_range="sigmoid",
         )
-        out = decoder.rollout(
-            torch.randn(2, 1, latent_space.channels, *latent_space.shape),
-            None,
+        # An identical decoder without mask or bounding gives the raw reference output
+        raw_decoder = NaiveLinearDecoder(
+            data_space_in=latent_space,
+            data_space_out=output_space,
         )
+        raw_decoder.load_state_dict(decoder.state_dict())
+
+        latent = torch.randn(2, 1, latent_space.channels, *latent_space.shape)
+        out = decoder.rollout(latent, None)
+        reference = torch.sigmoid(raw_decoder.rollout(latent, None))
         # Masked cells must be exactly 0 even with bounding on...
         assert torch.all(out[..., :8, :] == 0).item()
-        # ...and active cells are bounded to [0, 1] by the sigmoid.
+        # ...and active cells are the sigmoid output, strictly inside (0, 1).
         active = out[..., 8:, :]
-        assert torch.all((active >= 0) & (active <= 1)).item()
+        assert torch.equal(active, reference[..., 8:, :])
+        assert torch.all((active > 0) & (active < 1)).item()
 
     def test_finalise_is_identity_when_mask_skip_and_bound_off(self) -> None:
         """Finalise makes no changes when masking/skip connection/bounding are off."""

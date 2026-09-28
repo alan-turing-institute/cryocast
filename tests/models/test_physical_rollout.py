@@ -40,7 +40,7 @@ SEED = 1234
 
 def _build_model(
     *,
-    rollout_space: str = "latent",
+    rollout_space: str | None = None,
     decoder_extra: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
@@ -77,6 +77,8 @@ def _build_model(
     }
     decoder_payload.update(decoder_extra or {})
     decoder = DictConfig(decoder_payload)
+    # Only pass rollout_space when given, so that the model's own default is exercised
+    rollout_kwargs = {} if rollout_space is None else {"rollout_space": rollout_space}
     torch.manual_seed(seed)
     return EncodeProcessDecode(
         name="cnn-null-cnn",
@@ -85,7 +87,7 @@ def _build_model(
             processor or {"_target_": "icenet_mp.models.processors.NullProcessor"}
         ),
         decoder=decoder,
-        rollout_space=rollout_space,
+        **rollout_kwargs,
         hemisphere="north",
         input_spaces=input_spaces,
         n_forecast_steps=n_forecast_steps,
@@ -146,10 +148,9 @@ def _zero_decoder_output(model: EncodeProcessDecode) -> None:
 class TestDefaultsOff:
     """Neither option may change anything unless explicitly switched on."""
 
-    def test_defaults(self) -> None:
+    def test_rollout_space_defaults_to_latent(self) -> None:
         model = _build_model()
         assert model.rollout_space == "latent"
-        assert model.target_variable_indices == [0]
 
     def test_off_is_identical_to_absent(self) -> None:
         absent = _build_model()
@@ -330,7 +331,11 @@ class TestPhysicalRolloutAdvancesTheState:
         assert not torch.equal(out_first[:, -1], out_second[:, -1])
 
     def test_non_target_groups_are_held_at_last_observation(self) -> None:
-        """An extra input group must not be hallucinated forward."""
+        """An extra input group must not be hallucinated forward.
+
+        Needs a processor that reads the whole window (NullProcessor does not), so
+        that older era5 frames would reach the forecast if they were not discarded.
+        """
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space="physical",
@@ -338,15 +343,31 @@ class TestPhysicalRolloutAdvancesTheState:
                 "restrict_range": "none",
                 "skip_connection": {"method": "additive"},
             },
+            processor={
+                "_target_": "icenet_mp.models.processors.VitProcessor",
+                "patch_size": 4,
+                "emb_dim": 32,
+                "depth": 1,
+                "heads": 2,
+                "mlp_dim": 32,
+                "dropout": 0.0,
+            },
             extra_inputs=[extra],
         )
+        _small_tendency(model)
         model.eval()
         inputs = _inputs(model)
-        baseline = {key: value.clone() for key, value in inputs.items()}
-        # Changing an OLDER era5 frame changes the encoding of the window, so the
-        # forecast may move; changing nothing must be reproducible.
+        # Non-target groups are held at their newest frame for the whole rollout, so
+        # older era5 frames are discarded and changing them must not move the forecast
+        older_changed = {key: value.clone() for key, value in inputs.items()}
+        older_changed["era5"][:, :-1] = 0.0
+        # ... whereas the newest era5 frame is used at every lead
+        newest_changed = {key: value.clone() for key, value in inputs.items()}
+        newest_changed["era5"][:, -1] = 0.0
         with torch.no_grad():
-            assert torch.equal(model(inputs), model(baseline))
+            prediction = model(inputs)
+            assert torch.equal(prediction, model(older_changed))
+            assert not torch.equal(prediction, model(newest_changed))
 
     def test_feedback_writes_only_the_target_variable(self) -> None:
         """A multi-channel target group: the prediction is fed back into channel 1 only."""
@@ -419,7 +440,8 @@ class TestConfigValidation:
         """A bounded decoder works for a residual (additive-skip) physical model.
 
         With an additive skip connection BaseDecoder bounds SIGNED values
-        symmetrically, so the tendency is never squashed into [0, 1].
+        symmetrically, so the tendency is never squashed into [0, 1]: a negative
+        tendency must lower the forecast below persistence.
         """
         model = _build_model(
             rollout_space="physical",
@@ -428,9 +450,19 @@ class TestConfigValidation:
                 "skip_connection": {"method": "additive"},
             },
         )
+        # Force a constant tendency of -0.1 everywhere
+        _zero_decoder_output(model)
+        final = _final_conv(model)
+        assert final.bias is not None
+        with torch.no_grad():
+            final.bias.fill_(-0.1)
+        inputs = _inputs(model)
         model.eval()
         with torch.no_grad():
-            prediction = model(_inputs(model))
+            prediction = model(inputs)
+        persistence = inputs[TARGET_GROUP][:, -1]
+        expected = (persistence - 0.1).clamp(0.0, 1.0)
+        assert torch.allclose(prediction[:, 0], expected)
         assert float(prediction.min()) >= 0.0
         assert float(prediction.max()) <= 1.0
 

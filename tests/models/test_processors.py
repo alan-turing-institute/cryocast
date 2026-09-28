@@ -94,6 +94,12 @@ class TestRolloutSlidingWindow:
         )
         torch.testing.assert_close(processor.calls[0], expected_first_window)
 
+        # Later windows drop the oldest timestep and append the newest prediction. The
+        # RecordingProcessor predicts its newest input timestep, which starts as h2.
+        _, h1, h2 = x.unbind(dim=1)
+        assert torch.equal(processor.calls[1], torch.cat([h1, h2, h2], dim=1))
+        assert torch.equal(processor.calls[2], torch.cat([h2, h2, h2], dim=1))
+
     def test_null_processor_persistence_not_leapfrog(self) -> None:
         """Check NullProcessor.rollout reduces to true persistence.
 
@@ -156,13 +162,65 @@ class TestNullProcessor:
         assert result.loss is None
 
 
-@pytest.mark.parametrize("test_batch_size", [1, 2])
-@pytest.mark.parametrize("test_kernel_size", [-1, 0, 1])
-@pytest.mark.parametrize("test_latent_chw", [(128, 32, 32), (3, 100, 200)])
-@pytest.mark.parametrize("test_n_forecast_steps", [1, 2])
-@pytest.mark.parametrize("test_n_history_steps", [1, 2])
-@pytest.mark.parametrize("test_start_out_channels", [-1, 7, 32])
 class TestUNetProcessor:
+    @pytest.mark.parametrize("test_kernel_size", [-1, 0])
+    def test_rejects_non_positive_kernel_size(self, test_kernel_size: int) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=(32, 32))
+        with pytest.raises(ValueError, match=r"Kernel size must be greater than 0."):
+            UNetProcessor(
+                data_space=latent_space,
+                kernel_size=test_kernel_size,
+                n_forecast_steps=1,
+                n_history_steps=1,
+                start_out_channels=8,
+            )
+
+    @pytest.mark.parametrize("test_start_out_channels", [-1, 0])
+    def test_rejects_non_positive_start_out_channels(
+        self, test_start_out_channels: int
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=(32, 32))
+        with pytest.raises(
+            ValueError, match=r"Start out channels must be greater than 0."
+        ):
+            UNetProcessor(
+                data_space=latent_space,
+                kernel_size=3,
+                n_forecast_steps=1,
+                n_history_steps=1,
+                start_out_channels=test_start_out_channels,
+            )
+
+    @pytest.mark.parametrize(
+        "test_latent_hw",
+        [(100, 200), (32, 40), (16, 16), (16, 32)],
+        ids=lambda hw: f"hw={hw}",
+    )
+    def test_rejects_latent_not_a_multiple_of_16_above_16(
+        self, test_latent_hw: tuple[int, int]
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=test_latent_hw)
+        processor = UNetProcessor(
+            data_space=latent_space,
+            kernel_size=3,
+            n_forecast_steps=1,
+            n_history_steps=1,
+            start_out_channels=8,
+        )
+        x = torch.randn(1, 1, latent_space.channels, *latent_space.shape)
+        height, width = test_latent_hw
+        msg = f"Latent space height ({height}) and width ({width}) must each be divisible by 16 with a factor more than 1."
+        with pytest.raises(ValueError, match=re.escape(msg)):
+            processor.rollout(x)
+
+    @pytest.mark.parametrize("test_batch_size", [1, 2])
+    @pytest.mark.parametrize("test_kernel_size", [1, 3])
+    @pytest.mark.parametrize(
+        "test_latent_chw", [(3, 32, 32), (4, 32, 64)], ids=lambda chw: f"chw={chw}"
+    )
+    @pytest.mark.parametrize("test_n_forecast_steps", [1, 2])
+    @pytest.mark.parametrize("test_n_history_steps", [1, 2])
+    @pytest.mark.parametrize("test_start_out_channels", [7, 16])
     def test_forward_shape(
         self,
         test_batch_size: int,
@@ -175,35 +233,6 @@ class TestUNetProcessor:
         latent_space = DataSpace(
             name="latent", channels=test_latent_chw[0], shape=test_latent_chw[1:]
         )
-
-        # Catch invalid filter size
-        if test_kernel_size <= 0:
-            with pytest.raises(
-                ValueError, match=r"Kernel size must be greater than 0."
-            ):
-                UNetProcessor(
-                    data_space=latent_space,
-                    kernel_size=test_kernel_size,
-                    n_forecast_steps=test_n_forecast_steps,
-                    n_history_steps=test_n_history_steps,
-                    start_out_channels=test_start_out_channels,
-                )
-            return
-
-        # Catch invalid start out channels
-        if test_start_out_channels <= 0:
-            with pytest.raises(
-                ValueError, match=r"Start out channels must be greater than 0."
-            ):
-                UNetProcessor(
-                    data_space=latent_space,
-                    kernel_size=test_kernel_size,
-                    n_forecast_steps=test_n_forecast_steps,
-                    n_history_steps=test_n_history_steps,
-                    start_out_channels=test_start_out_channels,
-                )
-            return
-
         processor = UNetProcessor(
             data_space=latent_space,
             kernel_size=test_kernel_size,
@@ -211,30 +240,22 @@ class TestUNetProcessor:
             n_history_steps=test_n_history_steps,
             start_out_channels=test_start_out_channels,
         )
-
-        # Create a tensor with the expected shape
         x = torch.randn(
             test_batch_size,
             test_n_history_steps,
             latent_space.channels,
             *latent_space.shape,
         )
-        _, _, _, height, width = x.shape
 
-        # We will either catch an error or see a successful run
-        if height % 16 or width % 16:
-            msg = f"Latent space height ({height}) and width ({width}) must each be divisible by 16 with a factor more than 1."
-            with pytest.raises(ValueError, match=re.escape(msg)):
-                processor.rollout(x)
-        else:
-            result = processor.rollout(x)
-            assert isinstance(result, ProcessorOutput)
-            assert result.prediction.shape == (
-                test_batch_size,
-                test_n_forecast_steps,
-                latent_space.channels,
-                *latent_space.shape,
-            )
+        result = processor.rollout(x)
+
+        assert isinstance(result, ProcessorOutput)
+        assert result.prediction.shape == (
+            test_batch_size,
+            test_n_forecast_steps,
+            latent_space.channels,
+            *latent_space.shape,
+        )
 
 
 class TestVitProcessor:
