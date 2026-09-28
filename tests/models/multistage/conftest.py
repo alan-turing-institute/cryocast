@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 from omegaconf import DictConfig
 
@@ -14,7 +16,7 @@ def encoder_stage(
     cfg_scheduler: DictConfig,
     cfg_lr_scheduler: DictConfig,
     cfg_loss: DictConfig,
-    cfg_metrics: list[str],
+    cfg_metrics: list[dict[str, Any]],
     cfg_decoder: DictConfig,
 ) -> EncoderStage:
     """An EncoderStage for the test-input dataset, with two history steps.
@@ -52,7 +54,7 @@ def decoder_stage(
     cfg_scheduler: DictConfig,
     cfg_lr_scheduler: DictConfig,
     cfg_loss: DictConfig,
-    cfg_metrics: list[str],
+    cfg_metrics: list[dict[str, Any]],
 ) -> DecoderStage:
     """A DecoderStage wrapping `encoder_stage`. Requires two history steps."""
     return DecoderStage(

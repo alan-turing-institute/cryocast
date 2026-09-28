@@ -8,48 +8,49 @@ Here we use six synthetic scenarios to show what each metric actually captures a
 ## Selecting which metrics run
 
 Which metrics are computed during training, validation, and testing is controlled by the `reporting.metrics` Hydra config group.
-
-```bash
-uv run imp train --config-name <config> reporting.metrics="[accuracy,mae,rmse]"
-```
-
-or in a config file:
+Each entry gives the metric's `name`, which is its key in logs and W&B, a Hydra `_target_` and any other constructor arguments:
 
 ```yaml
 reporting:
   metrics:
-    - accuracy
-    - sieerror
-    - fss_neighbourhood_size_5
+    - name: accuracy
+      _target_: icenet_mp.metrics.IceNetAccuracyPerForecastDay
+    - name: sieerror
+      _target_: icenet_mp.metrics.SeaIceExtentErrorPerForecastDay
+    - name: fss_neighbourhood_size_5
+      _target_: icenet_mp.metrics.FractionalSkillScorePerForecastDay
+      neighbourhood_size: 5
 ```
 
-Metric names are looked up in `icenet_mp.metrics.metric_registry`, apart from `fss_neighbourhood_size_<N>`, which runs FSS with an integer neighbourhood size `N`.
-An unknown name raises an error listing every registered one.
+See `icenet_mp/config/reporting/metrics/default.yaml` for the full default list.
+The same form works as a command-line override:
+
+```bash
+uv run imp train --config-name <config> \
+  'reporting.metrics=[{name: mae, _target_: icenet_mp.metrics.MAEPerForecastDay}]'
+```
 
 ## Adding your own metrics
 
-Applications that use IceNet-MP as a library can register their own metrics.
-A registered metric must be a `torchmetrics.Metric` whose constructor accepts a `land_mask` keyword argument.
-If it only makes sense for a single sea-ice-concentration channel, also inherit from `icenet_mp.metrics.SingleChannelMetricMixin`, so that it is skipped automatically for models that predict several channels.
+Any `torchmetrics.Metric` can be added as a metric, by adding an entry to `reporting.metrics` in the same form as the built-in metrics:
 
-1. Register the metric under a name:
+```yaml
+reporting:
+  metrics:
+    - name: mae
+      _target_: icenet_mp.metrics.MAEPerForecastDay
+    - name: my_metric
+      _target_: my_package.metrics.MyMetric
+      threshold: 0.3
+```
 
-    ```python
-    from icenet_mp.metrics import metric_registry
-    from torchmetrics import Metric
+The `name` is used as the metric's key in logs and W&B, and must be unique.
+Hydra imports the module itself, so this works through the `imp` CLI and when evaluating a saved checkpoint, without any extra set-up.
 
+Two mixins from `icenet_mp.metrics` change how the model treats a metric:
 
-    @metric_registry.register("my_metric")
-    class MyMetric(Metric): ...
-    ```
-
-2. Make sure that module is imported before the model is initialised.
-   Metric names are looked up when the model is created, so a metric registered afterwards will not be found.
-
-3. Request the metric by name in the `reporting.metrics` config, e.g. `reporting.metrics="[mae,my_metric]"`.
-
-!!! note
-    Registering a name that already exists, including a built-in one, raises an error.
+- `LandMaskMixin`: the model passes its land mask to the metric as a `land_mask` keyword argument, which the metric then uses for further calculations.
+- `SingleChannelMetricMixin`: the metric only makes sense for a single output channel (e.g. sea ice concentration), so it is skipped automatically for models that predict several channels.
 
 ## The scenarios
 

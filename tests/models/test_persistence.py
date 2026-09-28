@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from omegaconf import DictConfig
@@ -21,7 +23,7 @@ class TestPersistence:
         test_n_history_steps: int,
         test_target_variable_indices: list[int],
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         """Every lead is the last observed frame of the selected target variables."""
         # The target group is a 4-channel input, of which only some are predicted
@@ -58,7 +60,7 @@ class TestPersistence:
         assert torch.equal(result, expected)
 
     def test_forward_ignores_climatology_key(
-        self, cfg_loss: DictConfig, cfg_metrics: list[str]
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
         """An extra climatology batch key must not change a non-climatology model's output."""
         model = Persistence(
@@ -96,7 +98,9 @@ class TestPersistence:
 
         assert torch.equal(model(batch_without), model(batch_with))
 
-    def test_optimizer(self, cfg_loss: DictConfig, cfg_metrics: list[str]) -> None:
+    def test_optimizer(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
         model = Persistence(
             name="persistence",
             hemisphere="north",

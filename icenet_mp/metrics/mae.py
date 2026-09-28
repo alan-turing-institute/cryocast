@@ -1,10 +1,8 @@
 import torch
 
 from .base_daily_metric import BaseDailyMetric
-from .registry import metric_registry
 
 
-@metric_registry.register("mae")
 class MAEPerForecastDay(BaseDailyMetric):
     """Mean Absolute Error per forecast lead time."""
 

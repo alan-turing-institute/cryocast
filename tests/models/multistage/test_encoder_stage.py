@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from omegaconf import DictConfig
 
@@ -15,7 +17,7 @@ class TestEncoderStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         encoder_stage = EncoderStage(
             channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
@@ -96,7 +98,7 @@ class TestEncoderStage:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         template = EncodeProcessDecode(
             name="template",

@@ -3,10 +3,8 @@ import torch
 from icenet_mp.types import SEA_ICE_THRESHOLD
 
 from .base_ice_area_metric import MeanIceAreaMetric
-from .registry import metric_registry
 
 
-@metric_registry.register("sieerror")
 class SeaIceExtentErrorPerForecastDay(MeanIceAreaMetric):
     """Sea Ice Extent error (SIEError) metric (in km^2) for use at multiple lead times.
 

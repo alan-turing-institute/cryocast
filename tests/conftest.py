@@ -243,7 +243,13 @@ def cfg_model_service() -> DictConfig:
             },
             "reporting": {
                 "loggers": {},
-                "metrics": ["accuracy", "mae"],
+                "metrics": [
+                    {
+                        "name": "accuracy",
+                        "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+                    },
+                    {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+                ],
             },
             "train": {
                 "callbacks": {},
@@ -299,20 +305,47 @@ def cfg_lr_scheduler() -> DictConfig:
 
 
 @pytest.fixture
-def cfg_metrics() -> list[str]:
+def cfg_metrics() -> list[dict[str, Any]]:
     """Test configuration for a model's `metrics` list."""
     return [
-        "accuracy",
-        "mae",
-        "rmse",
-        "sieerror",
-        "iiee",
-        "diiee",
-        "centroid_error",
-        "fss_neighbourhood_size_1",
-        "fss_neighbourhood_size_5",
-        "fss_neighbourhood_size_15",
-        "ssim",
+        {
+            "name": "accuracy",
+            "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+        },
+        {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+        {"name": "rmse", "_target_": "icenet_mp.metrics.RMSEPerForecastDay"},
+        {
+            "name": "sieerror",
+            "_target_": "icenet_mp.metrics.SeaIceExtentErrorPerForecastDay",
+        },
+        {
+            "name": "iiee",
+            "_target_": "icenet_mp.metrics.IntegratedIceEdgeErrorPerForecastDay",
+        },
+        {
+            "name": "diiee",
+            "_target_": "icenet_mp.metrics.DistanceAveragedIceEdgeErrorPerForecastDay",
+        },
+        {
+            "name": "centroid_error",
+            "_target_": "icenet_mp.metrics.CentroidErrorPerForecastDay",
+        },
+        {
+            "name": "fss_neighbourhood_size_1",
+            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "neighbourhood_size": 1,
+        },
+        {
+            "name": "fss_neighbourhood_size_5",
+            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "neighbourhood_size": 5,
+        },
+        {
+            "name": "fss_neighbourhood_size_15",
+            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "neighbourhood_size": 15,
+        },
+        {"name": "ssim", "_target_": "icenet_mp.metrics.SSIMPerForecastDay"},
     ]
 
 

@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from omegaconf import DictConfig
@@ -98,7 +100,7 @@ class TestDecoderStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         with pytest.raises(ValueError, match=expected_message):
             DecoderStage(
@@ -145,7 +147,7 @@ class TestDecoderStage:
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         decoder_stage = DecoderStage.from_template(
             decoder=cfg_decoder,
@@ -162,5 +164,7 @@ class TestDecoderStage:
         assert decoder_stage.output_space.to_dict() == cfg_output_space
         assert decoder_stage.encoder_names == ["test-input"]
         # Single-channel metrics skipped by the multi-channel encoder stage are restored
-        assert set(decoder_stage.validation_metrics.keys()) == set(cfg_metrics)
+        assert set(decoder_stage.validation_metrics.keys()) == {
+            spec["name"] for spec in cfg_metrics
+        }
         assert decoder_stage.name == "target_decoder"

@@ -1,7 +1,6 @@
 import logging
-import re
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -19,11 +18,7 @@ from lightning.pytorch.utilities.types import (
 from omegaconf import DictConfig
 from torchmetrics import Metric, MetricCollection
 
-from icenet_mp.metrics import (
-    FractionalSkillScorePerForecastDay,
-    SingleChannelMetricMixin,
-    metric_registry,
-)
+from icenet_mp.metrics import LandMaskMixin, SingleChannelMetricMixin
 from icenet_mp.models.common import Mask
 from icenet_mp.types import (
     DataSpace,
@@ -57,7 +52,7 @@ class BaseModel(LightningModule, ABC):
         loss: DictConfig,
         mask_dir: str | Path | None = None,
         lr_scheduler: DictConfig,
-        metrics: list[str],
+        metrics: list[Mapping[str, Any]],
         n_forecast_steps: int,
         n_history_steps: int,
         name: str,
@@ -78,8 +73,10 @@ class BaseModel(LightningModule, ABC):
         metrics use it to exclude land/ice boundaries from ice-edge detection, so only
         ocean ice/no-ice transitions count as the sea-ice edge.
 
-        ``metrics`` is the list of metric names to compute during training,
-        validation, and testing.
+        ``metrics`` is the list of metrics to compute during training, validation, and
+        testing. A TypeError is raised if an entry is not a mapping with string
+        ``name`` and ``_target_`` keys, and a ValueError if a name is used more than
+        once.
         """
         super().__init__(**kwargs)
 
@@ -111,7 +108,25 @@ class BaseModel(LightningModule, ABC):
         self.scheduler_cfg = scheduler
         self.lr_scheduler_cfg = lr_scheduler
         self.loss_cfg = loss
-        self.metric_names = list(metrics)
+
+        # Validate and store the metric configs
+        self.metric_cfgs: dict[str, dict[str, Any]] = {}
+        for metric_cfg in metrics:
+            if not (
+                isinstance(metric_cfg, Mapping)
+                and isinstance(metric_name := metric_cfg.get("name"), str)
+                and isinstance(metric_cfg.get("_target_"), str)
+            ):
+                msg = (
+                    f"Metric config {metric_cfg!r} must be a mapping with 'name' and "
+                    "'_target_' keys, e.g. {'name': 'mae', '_target_': "
+                    "'my_package.my_metric.MyMetricClass'}."
+                )
+                raise TypeError(msg)
+            if metric_name in self.metric_cfgs:
+                msg = f"Metric name {metric_name!r} is configured more than once."
+                raise ValueError(msg)
+            self.metric_cfgs[metric_name] = dict(metric_cfg)
 
         # Land mask for ice-edge metrics (excludes land/ice boundaries from FSS/DIIEE).
         try:
@@ -127,9 +142,9 @@ class BaseModel(LightningModule, ABC):
         self.test_metrics = self.build_metrics(land_mask)
         self.train_metrics = self.build_metrics(land_mask)
         self.validation_metrics = self.build_metrics(land_mask)
-        if skipped := [m for m in self.metric_names if m not in self.test_metrics]:
+        if skipped := [met for met in self.metric_cfgs if met not in self.test_metrics]:
             log.warning(
-                "Disabling single-channel metrics for %s (predicting %d channels): %s.",
+                "Disabling single-channel metrics for %s (%d output channels): %s.",
                 type(self).__name__,
                 self.output_space.channels,
                 ", ".join(skipped),
@@ -152,7 +167,12 @@ class BaseModel(LightningModule, ABC):
         return False
 
     def build_metrics(self, land_mask: torch.Tensor | None) -> MetricCollection:
-        """Build a metric collection from the configured metric names.
+        """Build a metric collection from the configured metrics.
+
+        Each configured metric is a mapping with a ``name`` (its key in logs), a Hydra
+        ``_target_`` and any other constructor arguments, e.g.
+        ``{"name": "my_metric", "_target_": "my_package.MyMetric", "k": 3}``. Targets
+        that subclass `LandMaskMixin` are also given the land mask.
 
         This should include only metrics that are compatible with the output space. We
         therefore filter out single-channel metrics from the metric collection if the
@@ -160,28 +180,22 @@ class BaseModel(LightningModule, ABC):
 
         Args:
             land_mask: Optional tensor of shape (H, W) with 1 for land pixels and 0 for
-                       ocean pixels. This is used to exclude land pixels from ice-edge
-                       metrics.
+                       ocean pixels. This is passed to every `LandMaskMixin` metric,
+                       and is used to exclude land pixels from the metric.
 
         Returns:
             A MetricCollection containing the requested metrics.
 
-        Raises:
-            ValueError: If a metric name is neither registered in
-                        `icenet_mp.metrics.metric_registry` nor of the form
-                        "fss_neighbourhood_size_<N>" for an integer N.
-
         """
-        requested: dict[str, Metric] = {
-            name: (
-                FractionalSkillScorePerForecastDay(
-                    neighbourhood_size=int(fss[1]), land_mask=land_mask
-                )
-                if (fss := re.fullmatch(r"fss_neighbourhood_size_(\d+)", name))
-                else metric_registry.get(name)(land_mask=land_mask)
-            )
-            for name in self.metric_names
-        }
+        requested: dict[str, Metric] = {}
+        for name, metric_cfg in self.metric_cfgs.items():
+            # Build fresh arguments, so the stored config is never modified
+            kwargs = {key: value for key, value in metric_cfg.items() if key != "name"}
+            target = hydra.utils.get_object(kwargs["_target_"])
+            # Only metrics that use a land mask are given one
+            if isinstance(target, type) and issubclass(target, LandMaskMixin):
+                kwargs["land_mask"] = land_mask
+            requested[name] = hydra.utils.instantiate(kwargs)
         return MetricCollection(
             {
                 name: metric

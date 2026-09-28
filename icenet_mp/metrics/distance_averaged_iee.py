@@ -4,10 +4,8 @@ from icenet_mp.types import SEA_ICE_THRESHOLD
 
 from .base_ice_area_metric import BaseIceAreaMetric
 from .helpers import binary_ice_edge
-from .registry import metric_registry
 
 
-@metric_registry.register("diiee")
 class DistanceAveragedIceEdgeErrorPerForecastDay(BaseIceAreaMetric):
     """Distance-averaged Integrated Ice Edge Error (DIIEE), in km, per lead time.
 

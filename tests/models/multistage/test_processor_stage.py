@@ -44,7 +44,7 @@ class TestProcessorStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
         cfg_decoder: DictConfig,
     ) -> EncoderStage:
         # The target encoder encodes the forecast target itself, not a raw input
@@ -86,7 +86,7 @@ class TestProcessorStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> ProcessorStage:
         return ProcessorStage(
             processor=cfg_processor,
@@ -254,7 +254,7 @@ class TestProcessorStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         skip_connection_decoder = DictConfig(
             {

@@ -1,13 +1,15 @@
 import logging
-import re
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 import torch
+from hydra.errors import InstantiationException
 from omegaconf import DictConfig, OmegaConf
+from torchmetrics import MeanSquaredError
 
+import icenet_mp
 from icenet_mp.metrics import (
     CentroidErrorPerForecastDay,
     DistanceAveragedIceEdgeErrorPerForecastDay,
@@ -23,6 +25,23 @@ from icenet_mp.metrics import (
 )
 from icenet_mp.models import BaseModel
 from icenet_mp.types import Hemisphere, ModelStepOutput, TensorNTCHW
+
+# The metrics configured by default, which also checks that the shipped config is valid
+DEFAULT_METRICS: list[Any] = OmegaConf.to_container(  # type: ignore[assignment]
+    OmegaConf.load(
+        Path(icenet_mp.__file__).parent / "config/reporting/metrics/default.yaml"
+    )
+)
+
+
+def metric_spec(name: str, metric_type: type, **kwargs: Any) -> dict[str, Any]:
+    """Build a metric config entry for this metric class."""
+    return {
+        "name": name,
+        "_target_": f"{metric_type.__module__}.{metric_type.__qualname__}",
+        **kwargs,
+    }
+
 
 NON_FSS_METRIC_TYPES = {
     "accuracy": IceNetAccuracyPerForecastDay,
@@ -44,24 +63,7 @@ class FakeDataModel(BaseModel):
         loss_cfg = kwargs.pop(
             "loss", OmegaConf.create({"_target_": "torch.nn.HuberLoss", "delta": 0.5})
         )
-        metrics = kwargs.pop(
-            "metrics",
-            [
-                "accuracy",
-                "mae",
-                "rmse",
-                "sieerror",
-                "iiee",
-                "diiee",
-                "centroid_error",
-                "fss_neighbourhood_size_1",
-                "fss_neighbourhood_size_5",
-                "fss_neighbourhood_size_15",
-                "ssim",
-                "spatial_mean_ground_truth",
-                "spatial_mean_prediction",
-            ],
-        )
+        metrics = kwargs.pop("metrics", DEFAULT_METRICS)
         super().__init__(
             *args, loss=loss_cfg, metrics=metrics, hemisphere=Hemisphere.NORTH, **kwargs
         )
@@ -181,6 +183,9 @@ class TestBaseModel:
         )
         land_mask = getattr(model.train_metrics["accuracy"], "land_mask")  # noqa: B009
         assert land_mask.all()
+        # The land mask is passed to metrics without being written into their configs
+        assert all("land_mask" not in spec for spec in model.metric_cfgs.values())
+        assert all("land_mask" not in spec for spec in DEFAULT_METRICS)
 
     def test_loss(
         self, cfg_input_space: DictConfig, cfg_output_space: DictConfig
@@ -351,14 +356,14 @@ class TestBaseModel:
             "spatial_mean_prediction",
         }
         # The requested list is kept so that it can be passed on unchanged
-        assert "accuracy" in model.metric_names
+        assert "accuracy" in model.metric_cfgs
         output = model.test_step(batch, 0)
         assert isinstance(output, ModelStepOutput)
 
 
 class TestBaseModelMetricSelection:
     @staticmethod
-    def _build_model(metrics: list[str]) -> FakeDataModel:
+    def _build_model(metrics: list[Any]) -> FakeDataModel:
         return FakeDataModel(
             name="fake data",
             input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
@@ -371,70 +376,124 @@ class TestBaseModelMetricSelection:
             lr_scheduler=DictConfig({}),
         )
 
+    def test_default_config_builds_every_metric(self) -> None:
+        model = self._build_model(DEFAULT_METRICS)
+
+        assert set(model.train_metrics.keys()) == set(model.metric_cfgs)
+        assert len(model.metric_cfgs) == 13
+
     @pytest.mark.parametrize(
         ("metric_name", "metric_type"), list(NON_FSS_METRIC_TYPES.items())
     )
     def test_non_fss_metric_selection(
         self, metric_name: str, metric_type: type
     ) -> None:
-        model = self._build_model([metric_name])
+        model = self._build_model([metric_spec(metric_name, metric_type)])
 
         assert set(model.train_metrics.keys()) == {metric_name}
         assert isinstance(model.train_metrics[metric_name], metric_type)
 
     @pytest.mark.parametrize("neighbourhood_size", [1, 3, 7, 15])
-    def test_fss_metric_selection_parses_neighbourhood_size(
+    def test_fss_metric_neighbourhood_size_from_config(
         self, neighbourhood_size: int
     ) -> None:
-        metric_name = f"fss_neighbourhood_size_{neighbourhood_size}"
-        model = self._build_model([metric_name])
+        spec = metric_spec(
+            "fss",
+            FractionalSkillScorePerForecastDay,
+            neighbourhood_size=neighbourhood_size,
+        )
+        model = self._build_model([spec])
 
-        metric = model.train_metrics[metric_name]
+        metric = model.train_metrics["fss"]
         assert isinstance(metric, FractionalSkillScorePerForecastDay)
         assert metric.neighbourhood_size == neighbourhood_size
 
     def test_multiple_metrics_are_all_present_and_exclusive(self) -> None:
-        selected = ["accuracy", "rmse", "fss_neighbourhood_size_7", "ssim"]
-        model = self._build_model(selected)
+        specs = [
+            metric_spec("accuracy", IceNetAccuracyPerForecastDay),
+            metric_spec("rmse", RMSEPerForecastDay),
+            metric_spec(
+                "fss_7", FractionalSkillScorePerForecastDay, neighbourhood_size=7
+            ),
+            metric_spec("ssim", SSIMPerForecastDay),
+        ]
+        model = self._build_model(specs)
 
-        assert set(model.train_metrics.keys()) == set(selected)
+        assert set(model.train_metrics.keys()) == {"accuracy", "rmse", "fss_7", "ssim"}
 
     def test_metric_collections_are_built_identically(self) -> None:
         """train/test/validation metrics are independent copies of one selection."""
-        model = self._build_model(["accuracy", "fss_neighbourhood_size_7"])
+        model = self._build_model(
+            [
+                metric_spec("accuracy", IceNetAccuracyPerForecastDay),
+                metric_spec("mae", MAEPerForecastDay),
+            ]
+        )
 
         assert (
             set(model.train_metrics.keys())
             == set(model.test_metrics.keys())
             == set(model.validation_metrics.keys())
         )
+        assert model.train_metrics["mae"] is not model.test_metrics["mae"]
 
     def test_empty_metrics_list_builds_no_metrics(self) -> None:
         model = self._build_model([])
 
         assert set(model.train_metrics.keys()) == set()
 
+    def test_model_metric_names_and_specs(self) -> None:
+        specs = [
+            metric_spec("accuracy", IceNetAccuracyPerForecastDay),
+            metric_spec(
+                "fss_9", FractionalSkillScorePerForecastDay, neighbourhood_size=9
+            ),
+        ]
+        model = self._build_model(specs)
+
+        assert list(model.metric_cfgs) == ["accuracy", "fss_9"]
+        # The original config entries are kept so that they can be passed on unchanged
+        assert list(model.metric_cfgs.values()) == specs
+
+    def test_metric_accepts_dictconfig(self) -> None:
+        spec = OmegaConf.create(metric_spec("my_mae", MAEPerForecastDay))
+        model = self._build_model([spec])
+
+        assert isinstance(model.train_metrics["my_mae"], MAEPerForecastDay)
+
+    def test_metric_without_land_mask_mixin_is_not_given_land_mask(self) -> None:
+        """Non-LandMaskMixin metrics need not accept a land_mask argument."""
+        model = self._build_model([metric_spec("mse", MeanSquaredError)])
+
+        assert isinstance(model.train_metrics["mse"], MeanSquaredError)
+
     @pytest.mark.parametrize(
-        "metric_name",
+        "spec",
         [
-            "not-a-real-metric",
-            "fss_neighbourhood_size_",
-            "fss_neighbourhood_size_not_an_int",
-            "fss_neighbourhood_size_3.0",
+            "mae",
+            {"_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+            {"name": "mae"},
+            {"name": 1, "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
         ],
-        ids=["unknown", "fss-no-size", "fss-non-int-size", "fss-float-size"],
+        ids=["plain-name", "no-name", "no-target", "non-string-name"],
     )
-    def test_unknown_metric_name_raises_value_error(self, metric_name: str) -> None:
+    def test_invalid_metric_config_raises(self, spec: object) -> None:
         with pytest.raises(
-            ValueError, match=re.escape(f"Unknown metric name {metric_name!r}")
+            TypeError, match="must be a mapping with 'name' and '_target_' keys"
         ):
-            self._build_model([metric_name])
+            self._build_model([spec])
+
+    def test_duplicate_metric_name_raises(self) -> None:
+        specs = [
+            metric_spec("mae", MAEPerForecastDay),
+            metric_spec("mae", RMSEPerForecastDay),
+        ]
+        with pytest.raises(ValueError, match="'mae' is configured more than once"):
+            self._build_model(specs)
 
     def test_fss_even_neighbourhood_size_raises(self) -> None:
-        with pytest.raises(ValueError, match="positive odd integer"):
-            self._build_model(["fss_neighbourhood_size_4"])
-
-    def test_model_metrics_attribute_matches_requested_list(self) -> None:
-        selected = ["accuracy", "mae"]
-        model = self._build_model(selected)
-        assert model.metric_names == selected
+        spec = metric_spec(
+            "fss", FractionalSkillScorePerForecastDay, neighbourhood_size=4
+        )
+        with pytest.raises(InstantiationException, match="positive odd integer"):
+            self._build_model([spec])

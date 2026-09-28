@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from omegaconf import DictConfig
@@ -19,7 +21,7 @@ class TestClimatology:
         test_n_history_steps: int,
         test_output_shape: tuple[int, int, int],
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         input_space = {
             "channels": test_input_shape[2],
@@ -72,7 +74,9 @@ class TestClimatology:
         assert result.shape == batch["target"].shape
         assert torch.equal(result, batch["climatology"])
 
-    def test_optimizer(self, cfg_loss: DictConfig, cfg_metrics: list[str]) -> None:
+    def test_optimizer(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
         model = Climatology(
             name="climatology",
             hemisphere="north",

@@ -2,7 +2,6 @@ import torch
 
 from .base_daily_metric import BaseDailyMetric
 from .helpers import SingleChannelMetricMixin
-from .registry import metric_registry
 
 # Frames whose target has less total mass than this are treated as empty (undefined
 # centroid) and excluded from the average; it also floors the denominator so the
@@ -10,7 +9,6 @@ from .registry import metric_registry
 _EMPTY_MASS_THRESHOLD = 1e-8
 
 
-@metric_registry.register("centroid_error")
 class CentroidErrorPerForecastDay(SingleChannelMetricMixin, BaseDailyMetric):
     """Euclidean distance (in pixels) between the predicted and target centroids.
 
