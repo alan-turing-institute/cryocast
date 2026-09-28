@@ -1,9 +1,13 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
+import pytest
 from omegaconf import DictConfig
 
+from icenet_mp.data import CommonDataModule
 from icenet_mp.feature_importance import compute_feature_importance
+from icenet_mp.types import ArrayTCHW
 
 
 def _cfg(
@@ -80,3 +84,27 @@ class TestComputeFeatureImportance:
             "sic-target/ice_thickness",
             "sic-target/temperature",
         }
+
+    def test_raises_on_nan_input(
+        self, mock_dataset: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A NaN cell should raise a clear error rather than an opaque sklearn one."""
+        base_path = mock_dataset.parents[2]
+        config = _cfg(
+            base_path,
+            {"ds1": {"name": "mock_dataset", "group_as": "group1"}},
+            target_group="group1",
+        )
+        original_train_dataloader = CommonDataModule.train_dataloader
+
+        def _nan_train_dataloader(
+            self: CommonDataModule,
+        ) -> Iterator[dict[str, ArrayTCHW]]:
+            for batch in original_train_dataloader(self):
+                batch["group1"][0, 0, 0, 0, 0] = float("nan")
+                yield batch
+
+        monkeypatch.setattr(CommonDataModule, "train_dataloader", _nan_train_dataloader)
+
+        with pytest.raises(ValueError, match="NaN or inf"):
+            compute_feature_importance(config, n_estimators=10)
