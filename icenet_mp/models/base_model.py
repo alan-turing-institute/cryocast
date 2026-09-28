@@ -1,7 +1,8 @@
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from functools import cached_property, partial
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -19,18 +20,9 @@ from omegaconf import DictConfig
 from torchmetrics import Metric, MetricCollection
 
 from icenet_mp.metrics import (
-    CentroidErrorPerForecastDay,
-    DistanceAveragedIceEdgeErrorPerForecastDay,
     FractionalSkillScorePerForecastDay,
-    IceNetAccuracyPerForecastDay,
-    IntegratedIceEdgeErrorPerForecastDay,
-    MAEPerForecastDay,
-    RMSEPerForecastDay,
-    SeaIceExtentErrorPerForecastDay,
     SingleChannelMetricMixin,
-    SpatialMeanGroundTruthPerForecastDay,
-    SpatialMeanPredictionPerForecastDay,
-    SSIMPerForecastDay,
+    metric_registry,
 )
 from icenet_mp.models.common import Mask
 from icenet_mp.types import (
@@ -131,42 +123,10 @@ class BaseModel(LightningModule, ABC):
         except FileNotFoundError:
             land_mask = None
 
-        # Metrics
-        fss_metric_classes: dict[str, Callable[[], Metric]] = {
-            f"fss_neighbourhood_size_{neighbourhood_size}": partial(
-                FractionalSkillScorePerForecastDay,
-                neighbourhood_size=neighbourhood_size,
-                land_mask=land_mask,
-            )
-            for neighbourhood_size in (
-                int(name.removeprefix("fss_neighbourhood_size_"))
-                for name in self.metric_names
-                if name.startswith("fss_neighbourhood_size_")
-            )
-        }
-        _metric_classes: dict[str, Callable[[], Metric]] = {
-            "accuracy": partial(IceNetAccuracyPerForecastDay, land_mask=land_mask),
-            "centroid_error": partial(CentroidErrorPerForecastDay, land_mask=land_mask),
-            "diiee": partial(
-                DistanceAveragedIceEdgeErrorPerForecastDay, land_mask=land_mask
-            ),
-            **fss_metric_classes,
-            "iiee": partial(IntegratedIceEdgeErrorPerForecastDay, land_mask=land_mask),
-            "mae": partial(MAEPerForecastDay, land_mask=land_mask),
-            "rmse": partial(RMSEPerForecastDay, land_mask=land_mask),
-            "sieerror": partial(SeaIceExtentErrorPerForecastDay, land_mask=land_mask),
-            "spatial_mean_ground_truth": partial(
-                SpatialMeanGroundTruthPerForecastDay, land_mask=land_mask
-            ),
-            "spatial_mean_prediction": partial(
-                SpatialMeanPredictionPerForecastDay, land_mask=land_mask
-            ),
-            "ssim": partial(SSIMPerForecastDay, land_mask=land_mask),
-        }
-
-        self.test_metrics = self.build_metrics(_metric_classes)
-        self.train_metrics = self.build_metrics(_metric_classes)
-        self.validation_metrics = self.build_metrics(_metric_classes)
+        # Build test/train/validation metrics
+        self.test_metrics = self.build_metrics(land_mask)
+        self.train_metrics = self.build_metrics(land_mask)
+        self.validation_metrics = self.build_metrics(land_mask)
         if skipped := [m for m in self.metric_names if m not in self.test_metrics]:
             log.warning(
                 "Disabling single-channel metrics for %s (predicting %d channels): %s.",
@@ -191,23 +151,43 @@ class BaseModel(LightningModule, ABC):
     def multistage_only(self) -> bool:
         return False
 
-    def build_metrics(
-        self, metric_classes: dict[str, Callable[[], Metric]]
-    ) -> MetricCollection:
+    def build_metrics(self, land_mask: torch.Tensor | None) -> MetricCollection:
         """Build a metric collection from the configured metric names.
 
         This should include only metrics that are compatible with the output space. We
         therefore filter out single-channel metrics from the metric collection if the
         model will predict multiple channels.
+
+        Args:
+            land_mask: Optional tensor of shape (H, W) with 1 for land pixels and 0 for
+                       ocean pixels. This is used to exclude land pixels from ice-edge
+                       metrics.
+
+        Returns:
+            A MetricCollection containing the requested metrics.
+
+        Raises:
+            ValueError: If a metric name is neither registered in
+                        `icenet_mp.metrics.metric_registry` nor of the form
+                        "fss_neighbourhood_size_<N>" for an integer N.
+
         """
+        requested: dict[str, Metric] = {
+            name: (
+                FractionalSkillScorePerForecastDay(
+                    neighbourhood_size=int(fss[1]), land_mask=land_mask
+                )
+                if (fss := re.fullmatch(r"fss_neighbourhood_size_(\d+)", name))
+                else metric_registry.get(name)(land_mask=land_mask)
+            )
+            for name in self.metric_names
+        }
         return MetricCollection(
             {
                 name: metric
-                for name, metric in {
-                    name: metric_classes[name]() for name in self.metric_names
-                }.items()
-                if (self.output_space.channels == 1)
-                or (not isinstance(metric, SingleChannelMetricMixin))
+                for name, metric in requested.items()
+                if self.output_space.channels == 1
+                or not isinstance(metric, SingleChannelMetricMixin)
             }
         )
 

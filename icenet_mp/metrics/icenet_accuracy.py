@@ -4,8 +4,10 @@ from torchmetrics import Metric
 from icenet_mp.types import SEA_ICE_THRESHOLD
 
 from .helpers import AccumulatorMixin, LandMaskMixin, SingleChannelMetricMixin
+from .registry import metric_registry
 
 
+@metric_registry.register("accuracy")
 class IceNetAccuracyPerForecastDay(
     SingleChannelMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
 ):

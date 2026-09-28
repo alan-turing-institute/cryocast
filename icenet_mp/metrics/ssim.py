@@ -2,8 +2,10 @@ import torch
 import torch.nn.functional as F
 
 from .base_daily_metric import BaseDailyMetric
+from .registry import metric_registry
 
 
+@metric_registry.register("ssim")
 class SSIMPerForecastDay(BaseDailyMetric):
     """Structural Similarity Index (SSIM) per forecast lead time.
 

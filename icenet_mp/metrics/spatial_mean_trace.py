@@ -1,8 +1,10 @@
 import torch
 
 from .base_daily_metric import BaseDailyMetric
+from .registry import metric_registry
 
 
+@metric_registry.register("spatial_mean_ground_truth")
 class SpatialMeanGroundTruthPerForecastDay(BaseDailyMetric):
     """Land-masked spatial-mean ground-truth value per forecast lead time.
 
@@ -20,6 +22,7 @@ class SpatialMeanGroundTruthPerForecastDay(BaseDailyMetric):
         return targets
 
 
+@metric_registry.register("spatial_mean_prediction")
 class SpatialMeanPredictionPerForecastDay(BaseDailyMetric):
     """Land-masked spatial-mean prediction value per forecast lead time.
 

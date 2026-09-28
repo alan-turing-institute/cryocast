@@ -23,6 +23,34 @@ reporting:
     - fss_neighbourhood_size_5
 ```
 
+Metric names are looked up in `icenet_mp.metrics.metric_registry`, apart from `fss_neighbourhood_size_<N>`, which runs FSS with an integer neighbourhood size `N`.
+An unknown name raises an error listing every registered one.
+
+## Adding your own metrics
+
+Applications that use IceNet-MP as a library can register their own metrics.
+A registered metric must be a `torchmetrics.Metric` whose constructor accepts a `land_mask` keyword argument.
+If it only makes sense for a single sea-ice-concentration channel, also inherit from `icenet_mp.metrics.SingleChannelMetricMixin`, so that it is skipped automatically for models that predict several channels.
+
+1. Register the metric under a name:
+
+    ```python
+    from icenet_mp.metrics import metric_registry
+    from torchmetrics import Metric
+
+
+    @metric_registry.register("my_metric")
+    class MyMetric(Metric): ...
+    ```
+
+2. Make sure that module is imported before the model is initialised.
+   Metric names are looked up when the model is created, so a metric registered afterwards will not be found.
+
+3. Request the metric by name in the `reporting.metrics` config, e.g. `reporting.metrics="[mae,my_metric]"`.
+
+!!! note
+    Registering a name that already exists, including a built-in one, raises an error.
+
 ## The scenarios
 
 All metrics below are computed against the same synthetic truth (a circular ice cap that shrinks over six forecast days, standing in for melt) and six prediction scenarios that implement a different type of error:

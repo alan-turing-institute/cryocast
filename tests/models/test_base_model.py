@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -413,9 +414,21 @@ class TestBaseModelMetricSelection:
 
         assert set(model.train_metrics.keys()) == set()
 
-    def test_unknown_metric_name_raises_key_error(self) -> None:
-        with pytest.raises(KeyError):
-            self._build_model(["not-a-real-metric"])
+    @pytest.mark.parametrize(
+        "metric_name",
+        [
+            "not-a-real-metric",
+            "fss_neighbourhood_size_",
+            "fss_neighbourhood_size_not_an_int",
+            "fss_neighbourhood_size_3.0",
+        ],
+        ids=["unknown", "fss-no-size", "fss-non-int-size", "fss-float-size"],
+    )
+    def test_unknown_metric_name_raises_value_error(self, metric_name: str) -> None:
+        with pytest.raises(
+            ValueError, match=re.escape(f"Unknown metric name {metric_name!r}")
+        ):
+            self._build_model([metric_name])
 
     def test_fss_even_neighbourhood_size_raises(self) -> None:
         with pytest.raises(ValueError, match="positive odd integer"):

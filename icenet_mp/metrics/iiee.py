@@ -3,8 +3,10 @@ import torch
 from icenet_mp.types import SEA_ICE_THRESHOLD
 
 from .base_ice_area_metric import MeanIceAreaMetric
+from .registry import metric_registry
 
 
+@metric_registry.register("iiee")
 class IntegratedIceEdgeErrorPerForecastDay(MeanIceAreaMetric):
     """Integrated Ice Edge Error (IIEE) metric (in km^2) for use at multiple lead times.
 
