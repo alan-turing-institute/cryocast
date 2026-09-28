@@ -16,15 +16,14 @@ class IceNetAccuracyPerForecastDay(
 
     """
 
-    def __init__(self, land_mask: torch.Tensor | None = None) -> None:
-        """Initialize the IceNetAccuracy metric.
+    def __init__(self, *, land_mask: torch.Tensor | None = None) -> None:
+        """Initialise the IceNetAccuracy metric.
 
-        Parameters
-        ----------
-        land_mask : torch.Tensor, optional
-            Boolean tensor of shape (H, W), True for ocean cells and False for land.
-            When given, land cells are excluded from the accuracy calculation
-            entirely, rather than counted as trivially-correct "no ice" agreements.
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the accuracy
+                calculation entirely, rather than counted as trivially-correct "no ice"
+                agreements.
 
         """
         super().__init__()

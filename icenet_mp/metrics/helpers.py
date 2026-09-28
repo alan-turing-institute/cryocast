@@ -43,24 +43,24 @@ def binary_ice_edge(
 ) -> torch.Tensor:
     """Boolean ice-edge map: True for ice cells that border a non-ice ocean cell.
 
-    Parameters
-    ----------
-    ice_mask : torch.Tensor
-        Boolean tensor of shape (N, H, W).
-    land_mask : torch.Tensor, optional
-        Boolean tensor of shape (H, W), True for ocean cells and False for land.
-        When given, land cells are excluded from the edge test — both as neighbors
-        (an ice cell bordering only land is not counted as an edge cell, though it
-        is still counted if it also borders true open water) and from the returned
-        map itself, so a land cell is never reported as an edge cell even if its raw
-        (unmasked) value happens to read as "ice".
-
     Cells beyond the grid boundary are treated as matching the cell they border (via
     replicate padding), rather than being manufactured as non-ice: the domain's own
     edge is not itself an ice/ocean transition, so it should not be able to invent a
     disagreement just because a real edge would need one more ring of pixels to
     resolve. A genuine ice edge that runs along the domain boundary is still detected
     normally, since it disagrees with its interior (in-grid) neighbors regardless.
+
+    Args:
+        ice_mask: Boolean tensor of shape (N, H, W).
+        land_mask: Boolean tensor of shape (H, W), True for ocean cells and False for
+            land. When given, land cells are excluded from the edge test — both as
+            neighbors (an ice cell bordering only land is not counted as an edge cell,
+            though it is still counted if it also borders true open water) and from the
+            returned map itself, so a land cell is never reported as an edge cell even
+            if its raw (unmasked) value happens to read as "ice".
+
+    Returns:
+        Boolean tensor of shape (N, H, W), True for ice-edge cells.
 
     """
     comparison_mask = ice_mask

@@ -179,9 +179,9 @@ class BaseModel(LightningModule, ABC):
         model will predict multiple channels.
 
         Args:
-            land_mask: Optional tensor of shape (H, W) with 1 for land pixels and 0 for
-                       ocean pixels. This is passed to every `LandMaskMixin` metric,
-                       and is used to exclude land pixels from the metric.
+            land_mask: Optional boolean tensor of shape (H, W), True for ocean cells and
+                       False for land. This is passed to every `LandMaskMixin`
+                       metric, and is used to exclude land cells from the metric.
 
         Returns:
             A MetricCollection containing the requested metrics.

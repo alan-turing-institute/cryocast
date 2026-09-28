@@ -37,19 +37,18 @@ class FractionalSkillScorePerForecastDay(
     """
 
     def __init__(
-        self, neighbourhood_size: int = 1, land_mask: torch.Tensor | None = None
+        self, *, land_mask: torch.Tensor | None = None, neighbourhood_size: int = 1
     ) -> None:
-        """Initialize the FSS metric.
+        """Initialise the FSS metric.
 
-        Parameters
-        ----------
-        neighbourhood_size: int, optional
-            Size (in pixels) of the square neighbourhood window used to compute local
-            edge-cell fractions. Must be a positive odd integer (default is 1).
-        land_mask: torch.Tensor, optional
-            Boolean tensor of shape (H, W), True for ocean cells and False for land.
-            When given, land/ice boundaries are excluded from the ice-edge detection,
-            so only ocean ice/no-ice transitions count as the sea-ice edge.
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land/ice boundaries are excluded from the ice-edge
+                detection, so only ocean ice/no-ice transitions count as the sea-ice
+                edge.
+            neighbourhood_size: Size (in pixels) of the square neighbourhood window used
+                to compute local edge-cell fractions. Must be a positive odd integer
+                (default is 1).
 
         """
         super().__init__()
@@ -81,10 +80,8 @@ class FractionalSkillScorePerForecastDay(
     def _neighborhood_fraction(self, edge: torch.Tensor) -> torch.Tensor:
         """Local fraction of edge cells within an n x n window of each cell.
 
-        Parameters
-        ----------
-        edge : torch.Tensor
-            Boolean tensor of shape (N, H, W).
+        Args:
+            edge: Boolean tensor of shape (N, H, W).
 
         """
         n = self.neighbourhood_size
@@ -100,12 +97,11 @@ class FractionalSkillScorePerForecastDay(
         Sampling every n-th cell at each of the n x n offsets removes the dependency
         of the MSE on a single, arbitrary alignment of the neighbourhood window.
 
-        Parameters
-        ----------
-        lambda_truth : torch.Tensor
-            Local edge-cell fraction field for the target, shape (N, H, W).
-        lambda_model : torch.Tensor
-            Local edge-cell fraction field for the prediction, shape (N, H, W).
+        Args:
+            lambda_truth: Local edge-cell fraction field for the target, of shape
+                (N, H, W).
+            lambda_model: Local edge-cell fraction field for the prediction, of shape
+                (N, H, W).
 
         """
         n = self.neighbourhood_size
@@ -147,12 +143,9 @@ class FractionalSkillScorePerForecastDay(
     ) -> None:
         """Update the FSS accumulators.
 
-        Parameters
-        ----------
-        preds : torch.Tensor
-            Model predictions of shape (B, T, C, H, W).
-        target : torch.Tensor
-            Ground truth values of shape (B, T, C, H, W).
+        Args:
+            preds: Model predictions of shape (B, T, C, H, W).
+            target: Ground truth values of shape (B, T, C, H, W).
 
         """
         self.ensure_single_channel(preds, target)
