@@ -137,6 +137,14 @@ See [Run a hyperparameter sweep](../how-to/sweeps.md) for the full workflow.
 uv run imp evaluate --checkpoint PATH_TO_A_CHECKPOINT
 ```
 
+Pass `--save-predictions` to save denormalised model predictions for the configured test period in NetCDF format, written to `predictions.nc` in the run's directory:
+
+```bash
+uv run imp evaluate --checkpoint PATH_TO_A_CHECKPOINT --save-predictions
+```
+
+Use `data.split.test` to control which dates are exported. NetCDF export currently requires single-process evaluation.
+
 ### Visualisations
 
 To plot static images or animations of the raw input data, add the following to your local config:

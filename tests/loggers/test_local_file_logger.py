@@ -56,8 +56,8 @@ def test_log_image_uses_unique_sanitised_filenames(tmp_path: Path) -> None:
     second_path = second.save.call_args.args[0]
     assert isinstance(first_path, Path)
     assert isinstance(second_path, Path)
-    assert first_path.name == "00000__validation__output__static__sic_0.png"
-    assert second_path.name == "00001__validation__output__static__sic_0.png"
+    assert first_path.name == "00000_validation_output_static_sic_0.png"
+    assert second_path.name == "00001_validation_output_static_sic_0.png"
     assert first_path.parent == tmp_path / "images"
 
 
@@ -68,7 +68,7 @@ def test_log_image_respects_explicit_step(tmp_path: Path) -> None:
 
     logger.log_image("forecast", [image], step=23)
 
-    assert image.save.call_args.args[0].name == "00023__forecast_0.png"
+    assert image.save.call_args.args[0].name == "00023_forecast_0.png"
 
 
 def test_log_image_skips_non_image_objects(tmp_path: Path, caplog) -> None:  # noqa: ANN001
@@ -89,7 +89,7 @@ def test_log_video_rewinds_and_writes_requested_format(tmp_path: Path) -> None:
 
     logger.log_video("forecast/video", [video], step=7, format=["gif"])
 
-    output = tmp_path / "videos" / "00007__forecast__video_0.gif"
+    output = tmp_path / "videos" / "00007_forecast_video_0.gif"
     assert output.read_bytes() == b"video-bytes"
     assert video.tell() == len(b"video-bytes")
 
@@ -101,5 +101,5 @@ def test_log_video_defaults_to_mp4_and_increments_call_index(tmp_path: Path) -> 
     logger.log_video("forecast", [BytesIO(b"one")])
     logger.log_video("forecast", [BytesIO(b"two")])
 
-    assert (tmp_path / "videos" / "00000__forecast_0.mp4").read_bytes() == b"one"
-    assert (tmp_path / "videos" / "00001__forecast_0.mp4").read_bytes() == b"two"
+    assert (tmp_path / "videos" / "00000_forecast_0.mp4").read_bytes() == b"one"
+    assert (tmp_path / "videos" / "00001_forecast_0.mp4").read_bytes() == b"two"
