@@ -129,3 +129,6 @@ class TestEncoderStage:
             == template.encoders[0].data_space_out.shape
         )
         assert encoder_stage.name == "test_input_encoder"
+        # The encoder stage reconstructs its own input, not the forecast target
+        assert [s.to_dict() for s in encoder_stage.input_spaces] == [cfg_input_space]
+        assert encoder_stage.output_space.to_dict() == cfg_input_space

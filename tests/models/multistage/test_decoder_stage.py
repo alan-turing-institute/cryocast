@@ -191,6 +191,7 @@ class TestDecoderStage:
         decoder_stage = DecoderStage.from_template(
             decoder=cfg_decoder,
             encoders=[source_encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
             target_dataset_name="target",
             target_variable_indices=[0],
         )
@@ -198,5 +199,7 @@ class TestDecoderStage:
         assert decoder_stage.hemisphere == source_encoder_stage.hemisphere
         assert decoder_stage.n_forecast_steps == source_encoder_stage.n_forecast_steps
         assert decoder_stage.n_history_steps == source_encoder_stage.n_history_steps
+        assert [s.to_dict() for s in decoder_stage.input_spaces] == [cfg_input_space]
+        assert decoder_stage.output_space.to_dict() == cfg_output_space
         assert decoder_stage.encoder_names == ["test-input"]
         assert decoder_stage.name == "target_decoder"

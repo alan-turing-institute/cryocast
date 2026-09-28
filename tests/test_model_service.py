@@ -832,6 +832,7 @@ class TestModelService:
         mock_from_template.assert_called_once_with(
             decoder=service.config_["model"]["decoder"],
             encoders=encoder_models,
+            output_space=service.data_module_.output_space,
             target_dataset_name="target",
             target_variable_indices=[0],
             mask_dir=str(tmp_path),

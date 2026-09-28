@@ -573,6 +573,7 @@ class ModelService:
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
             encoders=encoder_models,
+            output_space=self.data_module.output_space,
             target_dataset_name=self.data_module.target_group_name,
             target_variable_indices=self.data_module.target_variable_indices,
             mask_dir=str(self.data_module.mask_directory),
