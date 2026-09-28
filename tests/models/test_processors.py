@@ -348,11 +348,12 @@ class TestDDPMProcessor:
 
     def test_inference_forward_shape(
         self,
+        *,
         test_batch_size: int,
         test_latent_chw: tuple[int, int, int],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
+        test_use_autoregressive: bool,
     ) -> None:
         processor = self._make_processor(
             latent_chw=test_latent_chw,
@@ -378,13 +379,14 @@ class TestDDPMProcessor:
             *test_latent_chw[1:],
         )
 
-    def test_training_returns_loss_and_shape(
+    def test_training_returns_loss_and_shape_and_backprops(
         self,
+        *,
         test_batch_size: int,
         test_latent_chw: tuple[int, int, int],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
+        test_use_autoregressive: bool,
     ) -> None:
         processor = self._make_processor(
             latent_chw=test_latent_chw,
@@ -415,39 +417,55 @@ class TestDDPMProcessor:
             test_latent_chw[0],
             *test_latent_chw[1:],
         )
+        # The loss must backpropagate into the denoising model
+        result.loss.backward()
+        assert any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in processor.model.parameters()
+        )
 
-    def test_rejects_out_of_bounds_target_slice(
+    @pytest.mark.parametrize(
+        "target_channel_offset", [-1, 3, 4], ids=["negative", "overflows", "at-end"]
+    )
+    def test_rejects_target_slice_that_does_not_fit(
         self,
+        *,
         test_batch_size: int,  # noqa: ARG002
         test_latent_chw: tuple[int, int, int],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
+        test_use_autoregressive: bool,
+        target_channel_offset: int,
     ) -> None:
+        # C_TARGET=2 channels must fit inside the 4 combined channels
         with pytest.raises(ValueError, match="does not fit"):
             self._make_processor(
                 latent_chw=test_latent_chw,
                 n_forecast_steps=test_n_forecast_steps,
                 n_history_steps=test_n_history_steps,
                 use_autoregressive=test_use_autoregressive,
-                target_channel_offset=test_latent_chw[
-                    0
-                ],  # start == c_combined (out of range)
+                target_channel_offset=target_channel_offset,
             )
 
+    @pytest.mark.parametrize(
+        "target_channel_offset", [0, 1, 2], ids=lambda offset: f"offset={offset}"
+    )
     def test_non_target_channels_persist_from_last_frame(
         self,
+        *,
+        target_channel_offset: int,
         test_batch_size: int,
         test_latent_chw: tuple[int, int, int],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
+        test_use_autoregressive: bool,
     ) -> None:
         processor = self._make_processor(
             latent_chw=test_latent_chw,
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             use_autoregressive=test_use_autoregressive,
+            target_channel_offset=target_channel_offset,
         )
         x = torch.randn(
             test_batch_size,
@@ -458,6 +476,12 @@ class TestDDPMProcessor:
         with torch.no_grad():
             result = processor.rollout(x)
 
+        assert result.prediction.shape == (
+            test_batch_size,
+            test_n_forecast_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
         s = processor.target_channel_offset
         assert s is not None
         c_target = processor.c_target
@@ -471,85 +495,3 @@ class TestDDPMProcessor:
                 result.prediction[:, t_step, non_target_idx],
                 last_frame[:, non_target_idx],
             )
-
-    def test_rejects_negative_target_slice(
-        self,
-        test_batch_size: int,  # noqa: ARG002
-        test_latent_chw: tuple[int, int, int],
-        test_n_forecast_steps: int,
-        test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
-    ) -> None:
-        with pytest.raises(ValueError, match="does not fit"):
-            self._make_processor(
-                latent_chw=test_latent_chw,
-                n_forecast_steps=test_n_forecast_steps,
-                n_history_steps=test_n_history_steps,
-                use_autoregressive=test_use_autoregressive,
-                target_channel_offset=-1,
-            )
-
-    def test_nonzero_target_channel_offset_inference_shape(
-        self,
-        test_batch_size: int,
-        test_latent_chw: tuple[int, int, int],
-        test_n_forecast_steps: int,
-        test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
-    ) -> None:
-        processor = self._make_processor(
-            latent_chw=test_latent_chw,
-            n_forecast_steps=test_n_forecast_steps,
-            n_history_steps=test_n_history_steps,
-            use_autoregressive=test_use_autoregressive,
-            target_channel_offset=1,  # C_TARGET=2, latent_chw[0]=4 -> valid, non-zero
-        )
-        x = torch.randn(
-            test_batch_size,
-            test_n_history_steps,
-            test_latent_chw[0],
-            *test_latent_chw[1:],
-        )
-        with torch.no_grad():
-            result = processor.rollout(x)
-        assert result.prediction.shape == (
-            test_batch_size,
-            test_n_forecast_steps,
-            test_latent_chw[0],
-            *test_latent_chw[1:],
-        )
-
-    def test_training_loss_backprops(
-        self,
-        test_batch_size: int,
-        test_latent_chw: tuple[int, int, int],
-        test_n_forecast_steps: int,
-        test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
-    ) -> None:
-        processor = self._make_processor(
-            latent_chw=test_latent_chw,
-            n_forecast_steps=test_n_forecast_steps,
-            n_history_steps=test_n_history_steps,
-            use_autoregressive=test_use_autoregressive,
-        )
-        x = torch.randn(
-            test_batch_size,
-            test_n_history_steps,
-            test_latent_chw[0],
-            *test_latent_chw[1:],
-        )
-        y = torch.randn(
-            test_batch_size,
-            test_n_forecast_steps,
-            self.C_TARGET,
-            *test_latent_chw[1:],
-        )
-        result = processor.rollout(x, y)
-        assert result.loss is not None
-        result.loss.backward()
-
-        assert any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in processor.model.parameters()
-        )

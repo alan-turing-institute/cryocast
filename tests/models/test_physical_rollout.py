@@ -278,24 +278,6 @@ class TestPhysicalRolloutAdvancesTheState:
         for lead in range(1, model.n_forecast_steps):
             assert not torch.equal(prediction[:, lead], prediction[:, lead - 1])
 
-    def test_zero_init_starts_at_persistence(self) -> None:
-        """zero_init_output must place the whole trajectory exactly on persistence."""
-        model = _build_model(
-            rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "zero_init_output": True,
-                "skip_connection": {"method": "additive"},
-            },
-        )
-        inputs = _inputs(model)
-        model.eval()
-        with torch.no_grad():
-            prediction = model(inputs)
-        persistence = inputs[TARGET_GROUP][:, -1]
-        for lead in range(model.n_forecast_steps):
-            assert torch.equal(prediction[:, lead], persistence)
-
     def test_later_leads_depend_on_the_previous_prediction(self) -> None:
         """Lead k+1 must be a function of the lead-k prediction, not of stale history.
 

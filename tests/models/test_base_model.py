@@ -77,30 +77,26 @@ class FakeDataModel(BaseModel):
 
 
 class TestBaseModel:
-    def test_init_invalid_forecast_steps(self) -> None:
-        with pytest.raises(
-            ValueError, match=r"Number of forecast steps must be greater than 0."
-        ):
+    @pytest.mark.parametrize(
+        ("test_n_forecast_steps", "test_n_history_steps", "expected_message"),
+        [
+            (0, 1, r"Number of forecast steps must be greater than 0."),
+            (1, 0, r"Number of history steps must be greater than 0."),
+        ],
+        ids=["forecast-steps", "history-steps"],
+    )
+    def test_init_invalid_steps(
+        self,
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        expected_message: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=expected_message):
             FakeDataModel(
                 name="fake data",
                 input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
-                n_forecast_steps=0,
-                n_history_steps=1,
-                output_space={"channels": 1, "name": "target", "shape": (2, 2)},
-                optimizer=DictConfig({}),
-                scheduler=DictConfig({}),
-                lr_scheduler=DictConfig({}),
-            )
-
-    def test_init_invalid_history_steps(self) -> None:
-        with pytest.raises(
-            ValueError, match=r"Number of history steps must be greater than 0."
-        ):
-            FakeDataModel(
-                name="fake data",
-                input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
-                n_forecast_steps=1,
-                n_history_steps=0,
+                n_forecast_steps=test_n_forecast_steps,
+                n_history_steps=test_n_history_steps,
                 output_space={"channels": 1, "name": "target", "shape": (2, 2)},
                 optimizer=DictConfig({}),
                 scheduler=DictConfig({}),
@@ -260,8 +256,12 @@ class TestBaseModel:
         assert lr_scheduler_cfg.get("interval") == "step"
         assert lr_scheduler_cfg.get("monitor") == "validation_loss"
 
-    def test_test_step(
+    @pytest.mark.parametrize(
+        "step_name", ["training_step", "validation_step", "test_step"]
+    )
+    def test_step_returns_prediction_target_and_loss(
         self,
+        step_name: str,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_optimizer: DictConfig,
@@ -295,86 +295,10 @@ class TestBaseModel:
             lr_scheduler=DictConfig({}),
         )
         output_shape = batch["target"].shape
-        output = model.test_step(batch, 0)
+        output = getattr(model, step_name)(batch, 0)
         assert isinstance(output, ModelStepOutput)
         assert output.prediction.shape == output_shape
         assert output.target.shape == output_shape
-        assert output.loss.shape == torch.Size([])
-
-    def test_training_step(
-        self,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-    ) -> None:
-        batch_size = n_history_steps = n_forecast_steps = 1
-        batch = {
-            cfg_input_space["name"]: torch.randn(
-                batch_size,
-                n_history_steps,
-                cfg_input_space["channels"],
-                cfg_input_space["shape"][0],
-                cfg_input_space["shape"][1],
-            ),
-            cfg_output_space["name"]: torch.randn(
-                batch_size,
-                n_forecast_steps,
-                cfg_output_space["channels"],
-                cfg_output_space["shape"][0],
-                cfg_output_space["shape"][1],
-            ),
-        }
-        model = FakeDataModel(
-            name="fake data",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=n_forecast_steps,
-            n_history_steps=n_history_steps,
-            output_space=cfg_output_space,
-            optimizer=cfg_optimizer,
-            scheduler=cfg_scheduler,
-            lr_scheduler=DictConfig({}),
-        )
-        output = model.training_step(batch, 0)
-        assert isinstance(output, ModelStepOutput)
-        assert output.loss.shape == torch.Size([])
-
-    def test_validation_step(
-        self,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-    ) -> None:
-        batch_size = n_history_steps = n_forecast_steps = 1
-        batch = {
-            cfg_input_space["name"]: torch.randn(
-                batch_size,
-                n_history_steps,
-                cfg_input_space["channels"],
-                cfg_input_space["shape"][0],
-                cfg_input_space["shape"][1],
-            ),
-            cfg_output_space["name"]: torch.randn(
-                batch_size,
-                n_forecast_steps,
-                cfg_output_space["channels"],
-                cfg_output_space["shape"][0],
-                cfg_output_space["shape"][1],
-            ),
-        }
-        model = FakeDataModel(
-            name="fake data",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=n_forecast_steps,
-            n_history_steps=n_history_steps,
-            output_space=cfg_output_space,
-            optimizer=cfg_optimizer,
-            scheduler=cfg_scheduler,
-            lr_scheduler=DictConfig({}),
-        )
-        output = model.validation_step(batch, 0)
-        assert isinstance(output, ModelStepOutput)
         assert output.loss.shape == torch.Size([])
 
     def test_test_step_two_channel_target_skips_single_channel_metrics(

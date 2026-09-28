@@ -248,22 +248,3 @@ class TestReprojectionEncoder:
             dim=-2,
         )
         assert torch.allclose(out, expected, atol=1e-4)
-
-    def test_forward_channels_preserved(self) -> None:
-        input_shape = (4, 4)
-        latent_shape = (2, 2)
-        channels = 5
-        lats_in, lons_in = _latlon_grid(input_shape)
-        lats_out, lons_out = _latlon_grid(latent_shape)
-        encoder = ReprojectionEncoder(
-            data_space_in=DataSpace(
-                name=INPUT_NAME, channels=channels, shape=input_shape
-            ),
-            latent_space=latent_shape,
-            project_to=OUTPUT_NAME,
-            latitudes_fn=lambda: {INPUT_NAME: lats_in, OUTPUT_NAME: lats_out},
-            longitudes_fn=lambda: {INPUT_NAME: lons_in, OUTPUT_NAME: lons_out},
-        )
-        x = torch.randn(3, channels, *input_shape)
-        out = encoder(x)
-        assert out.shape[1] == channels

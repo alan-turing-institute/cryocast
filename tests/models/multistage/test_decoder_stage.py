@@ -76,10 +76,21 @@ class TestDecoderStage:
             processed["persistence"], target[:, -2, [2], :, :].unsqueeze(1)
         )
 
-    def test_requires_at_least_two_history_steps(
+    @pytest.mark.parametrize(
+        ("n_history_steps", "target_variable_indices", "expected_message"),
+        [
+            (1, [0], "at least two history steps"),
+            (2, [0, 1], "target_variable_indices selects"),
+        ],
+        ids=["one-history-step", "indices-channel-mismatch"],
+    )
+    def test_rejects_invalid_configuration(
         self,
         encoder_stage: EncoderStage,
         *,
+        n_history_steps: int,
+        target_variable_indices: list[int],
+        expected_message: str,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
@@ -89,48 +100,16 @@ class TestDecoderStage:
         cfg_loss: DictConfig,
         cfg_metrics: list[str],
     ) -> None:
-        with pytest.raises(ValueError, match="at least two history steps"):
+        with pytest.raises(ValueError, match=expected_message):
             DecoderStage(
                 decoder=cfg_decoder,
                 encoders=[encoder_stage],
                 target_dataset_name="target",
-                target_variable_indices=[0],
+                target_variable_indices=target_variable_indices,
                 hemisphere="north",
                 input_spaces=[cfg_input_space],
                 n_forecast_steps=1,
-                n_history_steps=1,
-                name="test-target_decoder",
-                optimizer=cfg_optimizer,
-                output_space=cfg_output_space,
-                scheduler=cfg_scheduler,
-                lr_scheduler=cfg_lr_scheduler,
-                loss=cfg_loss,
-                metrics=cfg_metrics,
-            )
-
-    def test_variable_indices_channel_mismatch_raises(
-        self,
-        encoder_stage: EncoderStage,
-        *,
-        cfg_decoder: DictConfig,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[str],
-    ) -> None:
-        with pytest.raises(ValueError, match="target_variable_indices selects"):
-            DecoderStage(
-                decoder=cfg_decoder,
-                encoders=[encoder_stage],
-                target_dataset_name="target",
-                target_variable_indices=[0, 1],
-                hemisphere="north",
-                input_spaces=[cfg_input_space],
-                n_forecast_steps=1,
-                n_history_steps=2,
+                n_history_steps=n_history_steps,
                 name="test-target_decoder",
                 optimizer=cfg_optimizer,
                 output_space=cfg_output_space,

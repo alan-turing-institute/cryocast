@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -93,32 +93,36 @@ class TestCNNDecoder:
 
 class TestDecoderBounded:
     @pytest.mark.parametrize(
-        "test_decoder_cls", ["CNNDecoder", "NaiveLinearDecoder", "PiecewiseDecoder"]
+        ("test_decoder_cls", "test_restrict_range", "decoder_kwargs"),
+        [
+            # latent channels must be divisible by 2 for CNNDecoder with n_layers=1
+            (CNNDecoder, "sigmoid", {"n_layers": 1}),
+            (NaiveLinearDecoder, "sigmoid", {}),
+            (PiecewiseDecoder, "tanh", {}),
+            (PiecewiseDecoder, "clamp", {}),
+        ],
+        ids=[
+            "CNNDecoder-sigmoid",
+            "NaiveLinearDecoder-sigmoid",
+            "PiecewiseDecoder-tanh",
+            "PiecewiseDecoder-clamp",
+        ],
     )
-    def test_bounded_fixes_values_between_0_and_1(self, test_decoder_cls: str) -> None:
+    def test_bounded_fixes_values_between_0_and_1(
+        self,
+        test_decoder_cls: type[BaseDecoder],
+        test_restrict_range: str,
+        decoder_kwargs: dict[str, Any],
+    ) -> None:
         test_n_forecast_steps = 1
-        # latent channels must be divisible by 2 for CNNDecoder with n_layers=1
         latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
         output_space = DataSpace(name="output", channels=1, shape=(16, 16))
-
-        decoder = {
-            "CNNDecoder": CNNDecoder(
-                data_space_in=latent_space,
-                data_space_out=output_space,
-                n_layers=1,
-                restrict_range="sigmoid",
-            ),
-            "NaiveLinearDecoder": NaiveLinearDecoder(
-                data_space_in=latent_space,
-                data_space_out=output_space,
-                restrict_range="sigmoid",
-            ),
-            "PiecewiseDecoder": PiecewiseDecoder(
-                data_space_in=latent_space,
-                data_space_out=output_space,
-                restrict_range="tanh",
-            ),
-        }[test_decoder_cls]
+        decoder = test_decoder_cls(
+            data_space_in=latent_space,
+            data_space_out=output_space,
+            restrict_range=test_restrict_range,
+            **decoder_kwargs,
+        )
 
         extreme_input = torch.full(
             (1, test_n_forecast_steps, latent_space.channels, *latent_space.shape),
@@ -539,33 +543,3 @@ class TestPiecewiseDecoder:
         assert latent_ntchw.shape == (1, 1, *output_space.chw)
         assert torch.all(input_min_val < latent_ntchw)
         assert torch.all(latent_ntchw < input_max_val)
-
-    def test_clamp_restricts_output_to_unit_range(self) -> None:
-        output_space = DataSpace(name="output", channels=1, shape=(4, 4))
-        patch_size = (2, 2)
-        stride = [max(1, p // 2) for p in patch_size]
-        n_patches = (
-            (output_space.shape[0] + 2 * stride[0] - (patch_size[0] - 1) - 1)
-            // stride[0]
-            + 1
-        ) * (
-            (output_space.shape[1] + 2 * stride[1] - (patch_size[1] - 1) - 1)
-            // stride[1]
-            + 1
-        )
-        input_space = DataSpace(name="input", channels=n_patches, shape=patch_size)
-        decoder = PiecewiseDecoder(
-            conv_subblocks_initial=0,
-            conv_subblocks_final=0,
-            data_space_in=input_space,
-            data_space_out=output_space,
-            restrict_range="clamp",
-            use_final_normalisation=False,
-            use_hann_window=False,
-        )
-        x = torch.full(
-            (1, 1, input_space.channels, *input_space.shape), 1e10, dtype=torch.float32
-        )
-        output = decoder.rollout(x, None)
-        assert torch.all(output >= 0.0).item()
-        assert torch.all(output <= 1.0).item()
