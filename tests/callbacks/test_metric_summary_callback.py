@@ -233,6 +233,51 @@ class TestOnTestEnd:
         assert len(fss_vs_size_call.kwargs["ys"]) == 1
         assert len(fss_vs_size_call.kwargs["ys"][0]) == 2
 
+    def test_on_test_end_groups_fss_by_type_not_name(
+        self,
+        mock_module: MagicMock,
+        mock_trainer: MagicMock,
+        wandb_run: tuple[MagicMock, MockWandbRun],
+    ) -> None:
+        """Metric names are user-defined, so FSS plots must not depend on them."""
+        callback = MetricSummaryCallback()
+        mock_wandb, _ = wandb_run
+
+        # FSS metrics with arbitrary names, plus a non-FSS metric whose name happens
+        # to look like an FSS one
+        metric_collection = MetricCollection(
+            {
+                "edge_skill_wide": FractionalSkillScorePerForecastDay(
+                    neighbourhood_size=5
+                ),
+                "edge_skill_narrow": FractionalSkillScorePerForecastDay(
+                    neighbourhood_size=1
+                ),
+                "fss_lookalike": MAEPerForecastDay(),
+            }
+        )
+        mock_module.test_metrics = metric_collection
+        metric_collection.update(torch.rand(1, 3, 1, 6, 6), torch.rand(1, 3, 1, 6, 6))
+        mock_wandb.plot.line_series.return_value = MagicMock()
+
+        callback.teardown(mock_trainer, mock_module, stage="test")
+
+        calls = {
+            call.kwargs["title"]: call.kwargs
+            for call in mock_wandb.plot.line_series.call_args_list
+        }
+        assert set(calls) == {
+            "fss_per_forecast_day",
+            "fss_lookalike_per_forecast_day",
+            "fss_vs_neighbourhood_size",
+        }
+        assert sorted(calls["fss_per_forecast_day"]["keys"]) == [
+            "edge_skill_narrow",
+            "edge_skill_wide",
+        ]
+        # Sizes come from the metrics themselves, sorted by neighbourhood size
+        assert calls["fss_vs_neighbourhood_size"]["xs"] == [1, 5]
+
     def test_on_test_end_with_wandb_logger_groups_spatial_mean_trace(
         self,
         mock_module: MagicMock,

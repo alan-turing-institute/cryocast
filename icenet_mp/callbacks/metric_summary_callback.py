@@ -1,5 +1,4 @@
 import logging
-import re
 from collections import defaultdict
 from collections.abc import Mapping
 from copy import deepcopy
@@ -10,8 +9,13 @@ from lightning import LightningModule, Trainer
 from lightning.pytorch import Callback
 from lightning.pytorch.trainer.states import TrainerFn
 from torch import Tensor
-from torchmetrics import MetricCollection
+from torchmetrics import Metric, MetricCollection
 
+from icenet_mp.metrics import (
+    FractionalSkillScorePerForecastDay,
+    SpatialMeanGroundTruthPerForecastDay,
+    SpatialMeanPredictionPerForecastDay,
+)
 from icenet_mp.utils import get_wandb_run
 
 logger = logging.getLogger(__name__)
@@ -20,9 +24,16 @@ logger = logging.getLogger(__name__)
 class MetricSummaryCallback(Callback):
     """A callback to summarise metrics at the end of an epoch or a run."""
 
-    _STAGES_BY_TRAINER_FN: ClassVar[dict[str, list[str]]] = {
+    STAGES_BY_TRAINER_FN: ClassVar[dict[str, list[str]]] = {
         TrainerFn.FITTING.value: ["train", "validation"],
         TrainerFn.TESTING.value: ["test"],
+    }
+
+    # Metric types whose per-forecast-day values share a single plot
+    PLOT_GROUPS: ClassVar[dict[type[Metric], str]] = {
+        FractionalSkillScorePerForecastDay: "fss",
+        SpatialMeanGroundTruthPerForecastDay: "spatial_mean",
+        SpatialMeanPredictionPerForecastDay: "spatial_mean",
     }
 
     def __init__(self, climatology_metrics: MetricCollection | None = None) -> None:
@@ -79,24 +90,18 @@ class MetricSummaryCallback(Callback):
     def _per_forecast_day_plots(
         self,
         values_per_forecast_day: dict[str, dict[str, Tensor]],
+        plot_groups: dict[str, str],
         *,
         multiple_stages: bool,
-    ) -> tuple[dict[str, Any], list[str]]:
+    ) -> dict[str, Any]:
         """Build a per-forecast-day plot for each metric group.
 
-        Metrics that should share a single plot are grouped; all other metrics get one
-        plot each. Returns the plots keyed by name, and the metric names in the group,
-        for use in the FSS-vs-neighbourhood-size plot.
+        Metrics that should share a single plot (e.g. FSS at several neighbourhood
+        sizes) are grouped by type; all other metrics get one plot each.
         """
-        # Group any metrics that belong to common groups (e.g. FSS and spatial mean)
         metric_names_by_group: dict[str, list[str]] = defaultdict(list)
         for metric_name in values_per_forecast_day:
-            if metric_name.startswith("fss_"):
-                metric_names_by_group["fss"].append(metric_name)
-            elif metric_name.startswith("spatial_mean_"):
-                metric_names_by_group["spatial_mean"].append(metric_name)
-            else:
-                metric_names_by_group[metric_name].append(metric_name)
+            metric_names_by_group[plot_groups[metric_name]].append(metric_name)
 
         plots: dict[str, Any] = {}
         for group_name, metric_names in metric_names_by_group.items():
@@ -124,18 +129,18 @@ class MetricSummaryCallback(Callback):
                 xname="day",
             )
 
-        return plots, metric_names_by_group.get("fss", [])
+        return plots
 
     def _fss_vs_neighbourhood_size_plot(
         self,
         values_per_forecast_day: dict[str, dict[str, Tensor]],
-        fss_metric_names: list[str],
+        fss_sizes: dict[str, int],
     ) -> dict[str, Any]:
         """Build a plot of mean FSS (over forecast days) against neighbourhood size."""
         sizes_and_names = sorted(
-            (int(match.group(1)), name)
-            for name in fss_metric_names
-            if (match := re.match(r"^fss_neighbourhood_size_(\d+)$", name))
+            (size, name)
+            for name, size in fss_sizes.items()
+            if name in values_per_forecast_day
         )
         if not sizes_and_names:
             return {}
@@ -204,13 +209,34 @@ class MetricSummaryCallback(Callback):
         # Only consider metrics that have a value for each forecast day
         values_per_forecast_day = self._collect_values_per_forecast_day(metrics)
 
-        plots, fss_metric_names = self._per_forecast_day_plots(
-            values_per_forecast_day, multiple_stages=len(metrics) > 1
-        )
-        plots.update(
-            self._fss_vs_neighbourhood_size_plot(
-                values_per_forecast_day, fss_metric_names
+        # Group and parameterise plots by metric type
+        flat_metrics = {
+            name: metric
+            for metric_collection in metrics.values()
+            for name, metric in metric_collection.items()
+        }
+        plot_groups = {
+            name: next(
+                (
+                    group
+                    for metric_type, group in self.PLOT_GROUPS.items()
+                    if isinstance(metric, metric_type)
+                ),
+                name,
             )
+            for name, metric in flat_metrics.items()
+        }
+        plots = self._per_forecast_day_plots(
+            values_per_forecast_day, plot_groups, multiple_stages=len(metrics) > 1
+        )
+        # Add one plot for each FSS neighbourhood size
+        fss_sizes = {
+            name: metric.neighbourhood_size
+            for name, metric in flat_metrics.items()
+            if isinstance(metric, FractionalSkillScorePerForecastDay)
+        }
+        plots.update(
+            self._fss_vs_neighbourhood_size_plot(values_per_forecast_day, fss_sizes)
         )
         if plots:
             run.log(plots)
@@ -308,9 +334,9 @@ class MetricSummaryCallback(Callback):
         """Called at the end of a run: log train/validation or test metrics."""
         metrics = {}
 
-        for run_stage in self._STAGES_BY_TRAINER_FN.get(stage, []):
-            if (m := self._metrics_for_stage(pl_module, run_stage)) is not None:
-                metrics[run_stage] = m
+        for run_stage in self.STAGES_BY_TRAINER_FN.get(stage, []):
+            if (m_coll := self._metrics_for_stage(pl_module, run_stage)) is not None:
+                metrics[run_stage] = m_coll
             else:
                 logger.warning("Could not load %s metrics!", run_stage)
 
