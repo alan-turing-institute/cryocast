@@ -11,7 +11,6 @@ class TestEncoderStage:
         self,
         cfg_encoders: DictConfig,
         cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
@@ -35,7 +34,7 @@ class TestEncoderStage:
             n_history_steps=1,
             name="test-input_encoder",
             optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
+            output_space=cfg_input_space,
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
@@ -78,6 +77,11 @@ class TestEncoderStage:
         processed = encoder_stage.process_batch({"test-input": test_input})
 
         assert torch.equal(processed["target"], test_input[:, 0].unsqueeze(1))
+
+    def test_single_channel_metrics_are_disabled_for_multi_channel_input(
+        self, encoder_stage: EncoderStage
+    ) -> None:
+        assert set(encoder_stage.validation_metrics.keys()) == {"mae", "rmse", "ssim"}
 
     def test_dataset_name_returns_input_space_name(
         self, encoder_stage: EncoderStage

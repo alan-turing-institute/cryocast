@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import cached_property, partial
@@ -26,6 +27,7 @@ from icenet_mp.metrics import (
     MAEPerForecastDay,
     RMSEPerForecastDay,
     SeaIceExtentErrorPerForecastDay,
+    SingleChannelMetricMixin,
     SpatialMeanGroundTruthPerForecastDay,
     SpatialMeanPredictionPerForecastDay,
     SSIMPerForecastDay,
@@ -41,6 +43,8 @@ from icenet_mp.types import (
 
 if TYPE_CHECKING:
     from torch.optim import Optimizer
+
+log = logging.getLogger(__name__)
 
 
 class BaseModel(LightningModule, ABC):
@@ -115,7 +119,7 @@ class BaseModel(LightningModule, ABC):
         self.scheduler_cfg = scheduler
         self.lr_scheduler_cfg = lr_scheduler
         self.loss_cfg = loss
-        self.metrics = list(metrics)
+        self.metric_names = list(metrics)
 
         # Land mask for ice-edge metrics (excludes land/ice boundaries from FSS/DIIEE).
         try:
@@ -159,15 +163,17 @@ class BaseModel(LightningModule, ABC):
             ),
             "ssim": partial(SSIMPerForecastDay, land_mask=land_mask),
         }
-        self.test_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in metrics}
-        )
-        self.train_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in metrics}
-        )
-        self.validation_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in metrics}
-        )
+
+        self.test_metrics = self.build_metrics(_metric_classes)
+        self.train_metrics = self.build_metrics(_metric_classes)
+        self.validation_metrics = self.build_metrics(_metric_classes)
+        if skipped := [m for m in self.metric_names if m not in self.test_metrics]:
+            log.warning(
+                "Disabling single-channel metrics for %s (predicting %d channels): %s.",
+                type(self).__name__,
+                self.output_space.channels,
+                ", ".join(skipped),
+            )
 
         # All arguments to the ultimate child class will be logged as hyperparameters,
         # and saved to W&B, unless explicitly ignored here.
@@ -184,6 +190,26 @@ class BaseModel(LightningModule, ABC):
     @property
     def multistage_only(self) -> bool:
         return False
+
+    def build_metrics(
+        self, metric_classes: dict[str, Callable[[], Metric]]
+    ) -> MetricCollection:
+        """Build a metric collection from the configured metric names.
+
+        This should include only metrics that are compatible with the output space. We
+        therefore filter out single-channel metrics from the metric collection if the
+        model will predict multiple channels.
+        """
+        return MetricCollection(
+            {
+                name: metric
+                for name, metric in {
+                    name: metric_classes[name]() for name in self.metric_names
+                }.items()
+                if (self.output_space.channels == 1)
+                or (not isinstance(metric, SingleChannelMetricMixin))
+            }
+        )
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         """Construct the optimizer and optional scheduler from the config."""

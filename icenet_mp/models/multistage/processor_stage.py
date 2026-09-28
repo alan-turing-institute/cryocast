@@ -73,7 +73,7 @@ class ProcessorStage(EncodeProcessDecode):
             processor=processor,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             target_encoder=target_encoder,
-            metrics=copy.deepcopy(decoder_model.metrics),
+            metrics=copy.deepcopy(decoder_model.metric_names),
         )
 
     @override

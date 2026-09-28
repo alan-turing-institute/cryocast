@@ -372,13 +372,13 @@ class TestBaseModel:
         assert isinstance(output, ModelStepOutput)
         assert output.loss.shape == torch.Size([])
 
-    def test_test_step_two_channel_target_raises_for_sic_only_metrics(
+    def test_test_step_two_channel_target_skips_single_channel_metrics(
         self,
         cfg_input_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
     ) -> None:
-        """A second target channel must not be folded into SIC-only metrics."""
+        """A second target channel must not be folded into single-channel metrics."""
         two_channel_output_space = DictConfig(
             {"channels": 2, "name": "target", "shape": (16, 16)}
         )
@@ -409,11 +409,26 @@ class TestBaseModel:
             scheduler=cfg_scheduler,
             lr_scheduler=DictConfig({}),
         )
+        assert set(model.test_metrics.keys()) == {
+            "mae",
+            "rmse",
+            "ssim",
+            "spatial_mean_ground_truth",
+            "spatial_mean_prediction",
+        }
+        # The requested list is kept so that it can be passed on unchanged
+        assert "accuracy" in model.metric_names
+        output = model.test_step(batch, 0)
+        assert isinstance(output, ModelStepOutput)
+
+    def test_single_channel_metric_raises_for_two_channel_inputs(self) -> None:
+        metric = IceNetAccuracyPerForecastDay()
+        two_channel = torch.rand(1, 1, 2, 4, 4)
         with pytest.raises(
             ValueError,
             match=r"is only defined for a single sea-ice-concentration channel",
         ):
-            model.test_step(batch, 0)
+            metric.update(two_channel, two_channel)
 
 
 class TestBaseModelMetricSelection:
@@ -485,4 +500,4 @@ class TestBaseModelMetricSelection:
     def test_model_metrics_attribute_matches_requested_list(self) -> None:
         selected = ["accuracy", "mae"]
         model = self._build_model(selected)
-        assert model.metrics == selected
+        assert model.metric_names == selected

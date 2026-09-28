@@ -316,6 +316,11 @@ class TestProcessorStage:
             *cfg_output_space["shape"],
         )
 
+    def test_single_channel_metrics_are_kept_for_single_channel_target(
+        self, processor_stage: ProcessorStage, cfg_metrics: list[str]
+    ) -> None:
+        assert set(processor_stage.validation_metrics.keys()) == set(cfg_metrics)
+
     def test_encoders_and_decoder_parameters_are_frozen(
         self, processor_stage: ProcessorStage
     ) -> None:

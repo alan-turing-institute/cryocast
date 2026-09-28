@@ -134,6 +134,11 @@ class TestDecoderStage:
                 metrics=cfg_metrics,
             )
 
+    def test_single_channel_metrics_are_kept_for_single_channel_target(
+        self, decoder_stage: DecoderStage, cfg_metrics: list[str]
+    ) -> None:
+        assert set(decoder_stage.validation_metrics.keys()) == set(cfg_metrics)
+
     def test_encoder_parameters_are_frozen(self, decoder_stage: DecoderStage) -> None:
         assert all(
             not param.requires_grad
@@ -181,7 +186,7 @@ class TestDecoderStage:
             n_history_steps=2,
             name="test-input_encoder",
             optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
+            output_space=cfg_input_space,
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
@@ -202,4 +207,6 @@ class TestDecoderStage:
         assert [s.to_dict() for s in decoder_stage.input_spaces] == [cfg_input_space]
         assert decoder_stage.output_space.to_dict() == cfg_output_space
         assert decoder_stage.encoder_names == ["test-input"]
+        # Single-channel metrics skipped by the multi-channel encoder stage are restored
+        assert set(decoder_stage.validation_metrics.keys()) == set(cfg_metrics)
         assert decoder_stage.name == "target_decoder"
