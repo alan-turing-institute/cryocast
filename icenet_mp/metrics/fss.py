@@ -7,13 +7,13 @@ from icenet_mp.types import SEA_ICE_THRESHOLD
 from .helpers import (
     AccumulatorMixin,
     LandMaskMixin,
-    SicOnlyMetricMixin,
+    SingleChannelMetricMixin,
     binary_ice_edge,
 )
 
 
 class FractionalSkillScorePerForecastDay(
-    SicOnlyMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
+    SingleChannelMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
 ):
     """FractionalSkill Score (FSS) of the sea-ice edge, for use at multiple lead times.
 

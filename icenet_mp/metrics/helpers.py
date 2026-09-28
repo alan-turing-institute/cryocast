@@ -23,8 +23,8 @@ class LandMaskMixin:
             self.register_buffer("land_mask", land_mask.bool(), persistent=False)  # type: ignore[attr-defined]
 
 
-class SicOnlyMetricMixin:
-    """Mixin guarding metric inputs that are only defined for a single SIC channel."""
+class SingleChannelMetricMixin:
+    """Mixin for metrics that are only defined for a single channel."""
 
     def ensure_single_channel(self, preds: torch.Tensor, targets: torch.Tensor) -> None:
         if preds.shape[2] != 1 or targets.shape[2] != 1:

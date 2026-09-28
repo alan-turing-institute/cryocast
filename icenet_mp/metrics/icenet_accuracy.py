@@ -3,11 +3,11 @@ from torchmetrics import Metric
 
 from icenet_mp.types import SEA_ICE_THRESHOLD
 
-from .helpers import AccumulatorMixin, LandMaskMixin, SicOnlyMetricMixin
+from .helpers import AccumulatorMixin, LandMaskMixin, SingleChannelMetricMixin
 
 
 class IceNetAccuracyPerForecastDay(
-    SicOnlyMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
+    SingleChannelMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
 ):
     """Binary accuracy metric for use at multiple leadtimes.
 

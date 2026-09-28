@@ -1,10 +1,12 @@
 import torch
 from torchmetrics import Metric
 
-from .helpers import AccumulatorMixin, LandMaskMixin, SicOnlyMetricMixin
+from .helpers import AccumulatorMixin, LandMaskMixin, SingleChannelMetricMixin
 
 
-class BaseIceAreaMetric(SicOnlyMetricMixin, LandMaskMixin, AccumulatorMixin, Metric):
+class BaseIceAreaMetric(
+    SingleChannelMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
+):
     """Shared construction for threshold-based sea ice extent/edge metrics."""
 
     def __init__(

@@ -1,6 +1,7 @@
 from .centroid_error import CentroidErrorPerForecastDay
 from .distance_averaged_iee import DistanceAveragedIceEdgeErrorPerForecastDay
 from .fss import FractionalSkillScorePerForecastDay
+from .helpers import SingleChannelMetricMixin
 from .icenet_accuracy import IceNetAccuracyPerForecastDay
 from .iiee import IntegratedIceEdgeErrorPerForecastDay
 from .mae import MAEPerForecastDay
@@ -22,6 +23,7 @@ __all__ = [
     "RMSEPerForecastDay",
     "SSIMPerForecastDay",
     "SeaIceExtentErrorPerForecastDay",
+    "SingleChannelMetricMixin",
     "SpatialMeanGroundTruthPerForecastDay",
     "SpatialMeanPredictionPerForecastDay",
 ]
