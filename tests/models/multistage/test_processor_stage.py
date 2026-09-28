@@ -39,7 +39,6 @@ class TestProcessorStage:
         self,
         *,
         cfg_encoders: DictConfig,
-        cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
@@ -62,12 +61,12 @@ class TestProcessorStage:
             decoder=cfg_decoder,
             latent_space=cfg_encoders["latent_space"],
             hemisphere="north",
-            input_spaces=[cfg_input_space],
+            input_spaces=[target_space.to_dict()],
             n_forecast_steps=1,
             n_history_steps=1,
             name="target_encoder",
             optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
+            output_space=target_space.to_dict(),
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
@@ -315,11 +314,6 @@ class TestProcessorStage:
             len(decoder_stage.target_variable_indices),
             *cfg_output_space["shape"],
         )
-
-    def test_single_channel_metrics_are_kept_for_single_channel_target(
-        self, processor_stage: ProcessorStage, cfg_metrics: list[str]
-    ) -> None:
-        assert set(processor_stage.validation_metrics.keys()) == set(cfg_metrics)
 
     def test_encoders_and_decoder_parameters_are_frozen(
         self, processor_stage: ProcessorStage

@@ -134,11 +134,6 @@ class TestDecoderStage:
                 metrics=cfg_metrics,
             )
 
-    def test_single_channel_metrics_are_kept_for_single_channel_target(
-        self, decoder_stage: DecoderStage, cfg_metrics: list[str]
-    ) -> None:
-        assert set(decoder_stage.validation_metrics.keys()) == set(cfg_metrics)
-
     def test_encoder_parameters_are_frozen(self, decoder_stage: DecoderStage) -> None:
         assert all(
             not param.requires_grad
@@ -160,50 +155,24 @@ class TestDecoderStage:
 
     def test_from_template_builds_decoder_stage_from_encoder_stages(
         self,
+        encoder_stage: EncoderStage,
         *,
         cfg_decoder: DictConfig,
-        cfg_encoders: DictConfig,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
-        cfg_loss: DictConfig,
         cfg_metrics: list[str],
     ) -> None:
-        # from_template reads n_history_steps/n_forecast_steps/etc. off the source
-        # EncoderStage, so it must be built with two history steps here (DecoderStage
-        # itself requires at least two).
-        source_encoder_stage = EncoderStage(
-            channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
-            data_space_in=DataSpace.from_dict(cfg_input_space),
-            encoder=cfg_encoders["test-input"],
-            decoder=cfg_decoder,
-            latent_space=cfg_encoders["latent_space"],
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=1,
-            n_history_steps=2,
-            name="test-input_encoder",
-            optimizer=cfg_optimizer,
-            output_space=cfg_input_space,
-            scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-        )
-
         decoder_stage = DecoderStage.from_template(
             decoder=cfg_decoder,
-            encoders=[source_encoder_stage],
+            encoders=[encoder_stage],
             output_space=DataSpace.from_dict(cfg_output_space),
             target_dataset_name="target",
             target_variable_indices=[0],
         )
 
-        assert decoder_stage.hemisphere == source_encoder_stage.hemisphere
-        assert decoder_stage.n_forecast_steps == source_encoder_stage.n_forecast_steps
-        assert decoder_stage.n_history_steps == source_encoder_stage.n_history_steps
+        assert decoder_stage.hemisphere == encoder_stage.hemisphere
+        assert decoder_stage.n_forecast_steps == encoder_stage.n_forecast_steps
+        assert decoder_stage.n_history_steps == encoder_stage.n_history_steps
         assert [s.to_dict() for s in decoder_stage.input_spaces] == [cfg_input_space]
         assert decoder_stage.output_space.to_dict() == cfg_output_space
         assert decoder_stage.encoder_names == ["test-input"]

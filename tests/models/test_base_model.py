@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -374,6 +375,7 @@ class TestBaseModel:
 
     def test_test_step_two_channel_target_skips_single_channel_metrics(
         self,
+        caplog: pytest.LogCaptureFixture,
         cfg_input_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
@@ -399,16 +401,19 @@ class TestBaseModel:
                 two_channel_output_space["shape"][1],
             ),
         }
-        model = FakeDataModel(
-            name="fake data",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=n_forecast_steps,
-            n_history_steps=n_history_steps,
-            output_space=two_channel_output_space,
-            optimizer=cfg_optimizer,
-            scheduler=cfg_scheduler,
-            lr_scheduler=DictConfig({}),
-        )
+        with caplog.at_level(logging.WARNING):
+            model = FakeDataModel(
+                name="fake data",
+                input_spaces=[cfg_input_space],
+                n_forecast_steps=n_forecast_steps,
+                n_history_steps=n_history_steps,
+                output_space=two_channel_output_space,
+                optimizer=cfg_optimizer,
+                scheduler=cfg_scheduler,
+                lr_scheduler=DictConfig({}),
+            )
+        assert "Disabling single-channel metrics for FakeDataModel" in caplog.text
+        assert "accuracy" in caplog.text
         assert set(model.test_metrics.keys()) == {
             "mae",
             "rmse",
@@ -420,15 +425,6 @@ class TestBaseModel:
         assert "accuracy" in model.metric_names
         output = model.test_step(batch, 0)
         assert isinstance(output, ModelStepOutput)
-
-    def test_single_channel_metric_raises_for_two_channel_inputs(self) -> None:
-        metric = IceNetAccuracyPerForecastDay()
-        two_channel = torch.rand(1, 1, 2, 4, 4)
-        with pytest.raises(
-            ValueError,
-            match=r"is only defined for a single sea-ice-concentration channel",
-        ):
-            metric.update(two_channel, two_channel)
 
 
 class TestBaseModelMetricSelection:

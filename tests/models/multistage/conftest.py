@@ -17,7 +17,10 @@ def encoder_stage(
     cfg_metrics: list[str],
     cfg_decoder: DictConfig,
 ) -> EncoderStage:
-    """An EncoderStage for the "test-input" dataset."""
+    """An EncoderStage for the test-input dataset, with two history steps.
+
+    DecoderStage requires at least two history steps and copies them from its encoders.
+    """
     return EncoderStage(
         channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
         data_space_in=DataSpace.from_dict(cfg_input_space),
@@ -27,7 +30,7 @@ def encoder_stage(
         hemisphere="north",
         input_spaces=[cfg_input_space],
         n_forecast_steps=1,
-        n_history_steps=1,
+        n_history_steps=2,
         name="test-input_encoder",
         optimizer=cfg_optimizer,
         output_space=cfg_input_space,
