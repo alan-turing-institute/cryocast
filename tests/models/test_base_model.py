@@ -307,6 +307,50 @@ class TestBaseModel:
         assert output.target.shape == output_shape
         assert output.loss.shape == torch.Size([])
 
+    @pytest.mark.parametrize(
+        "has_climatology", [True, False], ids=["climatology", "no-climatology"]
+    )
+    def test_test_step_updates_climatology_metrics(
+        self,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        cfg_optimizer: DictConfig,
+        cfg_scheduler: DictConfig,
+        *,
+        has_climatology: bool,
+    ) -> None:
+        """The climatology baseline is only accumulated from batches that carry it."""
+        output_shape = (
+            1,
+            1,
+            cfg_output_space["channels"],
+            *cfg_output_space["shape"],
+        )
+        batch = {
+            cfg_input_space["name"]: torch.randn(
+                1, 1, cfg_input_space["channels"], *cfg_input_space["shape"]
+            ),
+            cfg_output_space["name"]: torch.rand(output_shape),
+        }
+        if has_climatology:
+            batch["climatology"] = torch.rand(output_shape)
+        model = FakeDataModel(
+            name="fake data",
+            input_spaces=[cfg_input_space],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=cfg_output_space,
+            optimizer=cfg_optimizer,
+            scheduler=cfg_scheduler,
+            lr_scheduler=DictConfig({}),
+        )
+
+        model.test_step(batch, 0)
+
+        assert model.test_metrics["mae"].update_called
+        assert model.climatology_metrics["mae"].update_called is has_climatology
+        assert set(model.climatology_metrics) == set(model.test_metrics)
+
     def test_test_step_two_channel_target_skips_single_channel_metrics(
         self,
         caplog: pytest.LogCaptureFixture,

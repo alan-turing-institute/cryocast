@@ -1,7 +1,5 @@
 import logging
 from collections import defaultdict
-from collections.abc import Mapping
-from copy import deepcopy
 from typing import Any, ClassVar, override
 
 import wandb
@@ -35,19 +33,6 @@ class MetricSummaryCallback(Callback):
         SpatialMeanGroundTruthPerForecastDay: "spatial_mean",
         SpatialMeanPredictionPerForecastDay: "spatial_mean",
     }
-
-    def __init__(self, climatology_metrics: MetricCollection | None = None) -> None:
-        """Initialise a MetricSummaryCallback.
-
-        Args:
-            climatology_metrics: Optional metric collection for accumulating climatology
-                baseline metrics during a test run. When omitted, the collection is
-                created lazily on the first test batch containing a ``climatology``
-                entry, mirroring the model's test metrics.
-
-        """
-        super().__init__()
-        self.climatology_metrics = climatology_metrics
 
     def _collect_per_run_values(
         self, metrics: dict[str, MetricCollection]
@@ -174,7 +159,7 @@ class MetricSummaryCallback(Callback):
             run.log(plots)
 
     def _on_epoch_start(self, pl_module: LightningModule, stage: str) -> None:
-        """Reset a stage's metrics collection, if present."""
+        """Reset the metrics collection for this stage, if present."""
         metrics = getattr(pl_module, f"{stage}_metrics", None)
         if isinstance(metrics, MetricCollection):
             metrics.reset()
@@ -182,7 +167,7 @@ class MetricSummaryCallback(Callback):
     def _on_epoch_end(
         self, trainer: Trainer, pl_module: LightningModule, stage: str
     ) -> None:
-        """Log a stage's per-epoch metrics, warning if the collection is missing."""
+        """Log the per-epoch metrics for this stage, warning if they are missing."""
         metrics = getattr(pl_module, f"{stage}_metrics", None)
         if isinstance(metrics, MetricCollection):
             self.log_per_epoch_metrics(trainer, metrics, stage=stage)
@@ -193,46 +178,7 @@ class MetricSummaryCallback(Callback):
     def on_test_epoch_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Called at the start of a test epoch."""
         self._on_epoch_start(pl_module, "test")
-        if self.climatology_metrics is not None:
-            self.climatology_metrics.reset()
-
-    @override
-    def on_test_batch_end(
-        self,
-        trainer: Trainer,
-        pl_module: LightningModule,
-        outputs: Tensor | Mapping[str, Any] | None,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
-    ) -> None:
-        """Called at the end of each test batch.
-
-        Accumulate climatology baseline metrics when the batch contains a
-        ``climatology`` entry. The target is read from the model outputs, as the test
-        step has already popped it from the batch.
-        """
-        if (
-            not isinstance(batch, Mapping)
-            or "climatology" not in batch
-            or not isinstance(pl_module.test_metrics, MetricCollection)
-            or not isinstance(outputs, Mapping)
-            or "target" not in outputs
-        ):
-            return
-        if self.climatology_metrics is None:
-            self.climatology_metrics = MetricCollection(
-                {
-                    name: deepcopy(metric)
-                    for name, metric in pl_module.test_metrics.items()
-                }
-            )
-            # pl_module.test_metrics has already been updated with this batch's model
-            # prediction by test_step (which runs before this hook), so the deep-copied
-            # metrics start out contaminated with that update. Reset before accumulating
-            # the climatology baseline so the two series stay independent.
-            self.climatology_metrics.reset()
-        self.climatology_metrics.update(batch["climatology"], outputs["target"])
+        self._on_epoch_start(pl_module, "climatology")
 
     @override
     def on_test_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
@@ -284,13 +230,12 @@ class MetricSummaryCallback(Callback):
                 logger.warning("Could not load %s metrics!", run_stage)
 
         # Include the climatology baseline when it was accumulated during testing
+        climatology_metrics = getattr(pl_module, "climatology_metrics", None)
         if (
             stage == TrainerFn.TESTING.value
-            and self.climatology_metrics is not None
-            and any(
-                metric.update_called for metric in self.climatology_metrics.values()
-            )
+            and isinstance(climatology_metrics, MetricCollection)
+            and any(metric.update_called for metric in climatology_metrics.values())
         ):
-            metrics["climatology"] = self.climatology_metrics
+            metrics["climatology"] = climatology_metrics
 
         self.log_per_run_metrics(trainer, metrics)

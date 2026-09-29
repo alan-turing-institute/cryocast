@@ -142,6 +142,8 @@ class BaseModel(LightningModule, ABC):
         self.test_metrics = self.build_metrics(land_mask)
         self.train_metrics = self.build_metrics(land_mask)
         self.validation_metrics = self.build_metrics(land_mask)
+        # Climatology baseline metrics, used if there is a climatology batch in testing
+        self.climatology_metrics = self.build_metrics(land_mask)
         if skipped := [met for met in self.metric_cfgs if met not in self.test_metrics]:
             log.warning(
                 "Disabling single-channel metrics for %s (%d output channels): %s.",
@@ -292,6 +294,7 @@ class BaseModel(LightningModule, ABC):
 
         - Separate the batch into inputs and target
         - Run inputs through the model
+        - Update the test metrics (and climatology metrics if appropriate)
         - Return the prediction, target and loss
 
         Args:
@@ -318,6 +321,8 @@ class BaseModel(LightningModule, ABC):
             sync_dist=True,
         )
         self.test_metrics.update(prediction, target)
+        if "climatology" in batch:
+            self.climatology_metrics.update(batch["climatology"], target)
 
         return ModelStepOutput(prediction, target, loss)
 
