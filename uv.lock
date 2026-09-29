@@ -157,7 +157,7 @@ wheels = [
 
 [[package]]
 name = "anemoi-datasets"
-version = "0.5.43"
+version = "0.5.44"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anemoi-transform" },
@@ -179,9 +179,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "zarr" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/57/b3/d689deb35766d165d28fa464b6066f2c57efb6fe0ae5fb34effe7d546dbe/anemoi_datasets-0.5.43.tar.gz", hash = "sha256:25838bd45a18a535bff0681e6269b90e14f7e0d16db325dd9d0b0aba4f6126c2", size = 2067029, upload-time = "2026-09-07T17:18:06.934Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/4a/eda0ee4e10187ccaf8e3930cb03c2040cfdc17fc1e0422b29c7cb92a8b8f/anemoi_datasets-0.5.44.tar.gz", hash = "sha256:b6ca87dea663816edad9fb61b9704c7bc178d5b1fd62007eea03bf194854648d", size = 2070193, upload-time = "2026-09-15T14:57:20.168Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/75/9479861e1ed5f9d489b7c78db00be9528caa7e2be906847d670bb8995a34/anemoi_datasets-0.5.43-py3-none-any.whl", hash = "sha256:e45ff44f3fdeddb33af95abd365a2c319fb804bb7d282aae1eb7b88efdbd491a", size = 488429, upload-time = "2026-09-07T17:18:05.453Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/48/2be5a1713bd2dca1df35c2b9a4cc879500581af3dc111066ddddf0fa2602/anemoi_datasets-0.5.44-py3-none-any.whl", hash = "sha256:fc7ad2d5577bbeb950d0643e02b76d54e8b5dffdd75a1d02fe2c18b50e3c2046", size = 491987, upload-time = "2026-09-15T14:57:18.252Z" },
 ]
 
 [[package]]
