@@ -26,8 +26,7 @@ class IceNetAccuracyPerForecastDay(
                 agreements.
 
         """
-        super().__init__()
-        self._register_land_mask(land_mask)
+        super().__init__(land_mask=land_mask)
         self.add_state(
             "weighted_score",
             default=torch.tensor([], dtype=torch.float32),

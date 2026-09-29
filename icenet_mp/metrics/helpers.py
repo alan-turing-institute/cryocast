@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 import torch.nn.functional as F
 
@@ -16,9 +18,27 @@ class AccumulatorMixin:
 
 
 class LandMaskMixin:
-    """Mixin providing shared registration of an optional land-mask buffer."""
+    """Mixin for metrics that use a land mask.
 
-    def _register_land_mask(self, land_mask: torch.Tensor | None) -> None:
+    Models pass their land mask to any metric with this mixin as a ``land_mask``
+    keyword argument. Subclasses should pass it on with
+    ``super().__init__(land_mask=land_mask)``, after which it is available as the
+    ``land_mask`` buffer, if one was given.
+    """
+
+    def __init__(
+        self, *args: Any, land_mask: torch.Tensor | None, **kwargs: Any
+    ) -> None:
+        """Initialise the metric and register the land mask, if any.
+
+        Args:
+            args: Positional arguments to pass on.
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land.
+            kwargs: Keyword arguments to pass on.
+
+        """
+        super().__init__(*args, **kwargs)
         if land_mask is not None:
             self.register_buffer("land_mask", land_mask.bool(), persistent=False)  # type: ignore[attr-defined]
 

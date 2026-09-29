@@ -49,7 +49,7 @@ Hydra imports the module itself, so this works through the `imp` CLI and when ev
 
 Two mixins from `icenet_mp.metrics` change how the model treats a metric:
 
-- `LandMaskMixin`: the model passes its land mask to the metric as a `land_mask` keyword argument, which the metric then uses for further calculations.
+- `LandMaskMixin`: the model must pass its land mask (or `None`) to the metric as a `land_mask` keyword argument at construction time.
 - `SingleChannelMetricMixin`: the metric only makes sense for a single output channel (e.g. sea ice concentration), so it is skipped automatically for models that predict several channels.
 
 ## The scenarios

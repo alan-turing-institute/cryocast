@@ -24,9 +24,8 @@ class BaseIceAreaMetric(
                 for OSISAF).
 
         """
-        super().__init__()
+        super().__init__(land_mask=land_mask)
         self.pixel_size = pixel_size
-        self._register_land_mask(land_mask)
 
     def _masked_mismatch(
         self, preds_extent: torch.Tensor, target_extent: torch.Tensor

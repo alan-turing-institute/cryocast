@@ -51,12 +51,11 @@ class FractionalSkillScorePerForecastDay(
                 (default is 1).
 
         """
-        super().__init__()
+        super().__init__(land_mask=land_mask)
         if neighbourhood_size < 1 or neighbourhood_size % 2 == 0:
             msg = "neighbourhood_size must be a positive odd integer."
             raise ValueError(msg)
         self.neighbourhood_size = neighbourhood_size
-        self._register_land_mask(land_mask)
 
         self.sum_mse: torch.Tensor
         self.sum_mse_ref: torch.Tensor

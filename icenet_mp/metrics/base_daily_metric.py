@@ -26,8 +26,7 @@ class BaseDailyMetric(LandMaskMixin, AccumulatorMixin, Metric):
                 for land. When given, land cells are excluded from the metric entirely.
 
         """
-        super().__init__()
-        self._register_land_mask(land_mask)
+        super().__init__(land_mask=land_mask)
         self.add_state(
             "sum_errors",
             default=torch.tensor([], dtype=torch.float32),
