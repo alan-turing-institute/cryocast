@@ -76,11 +76,6 @@ class EncoderStage(BaseModel):
         template: EncodeProcessDecode,
     ) -> "EncoderStage":
         """Create an EncoderStage from an existing EncodeProcessDecode template."""
-        # SIC-only metrics don't apply when reconstructing a multi-channel non-SIC
-        # dataset (e.g. float-argo, era5).
-        template_metrics = copy.deepcopy(template.metrics)
-        if data_space_in.chw[0] != 1:
-            template_metrics = [m for m in template_metrics if m in ("mae", "rmse")]
         return cls(
             channel_names=channel_names,
             data_space_in=data_space_in,
@@ -99,7 +94,7 @@ class EncoderStage(BaseModel):
             output_space=template.output_space.to_dict(),
             scheduler=copy.deepcopy(template.scheduler_cfg),
             loss=copy.deepcopy(template.loss_cfg),
-            metrics=template_metrics,
+            metrics=copy.deepcopy(template.metrics),
         )
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
