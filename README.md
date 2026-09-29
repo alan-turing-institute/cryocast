@@ -17,7 +17,7 @@
 | icenet\_mp/cli/evaluate.py                                           |       26 |        3 |     88% | 37-42, 93 |
 | icenet\_mp/cli/hydra.py                                              |       29 |        0 |    100% |           |
 | icenet\_mp/cli/main.py                                               |       26 |        1 |     96% |        59 |
-| icenet\_mp/cli/sweep.py                                              |       75 |        1 |     99% |       187 |
+| icenet\_mp/cli/sweep.py                                              |       90 |        1 |     99% |       216 |
 | icenet\_mp/cli/train.py                                              |       16 |        1 |     94% |        55 |
 | icenet\_mp/compatibility/\_\_init\_\_.py                             |       17 |        0 |    100% |           |
 | icenet\_mp/compatibility/lightning/\_\_init\_\_.py                   |        9 |        0 |    100% |           |
@@ -143,7 +143,7 @@
 | icenet\_mp/models/processors/unet.py                                 |       53 |        0 |    100% |           |
 | icenet\_mp/models/processors/vit.py                                  |       43 |        4 |     91% |41-42, 101-105 |
 | icenet\_mp/sweep/\_\_init\_\_.py                                     |        2 |        0 |    100% |           |
-| icenet\_mp/sweep/optuna\_sweep.py                                    |      116 |        0 |    100% |           |
+| icenet\_mp/sweep/optuna\_sweep.py                                    |      125 |        2 |     98% |   239-240 |
 | icenet\_mp/sweep/parameters.py                                       |       98 |        1 |     99% |        76 |
 | icenet\_mp/sweep/sampler\_store.py                                   |       40 |        0 |    100% |           |
 | icenet\_mp/synthetic/\_\_init\_\_.py                                 |        2 |        0 |    100% |           |
@@ -166,7 +166,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       88 |        2 |     98% |     64-65 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **5979** |  **395** | **93%** |           |
+| **TOTAL**                                                            | **6003** |  **397** | **93%** |           |
 
 
 ## Setup coverage badge
