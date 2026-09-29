@@ -2,9 +2,8 @@ import gc
 import logging
 import os
 import shutil
-import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import hydra
 import torch
@@ -14,7 +13,11 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 from wandb.sdk.lib.runid import generate_id
 
-from icenet_mp.callbacks import PlottingCallback, UnconditionalCheckpoint
+from icenet_mp.callbacks import (
+    MediaLoggingCallback,
+    PredictionWriter,
+    UnconditionalCheckpoint,
+)
 from icenet_mp.compatibility.torch import (
     patch_interpolate_antialias,
     patch_open_file_limit,
@@ -22,7 +25,6 @@ from icenet_mp.compatibility.torch import (
 from icenet_mp.data import CommonDataModule
 from icenet_mp.models import BaseModel, EncodeProcessDecode
 from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from icenet_mp.types import SupportsMetadata
 from icenet_mp.utils import get_device_name, get_timestamp, get_wandb_run
 
 log = logging.getLogger(__name__)
@@ -94,7 +96,7 @@ class ModelService:
         return builder
 
     @classmethod
-    def from_checkpoint(  # noqa: C901, PLR0912
+    def from_checkpoint(
         cls, config: DictConfig, checkpoint_path: Path
     ) -> "ModelService":
         """Build a new ModelService by loading a model from a checkpoint."""
@@ -105,44 +107,19 @@ class ModelService:
             msg = f"Checkpoint file {checkpoint_path} does not exist."
             raise FileNotFoundError(msg)
 
-        apply_overrides = any(
-            a == "--config-name" or a.startswith("--config-name=") for a in sys.argv
-        )
-
-        # Build a combined model configuration. Checkpoint values are used as
-        # defaults; the eval config fills in eval-only sections.
-        # When apply_overrides is True (the user passed
-        # --config-name), the eval config's model/predict/train values also
-        # override the saved values — overrides to fields that would break
-        # weight loading (model._target_, channel counts, encoder shapes,
-        # etc.) are the caller's responsibility. See #525.
+        # Build a combined model configuration where the command line config takes
+        # precedence except for the "model", "predict" and "train" keys which are
+        # related to training the model.
         config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
-        ckpt_config: DictConfig | None = None
         try:
+            # Load the model configuration from the checkpoint directory
             ckpt_config = DictConfig(OmegaConf.load(config_path))
             log.debug("Loaded checkpoint configuration from %s.", config_path)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
-            if apply_overrides:
-                for key in ("model", "predict", "train"):
-                    if key not in config:
-                        continue
-                    cli_val = OmegaConf.to_container(config[key], resolve=False)
-                    ckpt_val = (
-                        OmegaConf.to_container(ckpt_config[key], resolve=False)
-                        if key in ckpt_config
-                        else None
-                    )
-                    if cli_val != ckpt_val:
-                        log.warning(
-                            "Applying CLI override for '%s'; the corresponding "
-                            "values saved with the checkpoint will be ignored.",
-                            key,
-                        )
-            else:
-                for key in ("model", "predict", "train"):
-                    combined_cfg[key] = OmegaConf.merge(
-                        combined_cfg.get(key, {}), ckpt_config.get(key, {})
-                    )
+            for key in ("model", "predict", "train"):
+                combined_cfg[key] = OmegaConf.merge(
+                    combined_cfg.get(key, {}), ckpt_config.get(key, {})
+                )
         except (NotADirectoryError, FileNotFoundError):
             combined_cfg = config
             log.debug("Could not load checkpoint configuration from %s.", config_path)
@@ -153,36 +130,26 @@ class ModelService:
             builder.config["model"]["_target_"]
         )
         log.info("Loading a trained %s model...", builder.config["model"]["name"])
-
-        # When apply_overrides is True, forward model subfields (encoders,
-        # processor, decoder) as kwargs to load_from_checkpoint whenever the
-        # eval-config value differs from what was saved with the checkpoint.
-        # Without this, Lightning would restore the saved hyper_parameters
-        # and any config override would be silently ignored (see #525).
-        model_overrides: dict[str, Any] = {}
-        if apply_overrides and ckpt_config is not None:
-            cli_model = config.get("model", {})
-            ckpt_model = ckpt_config.get("model", {})
-            for k in ("encoders", "processor", "decoder"):
-                if k not in cli_model:
-                    continue
-                cli_val = OmegaConf.to_container(cli_model[k], resolve=False)
-                ckpt_val = (
-                    OmegaConf.to_container(ckpt_model[k], resolve=False)
-                    if k in ckpt_model
-                    else None
-                )
-                if cli_val != ckpt_val:
-                    model_overrides[k] = builder.config["model"][k]
+        # For each of the keyword arguments that we know this model class ignores, we
+        # attempt to load them from the model config rather than the checkpoint.
+        non_checkpoint_kwargs = {
+            key: builder.config["model"][key]
+            for key in model_cls.ignored_hparams
+            if key in builder.config["model"]
+        }
         builder.model_ = model_cls.load_from_checkpoint(
             checkpoint_path,
             mask_dir=str(builder.data_module.mask_directory),
             latitudes_fn=lambda: builder.data_module.latitudes,
             longitudes_fn=lambda: builder.data_module.longitudes,
-            map_location="cpu",  # portability: will be moved to the correct device later
+            map_location="cpu",  # Lightning will move this to the correct device later
             weights_only=False,
-            **model_overrides,
+            **non_checkpoint_kwargs,
         )
+        # Load the current epoch from the checkpoint
+        builder.model_.checkpoint_epoch = torch.load(
+            checkpoint_path, map_location="cpu", weights_only=False
+        ).get("epoch")
 
         return builder
 
@@ -222,7 +189,7 @@ class ModelService:
         Args:
             model: Model to train. Defaults to ``self.model`` if not provided.
             config: Job-specific config section (e.g. ``self.config["train"]``).
-            job_stage: Label passed to ``PlottingCallback.prefix`` and used in log messages.
+            job_stage: Label passed to ``MediaLoggingCallback.prefix`` and used in log messages.
             ckpt_path: Optional checkpoint to load training state from.
 
         Returns:
@@ -346,7 +313,7 @@ class ModelService:
         Args:
             config: Job-specific config section (e.g. ``self.config["train"]``).
             project: W&B project name (one of "train" or "evaluate").
-            job_stage: Optional label passed to ``PlottingCallback.prefix`` and used
+            job_stage: Optional label passed to ``MediaLoggingCallback.prefix`` and used
                 in log messages. Also sets the W&B ``job_type`` to ``"multistage"``
                 when provided, or ``"single-stage"`` otherwise.
 
@@ -440,17 +407,10 @@ class ModelService:
         # Additional configuration for callbacks
         for callback in cast("list[Callback]", trainer.callbacks):  # type: ignore[attr-defined]
             log.debug("Configuring callback %s.", callback.__class__.__name__)
-            # Set metadata for supported callbacks
-            if isinstance(callback, SupportsMetadata):
-                log.debug("Setting metadata for %s.", callback.__class__.__name__)
-                model_name = self.config["model"].get(
-                    "name", self.model.__class__.__name__
-                )
-                callback.set_metadata(self.config, model_name)
-            # Set plotting stage
-            if isinstance(callback, PlottingCallback):
+            # Set image logging prefix
+            if isinstance(callback, MediaLoggingCallback):
                 log.debug(
-                    "Setting plotting prefix for %s to %s.",
+                    "Setting image logging prefix for %s to %s.",
                     callback.__class__.__name__,
                     job_stage,
                 )
@@ -463,6 +423,16 @@ class ModelService:
                     run_directory / "checkpoints",
                 )
                 callback.dirpath = run_directory / "checkpoints"
+            # Set prediction output path for the prediction writer, if enabled
+            if isinstance(callback, PredictionWriter) and callback.enabled:
+                output_path = run_directory / "files" / "predictions.nc"
+                log.debug(
+                    "Setting output_path for %s to %s.",
+                    callback.__class__.__name__,
+                    output_path,
+                )
+                callback.output_path = output_path
+                callback.mask_dir = self.data_module.mask_directory
 
         return trainer
 
