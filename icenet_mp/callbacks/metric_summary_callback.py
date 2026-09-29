@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Any, ClassVar, override
+from typing import Any, ClassVar
 
 import wandb
 from lightning import LightningModule, Trainer
@@ -8,6 +8,7 @@ from lightning.pytorch import Callback
 from lightning.pytorch.trainer.states import TrainerFn
 from torch import Tensor
 from torchmetrics import Metric, MetricCollection
+from typing_extensions import override
 
 from icenet_mp.metrics import (
     FractionalSkillScorePerForecastDay,
