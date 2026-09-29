@@ -6,7 +6,7 @@ import torch
 from lightning import Trainer
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.trainer.states import TrainerFn
-from torchmetrics import MeanAbsoluteError, MetricCollection
+from torchmetrics import MeanAbsoluteError, Metric, MetricCollection
 
 from icenet_mp.callbacks.metric_summary_callback import MetricSummaryCallback
 from icenet_mp.metrics import (
@@ -30,6 +30,25 @@ def mock_trainer() -> MagicMock:
     mock_logger = MagicMock()
     trainer.loggers = [mock_logger]
     return trainer
+
+
+class MockMappingMetric(Metric):
+    """A metric whose compute() returns a mapping rather than a tensor."""
+
+    total: torch.Tensor
+
+    def __init__(self) -> None:
+        """Initialise the metric with a single summed state."""
+        super().__init__()
+        self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+        """Accumulate the absolute error."""
+        self.total += (preds - target).abs().sum()
+
+    def compute(self) -> dict[str, torch.Tensor]:  # type: ignore[override]
+        """Return the accumulated total inside a mapping."""
+        return {"total": self.total}
 
 
 class MockWandbRun:
@@ -347,6 +366,20 @@ class TestLogPerEpochMetrics:
         assert "test_mae_mean" in logged_metrics
         assert "test_unused_mean" not in logged_metrics
 
+    def test_skips_non_tensor_metrics(self, mock_trainer: MagicMock) -> None:
+        """Skip metrics that do not compute a tensor."""
+        callback = MetricSummaryCallback()
+        metric_collection = MetricCollection(
+            {"mae": MeanAbsoluteError(), "mapping": MockMappingMetric()}
+        )
+        metric_collection.update(torch.zeros(1), torch.ones(1))
+
+        callback.log_per_epoch_metrics(mock_trainer, metric_collection, "test")
+
+        logged_metrics = mock_trainer.loggers[0].log_metrics.call_args[0][0]
+        assert "test_mae_mean" in logged_metrics
+        assert "test_mapping_mean" not in logged_metrics
+
 
 class TestLogPerRunMetrics:
     """Tests for log_per_run_metrics."""
@@ -394,6 +427,28 @@ class TestLogPerRunMetrics:
         preds = torch.randn(1, 3, 1, 2, 2)
         targets = torch.randn(1, 3, 1, 2, 2)
         metric_collection["mae_daily"].update(preds, targets)
+
+        callback.log_per_run_metrics(trainer, {"test": metric_collection})
+
+        mock_wandb.plot.line_series.assert_called_once()
+        line_series_kwargs = mock_wandb.plot.line_series.call_args[1]
+        assert line_series_kwargs["title"] == "mae_daily_per_forecast_day"
+
+    def test_skips_non_tensor_metrics(
+        self,
+        wandb_run: tuple[MagicMock, MockWandbRun],
+    ) -> None:
+        """Skip metrics that do not compute a tensor when building the per-day plot."""
+        callback = MetricSummaryCallback()
+        mock_wandb, _ = wandb_run
+
+        trainer = MagicMock(spec=Trainer)
+        trainer.sanity_checking = False
+
+        metric_collection = MetricCollection(
+            {"mae_daily": MAEPerForecastDay(), "mapping": MockMappingMetric()}
+        )
+        metric_collection.update(torch.randn(1, 3, 1, 2, 2), torch.randn(1, 3, 1, 2, 2))
 
         callback.log_per_run_metrics(trainer, {"test": metric_collection})
 

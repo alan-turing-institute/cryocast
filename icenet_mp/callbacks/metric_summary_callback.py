@@ -58,7 +58,7 @@ class MetricSummaryCallback(Callback):
                 if not metric.update_called:
                     continue
                 values = metric.compute()
-                if values.numel() <= 1:
+                if not isinstance(values, Tensor) or values.numel() <= 1:
                     continue
                 group = next(
                     (
@@ -85,9 +85,9 @@ class MetricSummaryCallback(Callback):
 
         # Compute the mean value of each metric (e.g., SIEError) across all days
         means = {
-            f"{stage}_{name}_mean".lower(): metric.compute().mean().item()
+            f"{stage}_{name}_mean".lower(): values.mean().item()
             for name, metric in metrics.items()
-            if metric.update_called
+            if metric.update_called and isinstance(values := metric.compute(), Tensor)
         }
         if not means:
             return
