@@ -1,0 +1,3 @@
+_target_: icenet_mp.models.Climatology
+
+name: climatology

@@ -20,6 +20,7 @@ from icenet_mp.metrics import (
     SpatialMeanGroundTruthPerForecastDay,
     SpatialMeanPredictionPerForecastDay,
 )
+from icenet_mp.types import ModelStepOutput
 
 
 @pytest.fixture
@@ -716,7 +717,6 @@ class TestMetricCalculations:
         computed_sie.update(preds, targets)
         daily_result = computed_sie.compute()
 
-        # Expected SIEError per day (before pixel-size scaling):
         # Day 1: sie error = (0-1 + 0-1 + 1-1 + 0-0) * 1^2 = -2.0
         # Day 2: sie error = (0-1 + 1-0 + 1-1 + 0-0) * 1^2 = 0.0
         # Day 3: sie error = (1-0 + 1-0 + 1-1 + 0-1) * 1^2 = 1.0
@@ -995,3 +995,151 @@ class TestMetricCalculations:
         expected = torch.tensor([1.66667, 3.0, 5.0])
 
         assert torch.allclose(daily_result, expected, atol=1e-4)
+
+
+class TestClimatologyMetrics:
+    """Tests for climatology baseline metrics in on_test_batch_end."""
+
+    @staticmethod
+    def _batch_and_outputs() -> tuple[dict, ModelStepOutput]:
+        """Build a test batch with a climatology key and matching ModelStepOutput."""
+        batch = {
+            "input": torch.rand(1, 1, 1, 2, 2),
+            "climatology": torch.rand(1, 3, 1, 2, 2),
+        }
+        outputs = ModelStepOutput(
+            prediction=torch.rand(1, 3, 1, 2, 2),
+            target=torch.rand(1, 3, 1, 2, 2),
+            loss=torch.tensor(0.0),
+        )
+        return batch, outputs
+
+    def test_on_test_batch_end_builds_climatology_metrics(
+        self,
+        mock_module: MagicMock,
+    ) -> None:
+        """The first batch containing a climatology entry builds the collection."""
+        callback = MetricSummaryCallback()
+        mock_module.test_metrics = MetricCollection(
+            {"accuracy": IceNetAccuracyPerForecastDay()}
+        )
+        batch, outputs = self._batch_and_outputs()
+
+        callback.on_test_batch_end(
+            MagicMock(spec=Trainer), mock_module, outputs, batch, 0
+        )
+
+        assert callback.climatology_metrics is not None
+        assert set(callback.climatology_metrics) == {"accuracy"}
+        assert callback.climatology_metrics["accuracy"].update_called is True
+
+    def test_on_test_batch_end_noop_without_climatology_key(
+        self,
+        mock_module: MagicMock,
+    ) -> None:
+        """Batches without a climatology key leave the callback state untouched."""
+        callback = MetricSummaryCallback()
+        mock_module.test_metrics = MetricCollection(
+            {"accuracy": IceNetAccuracyPerForecastDay()}
+        )
+        _, outputs = self._batch_and_outputs()
+        batch = {
+            "input": torch.rand(1, 1, 1, 2, 2),
+            "target": torch.rand(1, 3, 1, 2, 2),
+        }
+
+        callback.on_test_batch_end(
+            MagicMock(spec=Trainer), mock_module, outputs, batch, 0
+        )
+
+        assert callback.climatology_metrics is None
+
+    def test_on_test_batch_end_noop_when_outputs_not_mapping(
+        self,
+        mock_module: MagicMock,
+    ) -> None:
+        """A non-Mapping outputs value (e.g. a bare Tensor) is ignored safely."""
+        callback = MetricSummaryCallback()
+        mock_module.test_metrics = MetricCollection(
+            {"accuracy": IceNetAccuracyPerForecastDay()}
+        )
+        batch, _ = self._batch_and_outputs()
+
+        callback.on_test_batch_end(
+            MagicMock(spec=Trainer), mock_module, torch.rand(1), batch, 0
+        )
+
+        assert callback.climatology_metrics is None
+
+    def test_on_test_epoch_start_resets_climatology_metrics(
+        self,
+        mock_module: MagicMock,
+    ) -> None:
+        """The climatology collection is reset at the start of each test epoch."""
+        callback = MetricSummaryCallback()
+        mock_module.test_metrics = MetricCollection(
+            {"accuracy": IceNetAccuracyPerForecastDay()}
+        )
+        batch, outputs = self._batch_and_outputs()
+        callback.on_test_batch_end(
+            MagicMock(spec=Trainer), mock_module, outputs, batch, 0
+        )
+        assert callback.climatology_metrics is not None
+        assert callback.climatology_metrics["accuracy"].update_called is True
+
+        callback.on_test_epoch_start(MagicMock(spec=Trainer), mock_module)
+
+        assert callback.climatology_metrics["accuracy"].update_called is False
+
+    def test_teardown_includes_climatology_baseline(
+        self,
+        mock_module: MagicMock,
+        wandb_run: tuple[MagicMock, MockWandbRun],
+    ) -> None:
+        """The per-run plot carries both the test and climatology series."""
+        callback = MetricSummaryCallback()
+        mock_wandb, mock_run = wandb_run
+        trainer = MagicMock(spec=Trainer)
+        trainer.sanity_checking = False
+
+        mock_module.test_metrics = MetricCollection(
+            {"accuracy": IceNetAccuracyPerForecastDay()}
+        )
+        batch, outputs = self._batch_and_outputs()
+        # Mirror BaseModel.test_step, which updates the model's test metrics.
+        mock_module.test_metrics.update(outputs["prediction"], outputs["target"])
+        callback.on_test_batch_end(trainer, mock_module, outputs, batch, 0)
+
+        callback.teardown(trainer, mock_module, stage=TrainerFn.TESTING.value)
+
+        mock_wandb.plot.line_series.assert_called_once()
+        line_series_kwargs = mock_wandb.plot.line_series.call_args[1]
+        assert line_series_kwargs["keys"] == ["test", "climatology"]
+        assert line_series_kwargs["title"] == "accuracy_per_forecast_day"
+        assert line_series_kwargs["xs"] == [1, 2, 3]
+        ys = line_series_kwargs["ys"]
+        assert len(ys) == 2
+        assert all(len(series) == 3 for series in ys)
+        mock_run.log.assert_called_once()
+
+    def test_teardown_without_climatology_omits_baseline(
+        self,
+        mock_module: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A test run whose batches never carried climatology has no baseline stage."""
+        callback = MetricSummaryCallback()
+        mock_module.test_metrics = MetricCollection({"mae": MAEPerForecastDay()})
+        mock_module.test_metrics.update(
+            torch.rand(1, 3, 1, 2, 2), torch.rand(1, 3, 1, 2, 2)
+        )
+        mock_log_per_run_metrics = MagicMock()
+        monkeypatch.setattr(callback, "log_per_run_metrics", mock_log_per_run_metrics)
+
+        callback.teardown(
+            MagicMock(spec=Trainer), mock_module, stage=TrainerFn.TESTING.value
+        )
+
+        mock_log_per_run_metrics.assert_called_once()
+        metrics = mock_log_per_run_metrics.call_args[0][1]
+        assert set(metrics) == {"test"}

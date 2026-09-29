@@ -4,8 +4,8 @@ defaults:
     - early_stopping
     - ema_weight_averaging
     - learning_rate
+    - media_logging
     - metric_summary
-    - plotting
   - lr_scheduler: default
   - multistage: default
   - optimizer: default

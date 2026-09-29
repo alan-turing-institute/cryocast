@@ -3,14 +3,14 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import ClassVar, cast
 from unittest.mock import MagicMock
 
 import pytest
 from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.callbacks import PlottingCallback
+from icenet_mp.callbacks import MediaLoggingCallback, PredictionWriter
 from icenet_mp.model_service import ModelService
 from icenet_mp.models import EncodeProcessDecode
 from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
@@ -33,6 +33,8 @@ class FakeCommonDataModule:
 
 
 class FakeModel:
+    ignored_hparams: ClassVar[frozenset[str]] = frozenset()
+
     @classmethod
     def load_from_checkpoint(
         cls,
@@ -120,9 +122,37 @@ class TestModelService:
                 "icenet_mp.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
             service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
             assert isinstance(service.model, FakeModel)
             assert service.config == cfg_model_service
+            assert service.model.checkpoint_epoch == 3
+
+    def test_from_checkpoint_sets_checkpoint_epoch_to_none_when_absent(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Don't crash when the raw checkpoint dict has no 'epoch' key."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr("icenet_mp.model_service.torch.load", lambda *_a, **_k: {})
+            service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
+
+        assert service.model.checkpoint_epoch is None
 
     def test_from_checkpoint_config_overloads(
         self, cfg_model_service: DictConfig, tmp_path: Path
@@ -142,6 +172,9 @@ class TestModelService:
             mp.setattr(
                 "icenet_mp.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(
                 DictConfig(
@@ -182,6 +215,9 @@ class TestModelService:
             mp.setattr(
                 "icenet_mp.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
 
@@ -293,7 +329,7 @@ class TestModelService:
     def test_build_trainer_configures_run_directory_and_callbacks(
         self, tmp_path: Path
     ) -> None:
-        """Wire up workers, the run directory, and per-callback metadata/dirpath."""
+        """Wire up workers, the run directory, and per-callback prefix/dirpath."""
         service = ModelService.__new__(ModelService)
         service.fully_deterministic = False
         service.model_ = MagicMock()
@@ -301,11 +337,18 @@ class TestModelService:
         service.config_ = DictConfig({"model": {"name": "test_model"}})
         config = DictConfig({"trainer": {}})
 
-        plotting_callback = MagicMock(spec=PlottingCallback)
+        plotting_callback = MagicMock(spec=MediaLoggingCallback)
         checkpoint_callback = MagicMock(spec=ModelCheckpoint)
+        enabled_prediction_writer = PredictionWriter(enabled=True)
+        disabled_prediction_writer = PredictionWriter(enabled=False)
 
         fake_trainer = MagicMock()
-        fake_trainer.callbacks = [plotting_callback, checkpoint_callback]
+        fake_trainer.callbacks = [
+            plotting_callback,
+            checkpoint_callback,
+            enabled_prediction_writer,
+            disabled_prediction_writer,
+        ]
         fake_trainer.num_devices = 1
         fake_trainer.is_global_zero = True
 
@@ -331,11 +374,15 @@ class TestModelService:
 
         service.data_module_.assign_workers.assert_called_once_with(4)
         assert (run_dir / "files" / "model_config.yaml").exists()
-        plotting_callback.set_metadata.assert_called_once_with(
-            service.config_, "test_model"
-        )
         assert plotting_callback.prefix == "processor"
         assert checkpoint_callback.dirpath == run_dir / "checkpoints"
+        assert (
+            enabled_prediction_writer.output_path
+            == run_dir / "files" / "predictions.nc"
+        )
+        assert enabled_prediction_writer.mask_dir == service.data_module_.mask_directory
+        assert disabled_prediction_writer.output_path is None
+        assert disabled_prediction_writer.mask_dir is None
         assert result is fake_trainer
 
     def test_build_trainer_wires_wandb_logger_and_saves_config_to_wandb(

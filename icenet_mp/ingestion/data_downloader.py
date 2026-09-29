@@ -39,6 +39,7 @@ class DataDownloader:
     ) -> None:
         """Initialise a DataDownloader from a config, and a preprocessor and postprocessor."""
         self.name = name
+        self.group = anemoi_config.get("group_as", name)
         self.path_dataset = base_path / "data" / "anemoi" / f"{name}.zarr"
         self.recipe = Recipe(**anemoi_config)
         self.preprocessor = CompositePreprocessor(
