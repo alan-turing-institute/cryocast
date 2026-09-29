@@ -17,6 +17,7 @@ from lightning.pytorch.utilities.types import (
 )
 from omegaconf import DictConfig
 from torchmetrics import Metric, MetricCollection
+from typing_extensions import override
 
 from icenet_mp.metrics import LandMaskMixin, SingleChannelMetricMixin
 from icenet_mp.models.common import Mask
@@ -29,6 +30,7 @@ from icenet_mp.types import (
 )
 
 if TYPE_CHECKING:
+    from torch.nn.modules.module import _IncompatibleKeys
     from torch.optim import Optimizer
 
 log = logging.getLogger(__name__)
@@ -39,7 +41,7 @@ class BaseModel(LightningModule, ABC):
 
     # Parameters that should be excluded from hyperparameter logging
     ignored_hparams: ClassVar[frozenset[str]] = frozenset(
-        ("latitudes_fn", "longitudes_fn", "mask_dir")
+        ("latitudes_fn", "longitudes_fn", "mask_dir", "metrics")
     )
 
     def __init__(  # noqa: PLR0913
@@ -256,6 +258,26 @@ class BaseModel(LightningModule, ABC):
 
         """
 
+    @override
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], *args: Any, **kwargs: Any
+    ) -> "_IncompatibleKeys":
+        """Load a state dict, ignoring any metric collections it contains."""
+        metric_prefixes = tuple(
+            f"{name}."
+            for name, module in self.named_modules()
+            if isinstance(module, MetricCollection)
+        )
+        return super().load_state_dict(
+            {k: v for k, v in state_dict.items() if not k.startswith(metric_prefixes)},
+            *args,
+            **kwargs,
+        )
+
+    def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
+        """Calculate the loss given a prediction and target."""
+        return self.loss_fn(prediction, target)
+
     @property
     def loss_cfg(self) -> DictConfig:
         """Get the loss configuration."""
@@ -272,10 +294,6 @@ class BaseModel(LightningModule, ABC):
             )
             raise TypeError(msg)
         self._loss_cfg = cfg
-
-    def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
-        """Calculate the loss given a prediction and target."""
-        return self.loss_fn(prediction, target)
 
     def process_batch(self, batch: dict[str, TensorNTCHW]) -> dict[str, TensorNTCHW]:
         """Process a batch before the forward pass and loss computation.

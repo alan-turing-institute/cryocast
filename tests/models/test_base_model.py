@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import lightning
 import numpy as np
 import pytest
 import torch
@@ -167,6 +168,46 @@ class TestBaseModel:
             lr_scheduler=DictConfig({}),
         )
         assert getattr(model.train_metrics["accuracy"], "land_mask", None) is None
+
+    def test_legacy_checkpoint_loads_with_replacement_metrics(
+        self, tmp_path: Path
+    ) -> None:
+        """Checkpoints that saved plain metric names load when given new metrics."""
+        model = FakeDataModel(
+            name="fake data",
+            input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space={"channels": 1, "name": "target", "shape": (2, 2)},
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+        )
+        checkpoint_path = tmp_path / "legacy.ckpt"
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                # FakeDataModel supplies its own hemisphere, so it is not saved here
+                "hyper_parameters": {
+                    **{k: v for k, v in model.hparams.items() if k != "hemisphere"},
+                    "metrics": ["accuracy", "mae"],
+                },
+                "pytorch-lightning_version": lightning.__version__,
+            },
+            checkpoint_path,
+        )
+
+        with pytest.raises(TypeError, match="must be a mapping"):
+            FakeDataModel.load_from_checkpoint(checkpoint_path, weights_only=False)
+
+        replacement = [metric_spec("mae", MAEPerForecastDay)]
+        loaded = FakeDataModel.load_from_checkpoint(
+            checkpoint_path, metrics=replacement, weights_only=False
+        )
+        assert set(loaded.test_metrics) == {"mae"}
+        # Metric configs are supplied at load time, so are not saved in checkpoints
+        assert "metrics" not in model.hparams
+        assert "metrics" not in loaded.hparams
 
     def test_init_mask_dir_with_land_mask_is_used(self, tmp_path: Path) -> None:
         np.save(tmp_path / "land_mask.npy", np.ones((2, 2), dtype=np.uint8))

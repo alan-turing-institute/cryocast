@@ -59,7 +59,10 @@ class SSIMPerForecastDay(BaseDailyMetric):
         self.padding = filter_size // 2
 
         kernel_1d = self._gaussian_kernel(filter_size, filter_sigma)
-        self.register_buffer("kernel", kernel_1d.outer(kernel_1d)[None, None])
+        # Non-persistent as we do not want to save metric state in checkpoints
+        self.register_buffer(
+            "kernel", kernel_1d.outer(kernel_1d)[None, None], persistent=False
+        )
 
     @staticmethod
     def _gaussian_kernel(filter_size: int, filter_sigma: float) -> torch.Tensor:
