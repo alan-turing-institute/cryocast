@@ -1,10 +1,10 @@
 # Notebooks
 
-IceNet-MP includes a small set of notebooks for worked examples, research workflows and diagnostics. The notebooks supplement the command and configuration documentation; the package does not depend on them.
+The [`notebooks`](https://github.com/alan-turing-institute/icenet-mp/tree/main/notebooks) directory contains supplementary examples and research artifacts for IceNet-MP. They are not required to use the package.
 
 ## Setup
 
-For the current IceNet-MP CLI demo, from the repository root:
+Start with the IceNet-MP CLI `demo_pipeline.ipynb` notebook, using the `notebooks` environment:
 
 ```bash
 uv sync --group notebooks
@@ -12,28 +12,24 @@ cd notebooks
 uv run jupyter lab
 ```
 
-Research and case-study notebooks can require additional datasets, credentials, environment dependencies, or an existing checkpoint. Check their prerequisites before running them.
+Some of these notebooks will not run immediately as they require you to set up credentials for downloading datasets. Details can be found in the notebooks themselves.
 
-## Where to start
+## Main notebook set
 
-Start with [`demo_pipeline.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/demo_pipeline.ipynb) for the primary educational IceNet-MP walkthrough. Its default route uses generated synthetic data and local-file logging, while a separate optional `demo_notebook` route explains the CDS and Weights & Biases prerequisites for the multimodal real-data pipeline.
+| Notebook | Purpose | Prerequisite |
+| --- | --- | --- |
+| [`demo_pipeline.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/demo_pipeline.ipynb) | **CLI walk through.** IceNet-MP walkthrough covering account-free synthetic data, training/evaluation artifacts, model architecture and persistence, Hydra configuration, multimodality, and an optional real-data route. | The default route uses generated synthetic data and local-file logging; there is also an option to use CDS/W&B for real data. |
+| [`layer_diagnostics.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/layer_diagnostics.ipynb) | **Model exploration.** Activation-capture investigation for the current UNet/`quick_test` model and multimodal real-data path. | Supply a compatible checkpoint and existing real datasets; the notebook uses local-file logging for evaluation. |
+| [`ARGO_data.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/ARGO_data.ipynb) | **Data exploration.** Download, inspect and grid ARGO float observations for the non-gridded data path. | Independent of the demo pipeline; requires network access and its geospatial/data dependencies. |
+| [`case_study_whale_corridors.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/case_study_whale_corridors.ipynb) | **Demo videos.** Produce whale-corridor and shipping visualisations. | Requires the case-study data/configuration and is not part of the default CLI walkthrough. |
 
-The notebook maintenance decisions for #417 are:
+## Optional synthetic non-gridded workflow
 
-- **Maintain** [`demo_pipeline.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/demo_pipeline.ipynb) as the primary educational CLI walkthrough, including end-to-end execution, artifacts, model architecture and persistence, configuration/Hydra, multimodality, and the optional real-data route.
-- **Maintain for diagnostics** [`layer_diagnostics.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/layer_diagnostics.ipynb). It demonstrates activation capture for the current UNet/`quick_test` model and multimodal real-data path; it requires a compatible checkpoint and existing real datasets and is not part of the default runnable walkthrough.
-- **Retain as a research example** [`ARGO_data.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/ARGO_data.ipynb) for downloading and gridding real non-gridded ARGO observations.
-- **Retain as a case-study artifact** [`case_study_whale_corridors.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/case_study_whale_corridors.ipynb). It requires its supporting data/configuration and is not part of the default CLI path.
+The following pair can be used to create a synthetic non-gridded dataset, using [`nongriddedenv.yaml`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/nongriddedenv.yaml):
 
-## Synthetic non-gridded data
+1. [`extract_anomalies.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/extract_anomalies.ipynb) creates gridded ERA5 pressure anomalies.
+2. [`degrid_and_visualise.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/degrid_and_visualise.ipynb) samples those anomalies into synthetic station and buoy observations.
 
-Two retained research notebooks provide a controlled synthetic alternative to ARGO observations. Run them in this order:
+## Maintenance
 
-1. [`extract_anomalies.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/extract_anomalies.ipynb)
-2. [`degrid_and_visualise.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/degrid_and_visualise.ipynb)
-
-They use [`nongriddedenv.yaml`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/nongriddedenv.yaml) and are retained as an optional research workflow.
-
-The legacy IceNet model notebooks and early standalone persistence prototype were removed because they use the separate `icenet` code path rather than the current IceNet-MP pipeline. The removed Conda environment files are not referenced by retained notebooks.
-
-For a concise inventory and maintenance notes, see the [`notebooks` README](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/README.md).
+When adding, removing, or renaming a notebook, update this page. The notebooks are supplementary and are not part of the automated test suite.
