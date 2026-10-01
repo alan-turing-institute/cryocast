@@ -104,9 +104,9 @@ class CommonDataModule(LightningDataModule):
         is the overlap of the training periods with the dates available in the target
         dataset. NaN pixels resulting from missing data are excluded.
 
-        Leap years are handled by keeping 29th February as its own calendar day, but
-        taking an average of the 28th February and 1st March statistics if no data is
-        available.
+        Each calendar day's statistics are smoothed over a weighted window of
+        ``CalendarDayClimatology.HALF_WINDOW`` days either side, so 29th February draws
+        on its neighbours in every year (see ``CalendarDayClimatology.from_dataset``).
 
         Returns:
             A ``CalendarDayClimatology`` object holding the mean, standard deviation,
@@ -126,25 +126,24 @@ class CommonDataModule(LightningDataModule):
             )
             log.warning(msg)
             return None
-        # Check coverage before reading any data, so a bad split fails fast
-        covered = {CalendarDayClimatology.day_index(day) for day in period_dates}
-        for index, label in enumerate(CalendarDayClimatology.LABELS):
-            if index not in covered and index != CalendarDayClimatology.FEBRUARY_29:
-                msg = (
-                    f"Cannot build climatology: calendar day {label} has no available "
-                    f"dates in the averaging period ({min(period_dates)} to "
-                    f"{max(period_dates)}). Check the configured training periods "
-                    "against the available data range."
-                )
-                log.warning(msg)
-                return None
         log.info(
             "Computing calendar-day climatology over %d dates between %s and %s.",
             len(period_dates),
             min(period_dates),
             max(period_dates),
         )
-        return CalendarDayClimatology.from_dataset(target, period_dates)
+        climatology = CalendarDayClimatology.from_dataset(target, period_dates)
+        nan_days = np.isnan(climatology.mean).any(axis=(1, 2, 3))
+        if n_nan_days := int(nan_days.sum()):
+            msg = (
+                f"Cannot build climatology: {n_nan_days} calendar days have pixels "
+                f"with no finite values in the period ({min(period_dates)} to "
+                f"{max(period_dates)}). Check the configured training periods against "
+                "the available data range."
+            )
+            log.warning(msg)
+            return None
+        return climatology
 
     @cached_property
     def datasets(self) -> dict[str, SingleDataset]:

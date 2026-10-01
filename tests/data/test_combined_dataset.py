@@ -7,6 +7,8 @@ from icenet_mp.data.calendar_day_climatology import CalendarDayClimatology
 from icenet_mp.data.combined_dataset import CombinedDataset
 from icenet_mp.data.single_dataset import SingleDataset
 
+N_DAYS = len(CalendarDayClimatology.DAY_INDEX)
+
 
 class TestCombinedDataset:
     def test_raises_on_different_frequencies(
@@ -279,8 +281,8 @@ class TestCombinedDatasetClimatology:
     @staticmethod
     def _table() -> np.ndarray:
         """A [366, C, H, W] table whose value encodes the calendar-day index."""
-        table = np.zeros((CalendarDayClimatology.N_DAYS, 1, 2, 2), dtype=np.float32)
-        for index in range(CalendarDayClimatology.N_DAYS):
+        table = np.zeros((N_DAYS, 1, 2, 2), dtype=np.float32)
+        for index in range(N_DAYS):
             table[index] = 100.0 * index + 0.5
         return table
 
