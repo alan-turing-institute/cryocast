@@ -66,3 +66,22 @@ per-scale decomposition so that preserving the target's spectrum is optimal inst
   climatological structure does not dilute the anti-blur signal.
 
 Both optional flags are bit-for-bit inert when off.
+
+## Weighting by lead time
+
+Adding `lead_time_exponent` to any loss makes forecast days further into the future contribute more.
+The loss is evaluated separately at each lead time and the per-day values are combined with weights `w_t = (t + 1) ** lead_time_exponent`.
+These are rescaled to have mean 1 so the overall magnitude of the loss is comparable to unweighted runs.
+
+```bash
+imp train --config-name <config> +loss.lead_time_exponent=1             # default loss, linear scaling
+imp train --config-name <config> loss=huber +loss.lead_time_exponent=2  # Huber, quadratic scaling
+```
+
+!!! note
+    The `+` is needed because the key is not in the default loss YAML files.
+
+- `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
+  mean-reduced pointwise losses (`mse`, `mae`, `huber`, `smooth_l1`). For losses that reduce non-linearly over the whole tensor (`rmse`, `amse`) it is a per-day average instead, so it is close to, but not exactly, the unweighted loss.
+- Weighting needs a lead-time dimension, so it is not supported by models that compress the
+  time-dimension when computing their own loss in latent space, like `DDPMProcessor`.

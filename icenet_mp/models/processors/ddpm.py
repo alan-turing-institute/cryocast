@@ -83,6 +83,12 @@ class DDPMProcessor(BaseProcessor):
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
 
         # Instantiate the configured loss function.
+        if not isinstance(loss, nn.Module) and "lead_time_exponent" in loss:
+            msg = (
+                "lead_time_exponent is not supported by the DDPM processor: its loss "
+                "is computed in v-space without a lead-time dimension."
+            )
+            raise ValueError(msg)
         self.loss_fn: nn.Module = (
             loss if isinstance(loss, nn.Module) else hydra.utils.instantiate(loss)
         )
