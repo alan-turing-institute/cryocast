@@ -78,6 +78,27 @@ def test_daily_climatology_keeps_february_29_separate() -> None:
     assert result.n_dates[CalendarDayClimatology.FEBRUARY_29] == 1
 
 
+def test_daily_climatology_aligns_calendar_days_across_leap_years() -> None:
+    """Group by month/day, so later dates share a slot in leap and non-leap years."""
+    dataset = _fake(
+        {
+            "2000-03-01": [[[1.0]]],
+            "2001-03-01": [[[3.0]]],
+            "2000-12-31": [[[5.0]]],
+            "2001-12-31": [[[7.0]]],
+        }
+    )
+    result = CalendarDayClimatology.from_dataset(dataset, dataset.dates)
+    dec_31 = CalendarDayClimatology.day_index(np.datetime64("2001-12-31"))
+
+    # Day-of-year would split each pair (2000 is a leap year), month/day does not
+    assert result.n_dates[CalendarDayClimatology.MARCH_1] == 2
+    assert result.mean[CalendarDayClimatology.MARCH_1, 0, 0, 0] == 2.0
+    assert dec_31 == CalendarDayClimatology.N_DAYS - 1
+    assert result.n_dates[dec_31] == 2
+    assert result.mean[dec_31, 0, 0, 0] == 6.0
+
+
 def test_daily_climatology_fills_february_29_from_neighbours() -> None:
     """Use the average of 28 February and 1 March when no leap day is present."""
     dataset = _fake(

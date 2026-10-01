@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from icenet_mp.data.calendar_day_climatology import CalendarDayClimatology
 from icenet_mp.data.combined_dataset import CombinedDataset
 from icenet_mp.data.single_dataset import SingleDataset
 
@@ -250,4 +251,91 @@ class TestCombinedDataset:
         np.testing.assert_array_equal(
             batch["target"],
             combined.target.get_tchw([dates_as_np[2]]),
+        )
+
+
+class TestCombinedDatasetClimatology:
+    """Tests for the CombinedDataset climatology key and accessor."""
+
+    @staticmethod
+    def _combined(
+        climatology_zarr: Path,
+        climatology: np.ndarray | None,
+    ) -> CombinedDataset:
+        ds = SingleDataset(
+            name="sic_south",
+            input_files=[climatology_zarr],
+            date_ranges=[{"start": "2019-12-28", "end": "2020-01-05"}],
+        )
+        return CombinedDataset(
+            datasets=[ds],
+            target_group_name="sic_south",
+            target_variables=["ice_conc"],
+            n_history_steps=1,
+            n_forecast_steps=2,
+            climatology=climatology,
+        )
+
+    @staticmethod
+    def _table() -> np.ndarray:
+        """A [366, C, H, W] table whose value encodes the calendar-day index."""
+        table = np.zeros((CalendarDayClimatology.N_DAYS, 1, 2, 2), dtype=np.float32)
+        for index in range(CalendarDayClimatology.N_DAYS):
+            table[index] = 100.0 * index + 0.5
+        return table
+
+    def test_getitem_includes_climatology(self, climatology_zarr: Path) -> None:
+        """Batches gain a climatology key with the calendar day of each forecast step."""
+        table = self._table()
+        combined = self._combined(climatology_zarr, table)
+        idx = combined.dates.index(np.datetime64("2019-12-30T12:00:00", "s"))
+
+        batch = combined[idx]
+        assert set(batch.keys()) == {"sic_south", "target", "climatology"}
+        assert batch["climatology"].shape == (2, 1, 2, 2)
+        # Forecast steps are 2019-12-31 and 2020-01-01.
+        dec_31 = CalendarDayClimatology.day_index(np.datetime64("2019-12-31"))
+        jan_1 = CalendarDayClimatology.day_index(np.datetime64("2020-01-01"))
+        np.testing.assert_array_equal(batch["climatology"][0], table[dec_31])
+        np.testing.assert_array_equal(batch["climatology"][1], table[jan_1])
+
+    def test_getitem_without_climatology_is_unchanged(
+        self, climatology_zarr: Path
+    ) -> None:
+        """Without a climatology table the batch keys and values are exactly as before."""
+        combined = self._combined(climatology_zarr, None)
+        idx = combined.dates.index(np.datetime64("2019-12-30T12:00:00", "s"))
+
+        batch = combined[idx]
+        assert set(batch.keys()) == {"sic_south", "target"}
+        assert "climatology" not in batch
+        np.testing.assert_array_equal(
+            batch["target"],
+            combined.target.get_tchw(
+                [
+                    np.datetime64("2019-12-31T12:00:00", "s"),
+                    np.datetime64("2020-01-01T12:00:00", "s"),
+                ]
+            ),
+        )
+
+    def test_climatology_for(self, climatology_zarr: Path) -> None:
+        """climatology_for returns the calendar-day fields for the forecast steps."""
+        table = self._table()
+        combined = self._combined(climatology_zarr, table)
+        start = np.datetime64("2019-12-31T12:00:00", "s")
+
+        result = combined.climatology_for(start)
+        assert result is not None
+        # Forecast steps are 2020-01-01 and 2020-01-02.
+        jan_1 = CalendarDayClimatology.day_index(np.datetime64("2020-01-01"))
+        jan_2 = CalendarDayClimatology.day_index(np.datetime64("2020-01-02"))
+        np.testing.assert_array_equal(result[0], table[jan_1])
+        np.testing.assert_array_equal(result[1], table[jan_2])
+
+    def test_climatology_for_none(self, climatology_zarr: Path) -> None:
+        """climatology_for returns None when no climatology table was provided."""
+        combined = self._combined(climatology_zarr, None)
+        assert (
+            combined.climatology_for(np.datetime64("2019-12-31T12:00:00", "s")) is None
         )
