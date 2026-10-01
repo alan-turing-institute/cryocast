@@ -184,13 +184,25 @@ class TestDecoderMask:
             restrict_range=restrict_range,
         )
 
-        assert decoder.mask.mask.shape == output_space.shape
-        out = decoder.rollout(
-            torch.randn(2, 1, latent_space.channels, *latent_space.shape),
-            None,
+        # An identical decoder without a mask gives the unmasked reference output
+        unmasked_decoder = NaiveLinearDecoder(
+            data_space_in=latent_space,
+            data_space_out=output_space,
+            restrict_range=restrict_range,
         )
-        # Every masked cell must be exactly zero, with or without bounding.
+        unmasked_decoder.load_state_dict(decoder.state_dict())
+
+        assert decoder.mask.mask.shape == output_space.shape
+        latent = torch.randn(2, 1, latent_space.channels, *latent_space.shape)
+        out = decoder.rollout(latent, None)
+        reference = unmasked_decoder.rollout(latent, None)
+        # Every masked cell must be exactly zero, with or without bounding...
         assert torch.all(out[..., :8, :] == 0).item()
+        # ...and unmasked cells are untouched.
+        active = out[..., 8:, :]
+        assert torch.equal(active, reference[..., 8:, :])
+        if restrict_range == "sigmoid":
+            assert torch.all((active > 0) & (active < 1)).item()
 
     def test_use_mask_without_file_raises(self, tmp_path: Path) -> None:
         latent_space, output_space = self._spaces()

@@ -1,12 +1,16 @@
+import logging
 from pathlib import Path
 from typing import Any
 
+import lightning
 import numpy as np
 import pytest
 import torch
 from hydra.errors import InstantiationException
 from omegaconf import DictConfig, OmegaConf
+from torchmetrics import MeanSquaredError
 
+import icenet_mp
 from icenet_mp.losses.amse_loss import AMSELoss
 from icenet_mp.losses.rmse_loss import RMSELoss
 from icenet_mp.losses.weighted_bce_loss import WeightedBCEWithLogitsLoss
@@ -28,6 +32,23 @@ from icenet_mp.metrics import (
 from icenet_mp.models import BaseModel, Persistence
 from icenet_mp.types import Hemisphere, ModelStepOutput, TensorNTCHW
 
+# The metrics configured by default, which also checks that the shipped config is valid
+DEFAULT_METRICS: list[Any] = OmegaConf.to_container(  # type: ignore[assignment]
+    OmegaConf.load(
+        Path(icenet_mp.__file__).parent / "config/reporting/metrics/default.yaml"
+    )
+)
+
+
+def metric_spec(name: str, metric_type: type, **kwargs: Any) -> dict[str, Any]:
+    """Build a metric config entry for this metric class."""
+    return {
+        "name": name,
+        "_target_": f"{metric_type.__module__}.{metric_type.__qualname__}",
+        **kwargs,
+    }
+
+
 NON_FSS_METRIC_TYPES = {
     "accuracy": IceNetAccuracyPerForecastDay,
     "mae": MAEPerForecastDay,
@@ -48,24 +69,7 @@ class FakeDataModel(BaseModel):
         loss_cfg = kwargs.pop(
             "loss", OmegaConf.create({"_target_": "torch.nn.HuberLoss", "delta": 0.5})
         )
-        metrics = kwargs.pop(
-            "metrics",
-            [
-                "accuracy",
-                "mae",
-                "rmse",
-                "sieerror",
-                "iiee",
-                "diiee",
-                "centroid_error",
-                "fss_neighbourhood_size_1",
-                "fss_neighbourhood_size_5",
-                "fss_neighbourhood_size_15",
-                "ssim",
-                "spatial_mean_ground_truth",
-                "spatial_mean_prediction",
-            ],
-        )
+        metrics = kwargs.pop("metrics", DEFAULT_METRICS)
         super().__init__(
             *args, loss=loss_cfg, metrics=metrics, hemisphere=Hemisphere.NORTH, **kwargs
         )
@@ -175,7 +179,47 @@ class TestBaseModel:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
         )
-        assert model.name == "fake data"
+        assert getattr(model.train_metrics["accuracy"], "land_mask", None) is None
+
+    def test_legacy_checkpoint_loads_with_replacement_metrics(
+        self, tmp_path: Path
+    ) -> None:
+        """Checkpoints that saved plain metric names load when given new metrics."""
+        model = FakeDataModel(
+            name="fake data",
+            input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space={"channels": 1, "name": "target", "shape": (2, 2)},
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+        )
+        checkpoint_path = tmp_path / "legacy.ckpt"
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                # FakeDataModel supplies its own hemisphere, so it is not saved here
+                "hyper_parameters": {
+                    **{k: v for k, v in model.hparams.items() if k != "hemisphere"},
+                    "metrics": ["accuracy", "mae"],
+                },
+                "pytorch-lightning_version": lightning.__version__,
+            },
+            checkpoint_path,
+        )
+
+        with pytest.raises(TypeError, match="must be a mapping"):
+            FakeDataModel.load_from_checkpoint(checkpoint_path, weights_only=False)
+
+        replacement = [metric_spec("mae", MAEPerForecastDay)]
+        loaded = FakeDataModel.load_from_checkpoint(
+            checkpoint_path, metrics=replacement, weights_only=False
+        )
+        assert set(loaded.test_metrics) == {"mae"}
+        # Metric configs are supplied at load time, so are not saved in checkpoints
+        assert "metrics" not in model.hparams
+        assert "metrics" not in loaded.hparams
 
     def test_init_mask_dir_with_land_mask_is_used(self, tmp_path: Path) -> None:
         np.save(tmp_path / "land_mask.npy", np.ones((2, 2), dtype=np.uint8))
@@ -192,6 +236,9 @@ class TestBaseModel:
         )
         land_mask = getattr(model.train_metrics["accuracy"], "land_mask")  # noqa: B009
         assert land_mask.all()
+        # The land mask is passed to metrics without being written into their configs
+        assert all("land_mask" not in spec for spec in model.metric_cfgs.values())
+        assert all("land_mask" not in spec for spec in DEFAULT_METRICS)
 
     def test_loss(
         self, cfg_input_space: DictConfig, cfg_output_space: DictConfig
@@ -240,8 +287,11 @@ class TestBaseModel:
         cfg_optimizer: DictConfig,
         cfg_output_space: DictConfig,
         cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
     ) -> None:
+        # Use non-default values so that the test fails if the config is ignored
+        lr_scheduler = DictConfig(
+            {"frequency": 2, "interval": "step", "monitor": "validation_loss"}
+        )
         model = FakeDataModel(
             name="dummy",
             input_spaces=[cfg_input_space],
@@ -250,7 +300,7 @@ class TestBaseModel:
             output_space=cfg_output_space,
             optimizer=cfg_optimizer,
             scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
+            lr_scheduler=lr_scheduler,
         )
         opt_sched_cfg = model.configure_optimizers()
         assert isinstance(opt_sched_cfg, dict)
@@ -261,8 +311,9 @@ class TestBaseModel:
         assert isinstance(scheduler, torch.optim.lr_scheduler.LinearLR)
         assert scheduler.start_factor == 0.2
         assert scheduler.end_factor == 0.8
-        assert lr_scheduler_cfg.get("frequency") == 1
-        assert lr_scheduler_cfg.get("interval") == "epoch"
+        assert lr_scheduler_cfg.get("frequency") == 2
+        assert lr_scheduler_cfg.get("interval") == "step"
+        assert lr_scheduler_cfg.get("monitor") == "validation_loss"
 
     @pytest.mark.parametrize(
         "step_name",
@@ -312,13 +363,58 @@ class TestBaseModel:
         assert output.target.shape == output_shape
         assert output.loss.shape == torch.Size([])
 
-    def test_test_step_two_channel_target_raises_for_sic_only_metrics(
+    @pytest.mark.parametrize(
+        "has_climatology", [True, False], ids=["climatology", "no-climatology"]
+    )
+    def test_test_step_updates_climatology_metrics(
         self,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        cfg_optimizer: DictConfig,
+        cfg_scheduler: DictConfig,
+        *,
+        has_climatology: bool,
+    ) -> None:
+        """The climatology baseline is only accumulated from batches that carry it."""
+        output_shape = (
+            1,
+            1,
+            cfg_output_space["channels"],
+            *cfg_output_space["shape"],
+        )
+        batch = {
+            cfg_input_space["name"]: torch.randn(
+                1, 1, cfg_input_space["channels"], *cfg_input_space["shape"]
+            ),
+            cfg_output_space["name"]: torch.rand(output_shape),
+        }
+        if has_climatology:
+            batch["climatology"] = torch.rand(output_shape)
+        model = FakeDataModel(
+            name="fake data",
+            input_spaces=[cfg_input_space],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=cfg_output_space,
+            optimizer=cfg_optimizer,
+            scheduler=cfg_scheduler,
+            lr_scheduler=DictConfig({}),
+        )
+
+        model.test_step(batch, 0)
+
+        assert model.test_metrics["mae"].update_called
+        assert model.climatology_metrics["mae"].update_called is has_climatology
+        assert set(model.climatology_metrics) == set(model.test_metrics)
+
+    def test_test_step_two_channel_target_skips_single_channel_metrics(
+        self,
+        caplog: pytest.LogCaptureFixture,
         cfg_input_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
     ) -> None:
-        """A second target channel must not be folded into SIC-only metrics."""
+        """A second target channel must not be folded into single-channel metrics."""
         two_channel_output_space = DictConfig(
             {"channels": 2, "name": "target", "shape": (16, 16)}
         )
@@ -339,26 +435,35 @@ class TestBaseModel:
                 two_channel_output_space["shape"][1],
             ),
         }
-        model = FakeDataModel(
-            name="fake data",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=n_forecast_steps,
-            n_history_steps=n_history_steps,
-            output_space=two_channel_output_space,
-            optimizer=cfg_optimizer,
-            scheduler=cfg_scheduler,
-            lr_scheduler=DictConfig({}),
-        )
-        with pytest.raises(
-            ValueError,
-            match=r"is only defined for a single sea-ice-concentration channel",
-        ):
-            model.test_step(batch, 0)
+        with caplog.at_level(logging.WARNING):
+            model = FakeDataModel(
+                name="fake data",
+                input_spaces=[cfg_input_space],
+                n_forecast_steps=n_forecast_steps,
+                n_history_steps=n_history_steps,
+                output_space=two_channel_output_space,
+                optimizer=cfg_optimizer,
+                scheduler=cfg_scheduler,
+                lr_scheduler=DictConfig({}),
+            )
+        assert "Disabling single-channel metrics for FakeDataModel" in caplog.text
+        assert "accuracy" in caplog.text
+        assert set(model.test_metrics.keys()) == {
+            "mae",
+            "rmse",
+            "ssim",
+            "spatial_mean_ground_truth",
+            "spatial_mean_prediction",
+        }
+        # The requested list is kept so that it can be passed on unchanged
+        assert "accuracy" in model.metric_cfgs
+        output = model.test_step(batch, 0)
+        assert isinstance(output, ModelStepOutput)
 
 
 class TestBaseModelMetricSelection:
     @staticmethod
-    def _build_model(metrics: list[str]) -> FakeDataModel:
+    def _build_model(metrics: list[Any]) -> FakeDataModel:
         return FakeDataModel(
             name="fake data",
             input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
@@ -371,6 +476,12 @@ class TestBaseModelMetricSelection:
             lr_scheduler=DictConfig({}),
         )
 
+    def test_default_config_builds_every_metric(self) -> None:
+        model = self._build_model(DEFAULT_METRICS)
+
+        assert set(model.train_metrics.keys()) == set(model.metric_cfgs)
+        assert len(model.metric_cfgs) == 13
+
     @pytest.mark.parametrize(
         ("metric_name", "metric_type"),
         list(NON_FSS_METRIC_TYPES.items()),
@@ -379,44 +490,115 @@ class TestBaseModelMetricSelection:
     def test_non_fss_metric_selection(
         self, metric_name: str, metric_type: type
     ) -> None:
-        model = self._build_model([metric_name])
+        model = self._build_model([metric_spec(metric_name, metric_type)])
 
         assert set(model.train_metrics.keys()) == {metric_name}
         assert isinstance(model.train_metrics[metric_name], metric_type)
 
     @pytest.mark.parametrize("neighbourhood_size", [1, 3, 7, 15])
-    def test_fss_metric_selection_parses_neighbourhood_size(
+    def test_fss_metric_neighbourhood_size_from_config(
         self, neighbourhood_size: int
     ) -> None:
-        metric_name = f"fss_neighbourhood_size_{neighbourhood_size}"
-        model = self._build_model([metric_name])
+        spec = metric_spec(
+            "fss",
+            FractionalSkillScorePerForecastDay,
+            neighbourhood_size=neighbourhood_size,
+        )
+        model = self._build_model([spec])
 
-        metric = model.train_metrics[metric_name]
+        metric = model.train_metrics["fss"]
         assert isinstance(metric, FractionalSkillScorePerForecastDay)
         assert metric.neighbourhood_size == neighbourhood_size
 
-    def test_multiple_metrics_populate_every_collection(self) -> None:
-        """train/test/validation metrics are independent copies of one selection."""
-        selected = ["accuracy", "rmse", "fss_neighbourhood_size_7", "ssim"]
-        model = self._build_model(selected)
+    def test_multiple_metrics_are_all_present_and_exclusive(self) -> None:
+        specs = [
+            metric_spec("accuracy", IceNetAccuracyPerForecastDay),
+            metric_spec("rmse", RMSEPerForecastDay),
+            metric_spec(
+                "fss_7", FractionalSkillScorePerForecastDay, neighbourhood_size=7
+            ),
+            metric_spec("ssim", SSIMPerForecastDay),
+        ]
+        model = self._build_model(specs)
 
-        assert model.metrics == selected
-        assert set(model.train_metrics.keys()) == set(selected)
-        assert set(model.test_metrics.keys()) == set(selected)
-        assert set(model.validation_metrics.keys()) == set(selected)
+        assert set(model.train_metrics.keys()) == {"accuracy", "rmse", "fss_7", "ssim"}
+
+    def test_metric_collections_are_built_identically(self) -> None:
+        """train/test/validation metrics are independent copies of one selection."""
+        model = self._build_model(
+            [
+                metric_spec("accuracy", IceNetAccuracyPerForecastDay),
+                metric_spec("mae", MAEPerForecastDay),
+            ]
+        )
+
+        assert (
+            set(model.train_metrics.keys())
+            == set(model.test_metrics.keys())
+            == set(model.validation_metrics.keys())
+        )
+        assert model.train_metrics["mae"] is not model.test_metrics["mae"]
 
     def test_empty_metrics_list_builds_no_metrics(self) -> None:
         model = self._build_model([])
 
         assert set(model.train_metrics.keys()) == set()
 
-    def test_unknown_metric_name_raises_key_error(self) -> None:
-        with pytest.raises(KeyError, match="not-a-real-metric"):
-            self._build_model(["not-a-real-metric"])
+    def test_model_metric_names_and_specs(self) -> None:
+        specs = [
+            metric_spec("accuracy", IceNetAccuracyPerForecastDay),
+            metric_spec(
+                "fss_9", FractionalSkillScorePerForecastDay, neighbourhood_size=9
+            ),
+        ]
+        model = self._build_model(specs)
+
+        assert list(model.metric_cfgs) == ["accuracy", "fss_9"]
+        # The original config entries are kept so that they can be passed on unchanged
+        assert list(model.metric_cfgs.values()) == specs
+
+    def test_metric_accepts_dictconfig(self) -> None:
+        spec = OmegaConf.create(metric_spec("my_mae", MAEPerForecastDay))
+        model = self._build_model([spec])
+
+        assert isinstance(model.train_metrics["my_mae"], MAEPerForecastDay)
+
+    def test_metric_without_land_mask_mixin_is_not_given_land_mask(self) -> None:
+        """Non-LandMaskMixin metrics need not accept a land_mask argument."""
+        model = self._build_model([metric_spec("mse", MeanSquaredError)])
+
+        assert isinstance(model.train_metrics["mse"], MeanSquaredError)
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            "mae",
+            {"_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+            {"name": "mae"},
+            {"name": 1, "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+        ],
+        ids=["plain-name", "no-name", "no-target", "non-string-name"],
+    )
+    def test_invalid_metric_config_raises(self, spec: object) -> None:
+        with pytest.raises(
+            TypeError, match="must be a mapping with 'name' and '_target_' keys"
+        ):
+            self._build_model([spec])
+
+    def test_duplicate_metric_name_raises(self) -> None:
+        specs = [
+            metric_spec("mae", MAEPerForecastDay),
+            metric_spec("mae", RMSEPerForecastDay),
+        ]
+        with pytest.raises(ValueError, match="'mae' is configured more than once"):
+            self._build_model(specs)
 
     def test_fss_even_neighbourhood_size_raises(self) -> None:
-        with pytest.raises(ValueError, match="positive odd integer"):
-            self._build_model(["fss_neighbourhood_size_4"])
+        spec = metric_spec(
+            "fss", FractionalSkillScorePerForecastDay, neighbourhood_size=4
+        )
+        with pytest.raises(InstantiationException, match="positive odd integer"):
+            self._build_model([spec])
 
 
 class TestBaseModelMetricAccumulation:
@@ -440,7 +622,9 @@ class TestBaseModelMetricAccumulation:
             n_history_steps=2,
             n_forecast_steps=2,
             name="echo forecast",
-            metrics=metric_names,
+            metrics=[
+                metric_spec(name, NON_FSS_METRIC_TYPES[name]) for name in metric_names
+            ],
             loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
             optimizer=DictConfig({}),
             scheduler=DictConfig({}),

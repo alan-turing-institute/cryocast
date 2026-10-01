@@ -76,6 +76,12 @@ class TestRolloutSlidingWindow:
         )
         assert torch.equal(calls[0], expected_first_window)
 
+        # Later windows drop the oldest timestep and append the newest prediction. The
+        # NullProcessor predicts its newest input timestep, which starts as h2.
+        _, h1, h2 = x.unbind(dim=1)
+        assert torch.equal(calls[1], torch.cat([h1, h2, h2], dim=1))
+        assert torch.equal(calls[2], torch.cat([h2, h2, h2], dim=1))
+
     def test_null_processor_persistence_not_leapfrog(self) -> None:
         """Check NullProcessor.rollout reduces to true persistence.
 
@@ -169,8 +175,15 @@ class TestUNetProcessor:
                 start_out_channels=test_start_out_channels,
             )
 
-    def test_rejects_latent_shape_not_divisible_by_16(self) -> None:
-        latent_space = DataSpace(name="latent", channels=3, shape=(100, 200))
+    @pytest.mark.parametrize(
+        "test_latent_hw",
+        [(100, 200), (32, 40), (16, 16), (16, 32)],
+        ids=["100x200", "32x40", "16x16", "16x32"],
+    )
+    def test_rejects_latent_shape_not_divisible_by_16(
+        self, test_latent_hw: tuple[int, int]
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=test_latent_hw)
         processor = UNetProcessor(
             data_space=latent_space,
             kernel_size=1,
@@ -178,12 +191,13 @@ class TestUNetProcessor:
             n_history_steps=1,
             start_out_channels=7,
         )
+        height, width = test_latent_hw
         msg = (
-            "Latent space height (100) and width (200) must each be divisible by 16 "
-            "with a factor more than 1."
+            f"Latent space height ({height}) and width ({width}) must each be "
+            "divisible by 16 with a factor more than 1."
         )
         with pytest.raises(ValueError, match=re.escape(msg)):
-            processor.rollout(torch.randn(1, 1, 3, 100, 200))
+            processor.rollout(torch.randn(1, 1, 3, height, width))
 
     @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
     @pytest.mark.parametrize(
@@ -198,9 +212,11 @@ class TestUNetProcessor:
     @pytest.mark.parametrize(
         "test_start_out_channels", [7, 32], ids=lambda c: f"start_out{c}"
     )
+    @pytest.mark.parametrize("test_kernel_size", [1, 3], ids=lambda k: f"kernel{k}")
     def test_forward_shape(
         self,
         test_batch_size: int,
+        test_kernel_size: int,
         test_latent_chw: tuple[int, int, int],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
@@ -211,7 +227,7 @@ class TestUNetProcessor:
         )
         processor = UNetProcessor(
             data_space=latent_space,
-            kernel_size=1,
+            kernel_size=test_kernel_size,
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             start_out_channels=test_start_out_channels,

@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from omegaconf import DictConfig
@@ -20,7 +22,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
     ) -> None:
@@ -70,7 +72,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
         test_batch_size: int,
         test_n_forecast_steps: int,
         test_n_history_steps: int,
@@ -126,7 +128,7 @@ class TestEncodeProcessDecode:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         cfg_processor = DictConfig(
             {**cfg_processor, "computes_loss_in_latent_space": True}

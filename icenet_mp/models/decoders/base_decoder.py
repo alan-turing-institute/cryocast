@@ -39,8 +39,8 @@ class BaseDecoder(Freezable):
         self.name = data_space_out.name
 
         # The valid output range, used when finalising outputs
-        self.range_min = restrict_range_min or 0
-        self.range_max = restrict_range_max or 1
+        self.range_min = 0 if restrict_range_min is None else restrict_range_min
+        self.range_max = 1 if restrict_range_max is None else restrict_range_max
 
         # Initialise a skip connection if requested.
         skip_connection_cfg = dict(skip_connection or {})

@@ -117,7 +117,13 @@ def _build_model(
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
-        metrics=["accuracy", "mae"],
+        metrics=[
+            {
+                "name": "accuracy",
+                "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+            },
+            {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+        ],
         # Required since #405: which variable(s) of the target INPUT group are the
         # prediction target. output_space is single-channel throughout these tests,
         # so [0] satisfies the channel-count check; the feedback-channel tests pass
@@ -164,10 +170,9 @@ def _zero_decoder_output(model: EncodeProcessDecode) -> None:
 class TestDefaultsOff:
     """Neither option may change anything unless explicitly switched on."""
 
-    def test_defaults(self) -> None:
+    def test_rollout_space_defaults_to_latent(self) -> None:
         model = _build_model()
         assert model.rollout_space == "latent"
-        assert model.target_variable_indices == [0]
 
     def test_off_is_identical_to_absent(self) -> None:
         absent = _build_model()
@@ -379,15 +384,26 @@ class TestConfigValidation:
         """A bounded decoder works for a residual (additive-skip) physical model.
 
         With an additive skip connection BaseDecoder bounds SIGNED values
-        symmetrically, so the tendency is never squashed into [0, 1].
+        symmetrically, so the tendency is never squashed into [0, 1]: a negative
+        tendency must lower the forecast below persistence.
         """
         model = _build_model(
             rollout_space="physical",
             decoder_extra={**ADDITIVE_SKIP_DECODER, "restrict_range": "clamp"},
         )
+        # Force a constant tendency of -0.1 everywhere
+        _zero_decoder_output(model)
+        final = _final_conv(model)
+        assert final.bias is not None
+        with torch.no_grad():
+            final.bias.fill_(-0.1)
+        inputs = _inputs(model)
         model.eval()
         with torch.no_grad():
-            prediction = model(_inputs(model))
+            prediction = model(inputs)
+        persistence = inputs[TARGET_GROUP][:, -1]
+        expected = (persistence - 0.1).clamp(0.0, 1.0)
+        assert torch.allclose(prediction[:, 0], expected)
         assert float(prediction.min()) >= 0.0
         assert float(prediction.max()) <= 1.0
 

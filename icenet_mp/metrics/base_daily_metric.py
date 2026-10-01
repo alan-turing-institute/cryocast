@@ -18,18 +18,15 @@ class BaseDailyMetric(LandMaskMixin, AccumulatorMixin, Metric):
     sum_errors: torch.Tensor
     count: torch.Tensor
 
-    def __init__(self, land_mask: torch.Tensor | None = None) -> None:
-        """Initialize the metric state.
+    def __init__(self, *, land_mask: torch.Tensor | None = None) -> None:
+        """Initialise the metric state.
 
-        Parameters
-        ----------
-        land_mask : torch.Tensor, optional
-            Boolean tensor of shape (H, W), True for ocean cells and False for land.
-            When given, land cells are excluded from the metric entirely.
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the metric entirely.
 
         """
-        super().__init__()
-        self._register_land_mask(land_mask)
+        super().__init__(land_mask=land_mask)
         self.add_state(
             "sum_errors",
             default=torch.tensor([], dtype=torch.float32),
