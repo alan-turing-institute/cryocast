@@ -83,7 +83,7 @@
 | icenet\_mp/metrics/ssim.py                                           |       43 |        2 |     95% |     59-60 |
 | icenet\_mp/model\_service.py                                         |      270 |        4 |     99% |57-58, 175-176 |
 | icenet\_mp/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
-| icenet\_mp/models/base\_model.py                                     |      104 |        5 |     95% |178, 182, 186, 247-251 |
+| icenet\_mp/models/base\_model.py                                     |      104 |        5 |     95% |183, 187, 191, 252-256 |
 | icenet\_mp/models/climatology.py                                     |       15 |        0 |    100% |           |
 | icenet\_mp/models/common/\_\_init\_\_.py                             |       23 |        0 |    100% |           |
 | icenet\_mp/models/common/activations.py                              |        2 |        0 |    100% |           |
