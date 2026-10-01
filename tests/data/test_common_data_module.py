@@ -95,7 +95,9 @@ class TestTargetMaskDir:
             }
         )
 
-    def test_picks_first_dataset_with_an_existing_mask(self, tmp_path, caplog) -> None:  # noqa: ANN001
+    def test_picks_first_dataset_with_an_existing_mask(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """With several datasets in the group, use the first that has a mask on disk."""
         cfg = self._cfg(
             str(tmp_path),
@@ -115,7 +117,9 @@ class TestTargetMaskDir:
         assert chosen == mask_dir(tmp_path, "sic_b")
         assert any("has 2 datasets" in r.getMessage() for r in caplog.records)
 
-    def test_falls_back_to_first_when_no_masks_exist(self, tmp_path, caplog) -> None:  # noqa: ANN001
+    def test_falls_back_to_first_when_no_masks_exist(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """No dataset has a mask: fall back to the first (old behaviour) and warn."""
         cfg = self._cfg(
             str(tmp_path),
