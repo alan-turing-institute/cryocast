@@ -100,14 +100,21 @@ def test_daily_climatology_fills_february_29_from_neighbours() -> None:
 def test_daily_climatology_marks_all_nan_pixels(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Leave a pixel NaN, and warn, when it has no finite values on a calendar day."""
-    dataset = _fake({"2001-01-01": [[[np.nan, 1.0]]], "2002-01-01": [[[np.nan, 3.0]]]})
+    """Leave a pixel NaN, and warn per day, when it has no finite values on a day."""
+    dataset = _fake(
+        {
+            "2001-01-01": [[[np.nan, np.nan, 1.0]]],
+            "2002-01-01": [[[np.nan, np.nan, 3.0]]],
+            "2001-01-02": [[[4.0, 5.0, 6.0]]],
+        }
+    )
     result = CalendarDayClimatology.from_dataset(dataset, dataset.dates)
 
-    assert np.isnan(result.mean[JAN_1, 0, 0, 0])
-    assert np.isnan(result.std[JAN_1, 0, 0, 0])
-    assert result.mean[JAN_1, 0, 0, 1] == 2.0
-    assert "1 calendar-day pixels have no finite values" in caplog.text
+    assert np.isnan(result.mean[JAN_1, 0, 0, :2]).all()
+    assert np.isnan(result.std[JAN_1, 0, 0, :2]).all()
+    assert result.mean[JAN_1, 0, 0, 2] == 2.0
+    # Two NaN pixels on one calendar day count as one day
+    assert "There are 1 calendar days with pixels" in caplog.text
 
 
 def test_daily_climatology_only_uses_given_dates() -> None:

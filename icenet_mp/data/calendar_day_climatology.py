@@ -86,6 +86,7 @@ class CalendarDayClimatology:
         mean = np.full(shape, np.nan, dtype=np.float32)
         std = np.full(shape, np.nan, dtype=np.float32)
         n_dates = np.zeros(cls.N_DAYS, dtype=np.int64)
+        n_nan_days = 0
         for index, day_dates in by_day.items():
             fields = dataset.get_tchw(day_dates).astype(np.float64)
             valid = np.isfinite(fields)
@@ -98,20 +99,23 @@ class CalendarDayClimatology:
             mean[index] = day_mean
             std[index] = np.sqrt(np.maximum(day_variance, 0.0))
             n_dates[index] = len(day_dates)
+            n_nan_days += bool(np.isnan(day_mean).any())
 
         if n_dates[cls.FEBRUARY_29] == 0:
-            logger.info(
-                "Climatology: no 29 February dates in the averaging period; using the "
-                "average of the 28 February and 1 March statistics instead."
+            logger.warning(
+                "No 29 February dates found in the date range under consideration when "
+                "calculating climatology. Using the average of 28 February and 1 March "
+                "instead."
             )
             for table in (mean, std):
-                table[cls.FEBRUARY_29] = (
+                table[cls.FEBRUARY_29] = 0.5 * (
                     table[cls.FEBRUARY_28] + table[cls.MARCH_1]
-                ) / 2
+                )
 
-        if n_empty := int(np.isnan(mean[n_dates > 0]).sum()):
+        if n_nan_days:
             logger.warning(
-                "Climatology: %d calendar-day pixels have no finite values and are NaN.",
-                n_empty,
+                "There are %d calendar days with pixels that have no finite values for "
+                "the date range under consideration when calculating climatology.",
+                n_nan_days,
             )
         return cls(mean=mean, std=std, n_dates=n_dates)

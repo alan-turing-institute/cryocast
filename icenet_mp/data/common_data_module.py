@@ -15,7 +15,7 @@ from .calendar_day_climatology import CalendarDayClimatology
 from .combined_dataset import CombinedDataset
 from .single_dataset import SingleDataset
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class CommonDataModule(LightningDataModule):
@@ -38,11 +38,11 @@ class CommonDataModule(LightningDataModule):
                     self.base_path / "data" / "anemoi" / f"{dataset['name']}.zarr"
                 ).resolve()
             )
-        logger.info("Found %d dataset groups.", len(self.dataset_groups))
+        log.info("Found %d dataset groups.", len(self.dataset_groups))
         for idx, (name, paths) in enumerate(self.dataset_groups.items(), start=1):
-            logger.info("%d) %s:", idx, name)
+            log.info("%d) %s:", idx, name)
             for path in paths:
-                logger.info("%s - %s", " " * (len(str(idx)) + 1), path)
+                log.info("%s - %s", " " * (len(str(idx)) + 1), path)
 
         # Check prediction target
         self.target_group_name = config["predict"]["target"]["group_name"]
@@ -95,6 +95,58 @@ class CommonDataModule(LightningDataModule):
         )
 
     @cached_property
+    def climatology(self) -> CalendarDayClimatology | None:
+        """Return the calendar-day statistics of the target variables.
+
+        For each calendar day (month/day label), the [366, C, H, W] mean and standard
+        deviation tables hold statistics of the normalised target fields over dates
+        sharing that calendar day within the date range under consideration. This range
+        is the overlap of the training periods with the dates available in the target
+        dataset. NaN pixels resulting from missing data are excluded.
+
+        Leap years are handled by keeping 29th February as its own calendar day, but
+        taking an average of the 28th February and 1st March statistics if no data is
+        available.
+
+        Returns:
+            A ``CalendarDayClimatology`` object holding the mean, standard deviation,
+            and number of dates contributing to each calendar day or None if the
+            climatology cannot be built.
+
+        """
+        target = self.datasets[self.target_group_name].subset(
+            variables=self.target_variables
+        )
+        period_dates = [day for day in target.dates if self._in_train_periods(day)]
+        if not period_dates:
+            msg = (
+                "Cannot build climatology: none of the configured training periods "
+                "have available dates in the target dataset "
+                f"({target.start_date} to {target.end_date})."
+            )
+            log.warning(msg)
+            return None
+        # Check coverage before reading any data, so a bad split fails fast
+        covered = {CalendarDayClimatology.day_index(day) for day in period_dates}
+        for index, label in enumerate(CalendarDayClimatology.LABELS):
+            if index not in covered and index != CalendarDayClimatology.FEBRUARY_29:
+                msg = (
+                    f"Cannot build climatology: calendar day {label} has no available "
+                    f"dates in the averaging period ({min(period_dates)} to "
+                    f"{max(period_dates)}). Check the configured training periods "
+                    "against the available data range."
+                )
+                log.warning(msg)
+                return None
+        log.info(
+            "Computing calendar-day climatology over %d dates between %s and %s.",
+            len(period_dates),
+            min(period_dates),
+            max(period_dates),
+        )
+        return CalendarDayClimatology.from_dataset(target, period_dates)
+
+    @cached_property
     def datasets(self) -> dict[str, SingleDataset]:
         """Return a dictionary of dataset group names to SingleDataset objects."""
         return {
@@ -144,7 +196,7 @@ class CommonDataModule(LightningDataModule):
         ]
         chosen = (available or paths)[0].stem
         if len(paths) > 1:
-            logger.warning(
+            log.warning(
                 "Target group %r has %d datasets; using %r for masks "
                 "(combining masks across datasets is not supported).",
                 self.target_group_name,
@@ -177,90 +229,6 @@ class CommonDataModule(LightningDataModule):
             for variable in self.target_variables
         ]
 
-    @cached_property
-    def climatology(self) -> ArrayTCHW:
-        """Return the climatology: calendar-day means of the target variables.
-
-        The [366, C, H, W] table holds, for each calendar day (month/day label), the
-        mean of the normalised target fields over dates sharing that calendar day
-        within the averaging period. The averaging period is the union of the training
-        split's date ranges, intersected with the dates available in the target
-        dataset; it is never widened to dates outside the configured training periods.
-        Dates that are missing from the dataset are never included in a mean.
-
-        29 February is the exception: because a training period spanning only
-        non-leap years has no such date, it is not required to have its own data. If
-        no date in the averaging period falls on 29 February, that slot instead copies
-        the 28 February mean.
-
-        Raises:
-            ValueError: If the training periods have no available dates at all, or a
-                calendar day other than 29 February has no available dates in the
-                period.
-
-        """
-        target = self.datasets[self.target_group_name].subset(
-            variables=self.target_variables
-        )
-        period_dates = [day for day in target.dates if self._in_train_periods(day)]
-        if not period_dates:
-            msg = (
-                "Cannot build climatology: none of the configured training periods "
-                "have available dates in the target dataset "
-                f"({target.start_date} to {target.end_date})."
-            )
-            raise ValueError(msg)
-        by_day: dict[int, list[np.datetime64]] = defaultdict(list)
-        for day in period_dates:
-            by_day[CalendarDayClimatology.day_index(day)].append(day)
-        table = np.zeros(
-            (CalendarDayClimatology.N_DAYS, *target.space.chw), dtype=np.float64
-        )
-        for index, label in enumerate(CalendarDayClimatology.LABELS):
-            day_dates = by_day.get(index, [])
-            if not day_dates:
-                if index == CalendarDayClimatology.FEBRUARY_29:
-                    logger.info(
-                        "Climatology: no 29 February dates in the averaging period; "
-                        "using the 28 February mean for that day instead."
-                    )
-                    table[index] = table[CalendarDayClimatology.FEBRUARY_28]
-                    continue
-                msg = (
-                    f"Cannot build climatology: calendar day {label} has no available "
-                    f"dates in the averaging period ({min(period_dates)} to "
-                    f"{max(period_dates)}). Check the configured training periods "
-                    "against the available data range."
-                )
-                raise ValueError(msg)
-            table[index] = target.get_tchw(day_dates).astype(np.float64).mean(axis=0)
-        logger.info(
-            "Climatology: computed calendar-day means over %d dates between %s and %s.",
-            len(period_dates),
-            min(period_dates),
-            max(period_dates),
-        )
-        return table.astype(np.float32)
-
-    @cached_property
-    def _climatology_or_none(self) -> ArrayTCHW | None:
-        """Return the climatology table, or ``None`` if it cannot be built.
-
-        Climatology is an optional comparison baseline for every model, not just the
-        Climatology model itself, so a config whose train-period union does not cover
-        every calendar day (e.g. a short demo/synthetic split) must not break every
-        other model's dataloaders. Use this instead of ``climatology`` when wiring up
-        dataloaders; use ``climatology`` directly when the table is required (e.g. in
-        tests) and a missing calendar day should raise loudly.
-        """
-        try:
-            return self.climatology
-        except ValueError as err:
-            logger.warning(
-                "Climatology baseline unavailable, continuing without it: %s", err
-            )
-            return None
-
     def _in_train_periods(self, day: np.datetime64) -> bool:
         """Return whether the date falls within any of the training period ranges.
 
@@ -287,7 +255,7 @@ class CommonDataModule(LightningDataModule):
 
     def assign_workers(self, n_workers: int) -> None:
         """Assign number of workers for data loading."""
-        logger.info("Assigning %d workers for data loading.", n_workers)
+        log.info("Assigning %d workers for data loading.", n_workers)
         self._common_dataloader_kwargs["num_workers"] = n_workers
         self._common_dataloader_kwargs["persistent_workers"] = n_workers > 0
         self._common_dataloader_kwargs["prefetch_factor"] = 1 if n_workers > 0 else None
@@ -305,9 +273,9 @@ class CommonDataModule(LightningDataModule):
             n_history_steps=self.n_history_steps,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
-            climatology=self._climatology_or_none,
+            climatology=self.climatology.mean if self.climatology else None,
         )
-        logger.info(
+        log.info(
             "Loaded predict dataset with %d dates between %s and %s.",
             len(dataset),
             dataset.start_date,
@@ -325,9 +293,9 @@ class CommonDataModule(LightningDataModule):
             n_history_steps=self.n_history_steps,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
-            climatology=self._climatology_or_none,
+            climatology=self.climatology.mean if self.climatology else None,
         )
-        logger.info(
+        log.info(
             "Loaded test dataset with %d dates between %s and %s.",
             len(dataset),
             dataset.start_date,
@@ -347,7 +315,7 @@ class CommonDataModule(LightningDataModule):
             n_history_steps=self.n_history_steps,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
-            climatology=self._climatology_or_none,
+            climatology=self.climatology.mean if self.climatology else None,
         )
 
     def train_dataloader(
@@ -355,7 +323,7 @@ class CommonDataModule(LightningDataModule):
     ) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct train dataloader."""
         dataset = self.training_dataset
-        logger.info(
+        log.info(
             "Loaded training dataset with %d dates between %s and %s.",
             len(dataset),
             dataset.start_date,
@@ -373,9 +341,9 @@ class CommonDataModule(LightningDataModule):
             n_history_steps=self.n_history_steps,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
-            climatology=self._climatology_or_none,
+            climatology=self.climatology.mean if self.climatology else None,
         )
-        logger.info(
+        log.info(
             "Loaded validation dataset with %d dates between %s and %s.",
             len(dataset),
             dataset.start_date,
