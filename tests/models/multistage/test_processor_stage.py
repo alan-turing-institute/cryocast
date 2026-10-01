@@ -10,10 +10,17 @@ from icenet_mp.types import DataSpace, ProcessorOutput, TensorNTCHW
 
 
 class _FixedLossProcessor(BaseProcessor):
-    """Test double whose rollout reports a fixed loss."""
+    """Test double whose rollout reports a fixed loss.
+
+    Declares ``computes_loss_in_latent_space=True``, as any real processor returning a
+    loss must: ``training_step`` only honours ``ProcessorOutput.loss`` for a processor
+    that declares this, otherwise it goes through ``self(batch)`` and is silently
+    dropped.
+    """
 
     def __init__(self, *, loss: torch.Tensor, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+        kwargs.pop("computes_loss_in_latent_space", None)
+        super().__init__(computes_loss_in_latent_space=True, **kwargs)
         self._loss = loss
 
     def rollout(
@@ -168,6 +175,15 @@ class TestProcessorStage:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
     ) -> None:
+        # The shape check only guards the custom loss path, which is the only one that
+        # feeds the target through target_encoder; the standard path never touches it.
+        processor_stage.processor = _FixedLossProcessor(
+            data_space=processor_stage.processor.data_space,
+            data_space_target=processor_stage.processor.data_space_target,
+            n_forecast_steps=processor_stage.n_forecast_steps,
+            n_history_steps=processor_stage.n_history_steps,
+            loss=torch.tensor(0.5),
+        )
         batch_size = 2
         batch = {
             "test-input": torch.rand(
@@ -291,12 +307,11 @@ class TestProcessorStage:
             ),
         }
 
-        persistence = processor_stage.get_persistence(inputs)
+        persistence = processor_stage._extract_anchor(inputs["target"])
 
         assert persistence is not None
         assert persistence.shape == (
             batch_size,
-            1,
             len(decoder_stage.target_variable_indices),
             *cfg_output_space["shape"],
         )
