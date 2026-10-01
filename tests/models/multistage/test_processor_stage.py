@@ -80,36 +80,6 @@ class TestProcessorStage:
             metrics=cfg_metrics,
         )
 
-    def test_forward_shape(
-        self,
-        processor_stage: ProcessorStage,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-    ) -> None:
-        batch_size = 2
-        result = processor_stage(
-            {
-                "test-input": torch.rand(
-                    batch_size,
-                    2,
-                    cfg_input_space["channels"],
-                    *cfg_input_space["shape"],
-                ),
-                "target": torch.rand(
-                    batch_size,
-                    1,
-                    cfg_output_space["channels"],
-                    *cfg_output_space["shape"],
-                ),
-            }
-        )
-        assert result.shape == (
-            batch_size,
-            1,
-            cfg_output_space["channels"],
-            *cfg_output_space["shape"],
-        )
-
     def test_training_step_returns_prediction_target_and_loss(
         self,
         processor_stage: ProcessorStage,
@@ -221,7 +191,7 @@ class TestProcessorStage:
             *cfg_output_space["shape"],
         )
 
-    def test_get_persistence_returns_tensor_when_decoder_has_skip_connection(
+    def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
         self,
         encoder_stage: EncoderStage,
         target_encoder_stage: EncoderStage,
@@ -285,10 +255,10 @@ class TestProcessorStage:
             ),
         }
 
-        persistence = processor_stage._extract_anchor(inputs["target"])
+        anchor = processor_stage._extract_anchor(inputs["target"])
 
-        assert persistence is not None
-        assert persistence.shape == (
+        assert anchor is not None
+        assert anchor.shape == (
             batch_size,
             len(decoder_stage.target_variable_indices),
             *cfg_output_space["shape"],

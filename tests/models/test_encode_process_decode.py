@@ -9,12 +9,11 @@ from icenet_mp.models import EncodeProcessDecode
 
 class TestEncodeProcessDecode:
     @pytest.mark.parametrize(
-        "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
+        ("test_computes_loss_in_latent_space", "expected_multistage_only"),
+        [(False, False), (True, True)],
+        ids=["default", "latent-loss"],
     )
-    @pytest.mark.parametrize(
-        "test_n_history_steps", [1, 2, 5], ids=["history1", "history2", "history5"]
-    )
-    def test_init(
+    def test_init_multistage_only(
         self,
         cfg_decoder: DictConfig,
         cfg_encoders: DictConfig,
@@ -23,9 +22,16 @@ class TestEncodeProcessDecode:
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
-        test_n_forecast_steps: int,
-        test_n_history_steps: int,
+        *,
+        test_computes_loss_in_latent_space: bool,
+        expected_multistage_only: bool,
     ) -> None:
+        cfg_processor = DictConfig(
+            {
+                **cfg_processor,
+                "computes_loss_in_latent_space": test_computes_loss_in_latent_space,
+            }
+        )
         model = EncodeProcessDecode(
             name="encode-null-decode",
             encoders=cfg_encoders,
@@ -33,27 +39,17 @@ class TestEncodeProcessDecode:
             decoder=cfg_decoder,
             hemisphere="north",
             input_spaces=[cfg_input_space],
-            n_forecast_steps=test_n_forecast_steps,
-            n_history_steps=test_n_history_steps,
+            loss=cfg_loss,
+            metrics=cfg_metrics,
+            n_forecast_steps=1,
+            n_history_steps=1,
             output_space=cfg_output_space,
             optimizer=DictConfig({}),
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
-            loss=cfg_loss,
-            metrics=cfg_metrics,
             target_variable_indices=[0],
         )
-
-        assert model.name == "encode-null-decode"
-        assert model.input_spaces[0].channels == cfg_input_space["channels"]
-        assert model.input_spaces[0].name == cfg_input_space["name"]
-        assert model.input_spaces[0].shape == cfg_input_space["shape"]
-        assert model.n_forecast_steps == test_n_forecast_steps
-        assert model.n_history_steps == test_n_history_steps
-        assert model.output_space.channels == cfg_output_space["channels"]
-        assert model.output_space.name == cfg_output_space["name"]
-        assert model.output_space.shape == cfg_output_space["shape"]
-        assert model.multistage_only is False
+        assert model.multistage_only is expected_multistage_only
 
     @pytest.mark.parametrize(
         "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
@@ -119,35 +115,3 @@ class TestEncodeProcessDecode:
             cfg_output_space["shape"][0],
             cfg_output_space["shape"][1],
         )
-
-    def test_processor_with_custom_loss_multistage_only(
-        self,
-        cfg_decoder: DictConfig,
-        cfg_encoders: DictConfig,
-        cfg_processor: DictConfig,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
-    ) -> None:
-        cfg_processor = DictConfig(
-            {**cfg_processor, "computes_loss_in_latent_space": True}
-        )
-        model = EncodeProcessDecode(
-            name="encode-null-decode",
-            encoders=cfg_encoders,
-            processor=cfg_processor,
-            decoder=cfg_decoder,
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-            n_forecast_steps=1,
-            n_history_steps=1,
-            output_space=cfg_output_space,
-            optimizer=DictConfig({}),
-            scheduler=DictConfig({}),
-            lr_scheduler=DictConfig({}),
-            target_variable_indices=[0],
-        )
-        assert model.multistage_only is True

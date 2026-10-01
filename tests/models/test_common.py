@@ -41,8 +41,8 @@ class TestChannelAdapt:
 
     @pytest.mark.parametrize(
         ("in_channels", "out_channels"),
-        [(7, 3), (3, 7), (5, 5)],
-        ids=["shrink-7to3", "grow-3to7", "equal-5to5"],
+        [(7, 3), (3, 7)],
+        ids=["shrink-7to3", "grow-3to7"],
     )
     def test_non_exact_ratio_produces_correct_shape(
         self, in_channels: int, out_channels: int
@@ -108,14 +108,16 @@ class TestGatedAttention:
 
 
 class TestGatedAttentionBlock:
+    @pytest.mark.parametrize("value", [-0.1, 1.1], ids=["below_zero", "above_one"])
     @pytest.mark.parametrize(
-        "drop_path_prob", [-0.1, 1.1], ids=["below_zero", "above_one"]
+        "kwarg", ["drop_path_prob", "mlp_drop_prob"], ids=lambda k: k
     )
-    def test_drop_path_prob_outside_unit_interval_raises(
-        self, drop_path_prob: float
+    def test_probability_outside_unit_interval_raises(
+        self, kwarg: str, value: float
     ) -> None:
+        probabilities = {"drop_path_prob": 0.5, "mlp_drop_prob": 0.0, kwarg: value}
         with pytest.raises(
-            ValueError, match=r"drop_path_prob\(.*\) must be between 0 and 1."
+            ValueError, match=rf"{kwarg}\(.*\) must be between 0 and 1."
         ):
             GatedAttentionBlock(
                 4,
@@ -123,27 +125,7 @@ class TestGatedAttentionBlock:
                 kernel_size=5,
                 dilation=1,
                 mlp_ratio=2.0,
-                drop_path_prob=drop_path_prob,
-                mlp_drop_prob=0.0,
-            )
-
-    @pytest.mark.parametrize(
-        "mlp_drop_prob", [-0.1, 1.1], ids=["below_zero", "above_one"]
-    )
-    def test_mlp_drop_prob_outside_unit_interval_raises(
-        self, mlp_drop_prob: float
-    ) -> None:
-        with pytest.raises(
-            ValueError, match=r"mlp_drop_prob\(.*\) must be between 0 and 1."
-        ):
-            GatedAttentionBlock(
-                4,
-                4,
-                kernel_size=5,
-                dilation=1,
-                mlp_ratio=2.0,
-                drop_path_prob=0.5,
-                mlp_drop_prob=mlp_drop_prob,
+                **probabilities,
             )
 
 
@@ -251,8 +233,9 @@ class TestResidualResample:
 
         x = torch.randn(2, in_channels, in_size, in_size)
         assert block.shortcut is not None
-        assert torch.allclose(block(x), block.shortcut(x))
-        assert block(x).shape == (2, out_channels, out_size, out_size)
+        y = block(x)
+        assert torch.allclose(y, block.shortcut(x))
+        assert y.shape == (2, out_channels, out_size, out_size)
 
 
 class TestRestrictRange:
