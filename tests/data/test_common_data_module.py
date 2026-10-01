@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 
 from icenet_mp.data.calendar_day_climatology import CalendarDayClimatology
 from icenet_mp.data.common_data_module import CommonDataModule
+from icenet_mp.data.single_dataset import SingleDataset
 from icenet_mp.utils import mask_dir
 from tests.conftest import (
     CLIMATOLOGY_END,
@@ -21,7 +22,6 @@ from tests.conftest import (
 )
 
 FEB_29 = CalendarDayClimatology.day_index(np.datetime64("2000-02-29"))
-N_DAYS = len(CalendarDayClimatology.DAY_INDEX)
 
 # Union-of-training-periods arrangement: all of 2017 and 2018 plus the first half of
 # 2019, so the 2019 second half is excluded from the climatology averaging period. None
@@ -90,26 +90,30 @@ def _normalised_rows(zarr_path: Path, dates: list[datetime.datetime]) -> np.ndar
     return np.stack(rows, axis=0)
 
 
-def _expected_statistics(
-    zarr_path: Path, period_dates: list[datetime.datetime]
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return [366, C, H, W] float64 smoothed calendar-day mean and std tables.
+def _spy_from_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[SingleDataset, list[np.datetime64]]]:
+    """Record the dataset and dates passed to ``CalendarDayClimatology.from_dataset``.
 
-    Each calendar day is a triangular-weighted average over the period's normalised
-    rows within ``CalendarDayClimatology.HALF_WINDOW`` calendar days.
+    The statistics themselves are tested in ``test_calendar_day_climatology.py``; here
+    we check which normalised fields ``CommonDataModule`` hands over.
     """
-    rows = _normalised_rows(zarr_path, period_dates).astype(np.float64)
-    slots = np.array(
-        [CalendarDayClimatology.day_index(np.datetime64(d)) for d in period_dates]
-    )
-    targets = np.arange(N_DAYS).reshape(-1, 1)
-    distance = np.abs(slots - targets)
-    distance = np.minimum(distance, N_DAYS - distance)
-    weights = np.maximum(0.0, 1.0 - distance / (CalendarDayClimatology.HALF_WINDOW + 1))
-    totals = weights.sum(axis=1).reshape(-1, 1, 1, 1)
-    mean = np.tensordot(weights, rows, axes=1) / totals
-    variance = np.tensordot(weights, rows**2, axes=1) / totals - mean**2
-    return mean, np.sqrt(np.maximum(variance, 0.0))
+    calls: list[tuple[SingleDataset, list[np.datetime64]]] = []
+    from_dataset = CalendarDayClimatology.from_dataset
+
+    def spy(
+        dataset: SingleDataset, dates: list[np.datetime64]
+    ) -> CalendarDayClimatology:
+        calls.append((dataset, list(dates)))
+        return from_dataset(dataset, dates)
+
+    monkeypatch.setattr(CalendarDayClimatology, "from_dataset", spy)
+    return calls
+
+
+def _as_days(dates: list[datetime.datetime] | list[np.datetime64]) -> np.ndarray:
+    """Return the dates as a day-precision NumPy array for comparison."""
+    return np.array(dates, dtype="datetime64[D]")
 
 
 def _climatology_cfg(
@@ -277,61 +281,73 @@ class TestTargetMaskDir:
 class TestCommonDataModuleClimatology:
     """Tests for the CommonDataModule.climatology calendar-day statistics."""
 
-    def test_table_shape_and_calendar_day_means(self, climatology_zarr: Path) -> None:
-        """Each calendar day holds the mean over its dates in the train-period union."""
+    def test_table_shapes_and_dtypes(self, climatology_zarr: Path) -> None:
+        """Mean and std are float32 [366, C, H, W] tables, even with no leap years."""
         base_path = climatology_zarr.parents[2]
         dm = CommonDataModule(_climatology_cfg(base_path, TRAIN_PERIODS))
 
-        table = _climatology(dm).mean
-        assert table.shape == (366, 2, 2, 2)
-        assert table.dtype == np.float32
+        climatology = _climatology(dm)
+        for table in (climatology.mean, climatology.std):
+            assert table.shape == (366, 2, 2, 2)
+            assert table.dtype == np.float32
+        # No date falls on 29 February, but smoothing fills it from its neighbours
+        assert climatology.n_dates[FEB_29] == 0
 
-        expected, _ = _expected_statistics(
-            climatology_zarr, _period_dates(TRAIN_PERIODS)
+    @pytest.mark.parametrize(
+        ("target_variables", "channels"),
+        [(CLIMATOLOGY_VARIABLES, [0, 1]), (["ice_thickness"], [1])],
+        ids=["all-variables", "one-variable"],
+    )
+    def test_uses_normalised_target_fields(
+        self,
+        climatology_zarr: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        target_variables: list[str],
+        channels: list[int],
+    ) -> None:
+        """Statistics are computed from the normalised target variables only."""
+        base_path = climatology_zarr.parents[2]
+        dm = CommonDataModule(
+            _climatology_cfg(base_path, TRAIN_PERIODS, target_variables)
         )
-        np.testing.assert_allclose(table, expected, rtol=0, atol=1e-6)
+        calls = _spy_from_dataset(monkeypatch)
 
-    def test_uses_union_of_train_periods(self, climatology_zarr: Path) -> None:
-        """Dates outside the train-period union (e.g. July 2019) are excluded."""
+        _climatology(dm)
+        [(dataset, dates)] = calls
+        expected = _normalised_rows(climatology_zarr, _period_dates(TRAIN_PERIODS))
+        np.testing.assert_allclose(
+            dataset.get_tchw(dates), expected[:, channels], rtol=0, atol=1e-6
+        )
+
+    def test_uses_union_of_train_periods(
+        self, climatology_zarr: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only dates inside the train-period union are used (e.g. not July 2019)."""
         base_path = climatology_zarr.parents[2]
         dm = CommonDataModule(_climatology_cfg(base_path, TRAIN_PERIODS))
+        calls = _spy_from_dataset(monkeypatch)
 
-        table = _climatology(dm).mean
-        july_15 = CalendarDayClimatology.day_index(np.datetime64("2000-07-15"))
-
-        # The correct 15 July mean only includes 2017 and 2018 (the union ends
-        # 2019-06-30).
-        expected, _ = _expected_statistics(
-            climatology_zarr, _period_dates(TRAIN_PERIODS)
+        _climatology(dm)
+        [(_, dates)] = calls
+        np.testing.assert_array_equal(
+            _as_days(dates), _as_days(_period_dates(TRAIN_PERIODS))
         )
-        np.testing.assert_allclose(table[july_15], expected[july_15], atol=1e-6)
+        assert max(_as_days(dates)) == np.datetime64("2019-06-30")
 
-        # A mean that (incorrectly) included July 2019 would differ noticeably,
-        # because the synthetic values carry a per-year offset.
-        wrong, _ = _expected_statistics(
-            climatology_zarr, [d for d in _available_dates() if d.year <= 2019]
-        )
-        with pytest.raises(AssertionError, match="Not equal to tolerance"):
-            np.testing.assert_allclose(table[july_15], wrong[july_15], atol=1e-6)
-
-    def test_missing_dates_excluded_from_means(self, climatology_zarr: Path) -> None:
-        """A date missing from the dataset never contributes to its calendar-day mean."""
+    def test_missing_dates_excluded(
+        self, climatology_zarr: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A date missing from the dataset is never passed on for averaging."""
         base_path = climatology_zarr.parents[2]
         dm = CommonDataModule(_climatology_cfg(base_path, TRAIN_PERIODS))
+        calls = _spy_from_dataset(monkeypatch)
 
-        table = _climatology(dm).mean
-        # 15 March is next to the missing 2017-03-15; a mean that included the missing
-        # day's zero-filled row would differ from the table.
-        march_15 = CalendarDayClimatology.day_index(np.datetime64("2000-03-15"))
-        period_dates = _period_dates(TRAIN_PERIODS)
-        expected, _ = _expected_statistics(climatology_zarr, period_dates)
-        np.testing.assert_allclose(table[march_15], expected[march_15], atol=1e-6)
-
-        wrong, _ = _expected_statistics(
-            climatology_zarr, sorted(period_dates + CLIMATOLOGY_MISSING)
-        )
-        with pytest.raises(AssertionError, match="Not equal to tolerance"):
-            np.testing.assert_allclose(table[march_15], wrong[march_15], atol=1e-6)
+        _climatology(dm)
+        [(_, dates)] = calls
+        days = _as_days(dates)
+        assert np.datetime64("2017-03-14") in days
+        assert np.datetime64("2017-03-15") not in days
+        assert np.datetime64("2017-03-16") in days
 
     def test_missing_calendar_day_returns_none(
         self, climatology_zarr: Path, caplog: pytest.LogCaptureFixture
@@ -376,40 +392,6 @@ class TestCommonDataModuleClimatology:
             assert dm.climatology is None
         assert "366 calendar days have pixels with no finite values" in caplog.text
 
-    def test_29_february_smoothed_without_leap_years(
-        self, climatology_zarr: Path
-    ) -> None:
-        """A period with no leap years still fills 29 February from its neighbours."""
-        base_path = climatology_zarr.parents[2]
-        dm = CommonDataModule(_climatology_cfg(base_path, TRAIN_PERIODS))
-
-        climatology = _climatology(dm)
-        assert climatology.n_dates[FEB_29] == 0
-        expected, _ = _expected_statistics(
-            climatology_zarr, _period_dates(TRAIN_PERIODS)
-        )
-        np.testing.assert_allclose(
-            climatology.mean[FEB_29],
-            expected[FEB_29],
-            rtol=0,
-            atol=1e-6,
-        )
-
-    def test_std_matches_calendar_day_spread(self, climatology_zarr: Path) -> None:
-        """Std is the weighted population std over each calendar day's window."""
-        base_path = climatology_zarr.parents[2]
-        dm = CommonDataModule(_climatology_cfg(base_path, TRAIN_PERIODS))
-
-        climatology = _climatology(dm)
-        std = climatology.std
-        assert std.shape == climatology.mean.shape
-        assert std.dtype == np.float32
-
-        _, expected = _expected_statistics(
-            climatology_zarr, _period_dates(TRAIN_PERIODS)
-        )
-        np.testing.assert_allclose(std, expected, rtol=0, atol=1e-6)
-
     def test_returns_none_when_no_dates_in_train_periods(
         self, climatology_zarr: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -423,12 +405,12 @@ class TestCommonDataModuleClimatology:
         assert "none of the configured training periods" in caplog.text
 
     def test_time_component_bounds_match_day_precision(
-        self, climatology_zarr: Path
+        self, climatology_zarr: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Bounds carrying a time component behave like day-precision bounds.
 
         A start bound of ``2017-01-01T12:00:00`` must still include 2017-01-01, so the
-        full table is identical to the one built from plain day-precision bounds.
+        dates used are identical to those selected by plain day-precision bounds.
         """
         base_path = climatology_zarr.parents[2]
         timed_periods: list[dict[str, str | None]] = [
@@ -436,12 +418,13 @@ class TestCommonDataModuleClimatology:
             {"start": "2019-01-01T00:00:00", "end": "2019-06-30T23:59:59"},
         ]
         dm = CommonDataModule(_climatology_cfg(base_path, timed_periods))
+        calls = _spy_from_dataset(monkeypatch)
 
-        table = _climatology(dm).mean
-        expected, _ = _expected_statistics(
-            climatology_zarr, _period_dates(TRAIN_PERIODS)
+        _climatology(dm)
+        [(_, dates)] = calls
+        np.testing.assert_array_equal(
+            _as_days(dates), _as_days(_period_dates(TRAIN_PERIODS))
         )
-        np.testing.assert_allclose(table, expected, rtol=0, atol=1e-6)
 
     def test_dataloaders_include_climatology(self, climatology_zarr: Path) -> None:
         """Every split's dataloader batches contain a correctly-shaped climatology key."""

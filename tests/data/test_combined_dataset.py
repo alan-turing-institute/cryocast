@@ -310,7 +310,6 @@ class TestCombinedDatasetClimatology:
 
         batch = combined[idx]
         assert set(batch.keys()) == {"sic_south", "target"}
-        assert "climatology" not in batch
         np.testing.assert_array_equal(
             batch["target"],
             combined.target.get_tchw(
