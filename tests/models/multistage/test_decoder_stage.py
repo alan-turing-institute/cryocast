@@ -79,20 +79,20 @@ class TestDecoderStage:
         )
 
     @pytest.mark.parametrize(
-        ("n_history_steps", "target_variable_indices", "expected_message"),
+        ("n_history_steps", "target_variable_indices", "match"),
         [
             (1, [0], "at least two history steps"),
             (2, [0, 1], "target_variable_indices selects"),
         ],
-        ids=["one-history-step", "indices-channel-mismatch"],
+        ids=["single-history-step", "variable-indices-channel-mismatch"],
     )
-    def test_rejects_invalid_configuration(
+    def test_constructor_rejects_invalid_arguments(
         self,
         encoder_stage: EncoderStage,
         *,
         n_history_steps: int,
         target_variable_indices: list[int],
-        expected_message: str,
+        match: str,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
@@ -102,7 +102,7 @@ class TestDecoderStage:
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
     ) -> None:
-        with pytest.raises(ValueError, match=expected_message):
+        with pytest.raises(ValueError, match=match):
             DecoderStage(
                 decoder=cfg_decoder,
                 encoders=[encoder_stage],

@@ -14,7 +14,7 @@ DATA_GROUP_CONFIGS = sorted(
 class TestDataConfigs:
     """Regression tests for icenet-mp's top-level data= config groups."""
 
-    @pytest.mark.parametrize("config_name", DATA_GROUP_CONFIGS)
+    @pytest.mark.parametrize("config_name", DATA_GROUP_CONFIGS, ids=DATA_GROUP_CONFIGS)
     def test_data_groups_compose(
         self, compose_config: Callable[..., DictConfig], config_name: str
     ) -> None:
@@ -26,7 +26,9 @@ class TestDataConfigs:
         assert config.data.split.validate
 
     @pytest.mark.parametrize(
-        "config_name", ["full_north", "full_south", "sample_north", "sample_south"]
+        "config_name",
+        ["full_north", "full_south", "sample_north", "sample_south"],
+        ids=["full_north", "full_south", "sample_north", "sample_south"],
     )
     def test_dataset_statistics_stop_at_training_boundary(
         self, compose_config: Callable[..., DictConfig], config_name: str

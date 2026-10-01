@@ -200,13 +200,15 @@ class BaseModel(LightningModule, ABC):
             if isinstance(target, type) and issubclass(target, LandMaskMixin):
                 kwargs["land_mask"] = land_mask
             requested[name] = hydra.utils.instantiate(kwargs)
+        # Disable compute groups to avoid erroneous automated groupings
         return MetricCollection(
             {
                 name: metric
                 for name, metric in requested.items()
                 if self.output_space.channels == 1
                 or not isinstance(metric, SingleChannelMetricMixin)
-            }
+            },
+            compute_groups=False,
         )
 
     def configure_optimizers(self) -> OptimizerLRScheduler:

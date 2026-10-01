@@ -8,25 +8,31 @@ from icenet_mp.models import Climatology
 
 
 class TestClimatology:
-    @pytest.mark.parametrize("test_input_shape", [(16, 16, 4), (20, 20, 1)])
-    @pytest.mark.parametrize("test_output_shape", [(16, 16, 1), (10, 20, 19)])
-    @pytest.mark.parametrize("test_batch_size", [1, 2])
-    @pytest.mark.parametrize("test_n_forecast_steps", [1, 2, 5])
-    @pytest.mark.parametrize("test_n_history_steps", [1, 2, 5])
+    @pytest.mark.parametrize(
+        "test_output_shape", [(16, 16, 1), (10, 20, 19)], ids=["16x16x1", "10x20x19"]
+    )
+    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=["batch1", "batch2"])
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 2, 5], ids=["history1", "history2", "history5"]
+    )
     def test_forward_returns_climatology(
         self,
         test_batch_size: int,
-        test_input_shape: tuple[int, int, int],
         test_n_forecast_steps: int,
         test_n_history_steps: int,
         test_output_shape: tuple[int, int, int],
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
     ) -> None:
+        # Climatology only reads the "climatology" batch entry, so the "input"
+        # space shape has no effect on the result.
         input_space = {
-            "channels": test_input_shape[2],
+            "channels": 1,
             "name": "input",
-            "shape": test_input_shape[0:2],
+            "shape": (16, 16),
         }
         output_space = {
             "channels": test_output_shape[2],
@@ -48,13 +54,7 @@ class TestClimatology:
             target_variable_indices=list(range(test_output_shape[2])),
         )
         batch = {
-            "input": torch.randn(
-                test_batch_size,
-                test_n_history_steps,
-                test_input_shape[2],
-                test_input_shape[0],
-                test_input_shape[1],
-            ),
+            "input": torch.randn(test_batch_size, test_n_history_steps, 1, 16, 16),
             "target": torch.randn(
                 test_batch_size,
                 test_n_forecast_steps,

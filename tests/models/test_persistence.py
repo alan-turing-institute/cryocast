@@ -13,9 +13,13 @@ class TestPersistence:
         [[0], [1, 3], [0, 1, 2, 3]],
         ids=lambda indices: f"indices={indices}",
     )
-    @pytest.mark.parametrize("test_batch_size", [1, 2])
-    @pytest.mark.parametrize("test_n_forecast_steps", [1, 2, 5])
-    @pytest.mark.parametrize("test_n_history_steps", [1, 2, 5])
+    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=["batch1", "batch2"])
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 2, 5], ids=["history1", "history2", "history5"]
+    )
     def test_forward_repeats_last_history_frame(
         self,
         test_batch_size: int,
@@ -59,10 +63,10 @@ class TestPersistence:
         expected = last_frame.unsqueeze(1).expand(-1, test_n_forecast_steps, -1, -1, -1)
         assert torch.equal(result, expected)
 
-    def test_forward_ignores_climatology_key(
+    def test_forward_ignores_climatology_key_and_has_no_optimizer(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """An extra climatology batch key must not change a non-climatology model's output."""
+        """An extra climatology batch key must not change the output; no optimizer is configured."""
         model = Persistence(
             name="persistence",
             hemisphere="north",
@@ -97,34 +101,6 @@ class TestPersistence:
         }
 
         assert torch.equal(model(batch_without), model(batch_with))
-
-    def test_optimizer(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        model = Persistence(
-            name="persistence",
-            hemisphere="north",
-            input_spaces=[
-                {
-                    "channels": 1,
-                    "name": "input",
-                    "shape": (1, 1),
-                }
-            ],
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-            n_forecast_steps=1,
-            n_history_steps=1,
-            output_space={
-                "channels": 1,
-                "name": "target",
-                "shape": (1, 1),
-            },
-            optimizer={},
-            scheduler={},
-            lr_scheduler={},
-            target_variable_indices=[0],
-        )
         assert model.configure_optimizers() is None, (
             "No optimizer should be initialized"
         )

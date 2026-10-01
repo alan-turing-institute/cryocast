@@ -436,14 +436,16 @@ class TestSingleDataset:
         )
         assert np.all(np.isnan(dataset[0]))
 
-    def test_subset_preserves_normalise_flag(self, mock_dataset: Path) -> None:
+    @pytest.mark.parametrize("flag", [True, False], ids=["normalise", "raw"])
+    def test_subset_preserves_normalise_flag(
+        self, mock_dataset: Path, *, flag: bool
+    ) -> None:
         """subset() propagates the normalise flag to the child dataset."""
-        for flag in (True, False):
-            dataset = SingleDataset(
-                name="mock_dataset", input_files=[mock_dataset], normalise=flag
-            )
-            subset = dataset.subset(variables=["ice_conc"])
-            assert subset._normalise is flag
+        dataset = SingleDataset(
+            name="mock_dataset", input_files=[mock_dataset], normalise=flag
+        )
+        subset = dataset.subset(variables=["ice_conc"])
+        assert subset._normalise is flag
 
     def test_normalise_date_sets_time_to_noon(self) -> None:
         """Normalize dates to noon while preserving the calendar date."""
@@ -563,3 +565,21 @@ class TestSingleDataset:
         assert not [
             record for record in caplog.records if record.levelno == logging.WARNING
         ]
+
+
+class TestSingleDatasetDateLookupNormalization:
+    def test_date_lookups_normalise_to_noon(
+        self, mock_dataset_non_normalized_times: Path
+    ) -> None:
+        """Confirm that a midnight datetime is normalised during lookup."""
+        dataset = SingleDataset(
+            name="test_normalized",
+            input_files=[mock_dataset_non_normalized_times],
+        )
+        midnight = np.datetime64("2020-01-01")
+
+        assert dataset.to_index(midnight) == 0
+        np.testing.assert_array_equal(
+            dataset.get_tchw_slice(midnight, 1),
+            dataset.get_tchw([dataset.dates[0]]),
+        )

@@ -11,6 +11,11 @@ from omegaconf import DictConfig, OmegaConf
 from torchmetrics import MeanSquaredError
 
 import icenet_mp
+from icenet_mp.losses.amse_loss import AMSELoss
+from icenet_mp.losses.rmse_loss import RMSELoss
+from icenet_mp.losses.weighted_bce_loss import WeightedBCEWithLogitsLoss
+from icenet_mp.losses.weighted_l1_loss import WeightedL1Loss
+from icenet_mp.losses.weighted_mse_loss import WeightedMSELoss
 from icenet_mp.metrics import (
     CentroidErrorPerForecastDay,
     DistanceAveragedIceEdgeErrorPerForecastDay,
@@ -24,7 +29,7 @@ from icenet_mp.metrics import (
     SpatialMeanPredictionPerForecastDay,
     SSIMPerForecastDay,
 )
-from icenet_mp.models import BaseModel
+from icenet_mp.models import BaseModel, Persistence
 from icenet_mp.types import Hemisphere, ModelStepOutput, TensorNTCHW
 
 # The metrics configured by default, which also checks that the shipped config is valid
@@ -68,47 +73,54 @@ class FakeDataModel(BaseModel):
         super().__init__(
             *args, loss=loss_cfg, metrics=metrics, hemisphere=Hemisphere.NORTH, **kwargs
         )
-        self.t = kwargs["n_forecast_steps"]
-        self.c = kwargs["output_space"]["channels"]
-        self.h = kwargs["output_space"]["shape"][0]
-        self.w = kwargs["output_space"]["shape"][1]
         self.model = torch.nn.Linear(1, 1)
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """FakeData forward method."""
         b = next(iter(inputs.values())).shape[0]
-        return torch.randn(b, self.t, self.c, self.h, self.w)
+        return torch.randn(b, self.n_forecast_steps, *self.output_space.chw)
+
+
+class EchoForecastModel(BaseModel):
+    def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
+        """Return the "forecast" input unchanged to isolate metric accumulation."""
+        return inputs["forecast"]
 
 
 class TestBaseModel:
     @pytest.mark.parametrize(
-        ("test_n_forecast_steps", "test_n_history_steps", "expected_message"),
+        ("n_forecast_steps", "n_history_steps", "match"),
         [
             (0, 1, r"Number of forecast steps must be greater than 0."),
             (1, 0, r"Number of history steps must be greater than 0."),
         ],
-        ids=["forecast-steps", "history-steps"],
+        ids=["zero-forecast-steps", "zero-history-steps"],
     )
     def test_init_invalid_steps(
-        self,
-        test_n_forecast_steps: int,
-        test_n_history_steps: int,
-        expected_message: str,
+        self, n_forecast_steps: int, n_history_steps: int, match: str
     ) -> None:
-        with pytest.raises(ValueError, match=expected_message):
+        with pytest.raises(ValueError, match=match):
             FakeDataModel(
                 name="fake data",
                 input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
-                n_forecast_steps=test_n_forecast_steps,
-                n_history_steps=test_n_history_steps,
+                n_forecast_steps=n_forecast_steps,
+                n_history_steps=n_history_steps,
                 output_space={"channels": 1, "name": "target", "shape": (2, 2)},
                 optimizer=DictConfig({}),
                 scheduler=DictConfig({}),
                 lr_scheduler=DictConfig({}),
             )
 
-    @pytest.mark.parametrize("test_input_chw", [(4, 512, 512), (1, 10, 20)])
-    @pytest.mark.parametrize("test_output_chw", [(1, 432, 432), (19, 10, 20)])
+    @pytest.mark.parametrize(
+        "test_input_chw",
+        [(4, 512, 512), (1, 10, 20)],
+        ids=lambda chw: "input-{}x{}x{}".format(*chw),
+    )
+    @pytest.mark.parametrize(
+        "test_output_chw",
+        [(1, 432, 432), (19, 10, 20)],
+        ids=lambda chw: "output-{}x{}x{}".format(*chw),
+    )
     @pytest.mark.parametrize("test_n_forecast_steps", [1, 2, 5])
     @pytest.mark.parametrize("test_n_history_steps", [1, 2, 5])
     def test_init_valid(
@@ -304,15 +316,18 @@ class TestBaseModel:
         assert lr_scheduler_cfg.get("monitor") == "validation_loss"
 
     @pytest.mark.parametrize(
-        "step_name", ["training_step", "validation_step", "test_step"]
+        "step_name",
+        ["test_step", "training_step", "validation_step"],
+        ids=["test_step", "training_step", "validation_step"],
     )
-    def test_step_returns_prediction_target_and_loss(
+    def test_step_output_shapes(
         self,
-        step_name: str,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
+        *,
+        step_name: str,
     ) -> None:
         batch_size = n_history_steps = n_forecast_steps = 1
         batch = {
@@ -468,7 +483,9 @@ class TestBaseModelMetricSelection:
         assert len(model.metric_cfgs) == 13
 
     @pytest.mark.parametrize(
-        ("metric_name", "metric_type"), list(NON_FSS_METRIC_TYPES.items())
+        ("metric_name", "metric_type"),
+        list(NON_FSS_METRIC_TYPES.items()),
+        ids=list(NON_FSS_METRIC_TYPES.keys()),
     )
     def test_non_fss_metric_selection(
         self, metric_name: str, metric_type: type
@@ -582,3 +599,228 @@ class TestBaseModelMetricSelection:
         )
         with pytest.raises(InstantiationException, match="positive odd integer"):
             self._build_model([spec])
+
+
+class TestBaseModelMetricAccumulation:
+    @staticmethod
+    def _score_batches(
+        stage: str,
+        metric_names: list[str],
+        prediction: torch.Tensor,
+        target: torch.Tensor,
+        batch_size: int,
+        mask_dir: Path,
+    ) -> dict[str, torch.Tensor]:
+        """Accumulate metrics through the real model step for the selected stage."""
+        model = EchoForecastModel(
+            hemisphere=Hemisphere.NORTH,
+            input_spaces=[
+                DictConfig({"name": "forecast", "channels": 1, "shape": [1, 1]})
+            ],
+            output_space=DictConfig({"name": "target", "channels": 1, "shape": [1, 1]}),
+            mask_dir=mask_dir,
+            n_history_steps=2,
+            n_forecast_steps=2,
+            name="echo forecast",
+            metrics=[
+                metric_spec(name, NON_FSS_METRIC_TYPES[name]) for name in metric_names
+            ],
+            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+        )
+        step, metrics = {
+            "train": (model.training_step, model.train_metrics),
+            "validation": (model.validation_step, model.validation_metrics),
+            "test": (model.test_step, model.test_metrics),
+        }[stage]
+        for batch_idx, start in enumerate(range(0, prediction.shape[0], batch_size)):
+            step(
+                {
+                    "forecast": prediction[start : start + batch_size],
+                    "target": target[start : start + batch_size],
+                },
+                batch_idx,
+            )
+        return metrics.compute()
+
+    @pytest.mark.parametrize(
+        "stage", ["train", "validation", "test"], ids=lambda s: f"stage-{s}"
+    )
+    @pytest.mark.parametrize("batch_size", [1, 2], ids=lambda n: f"batch_size-{n}")
+    def test_signed_extent_error_is_independent_of_batch_size(
+        self, stage: str, batch_size: int, tmp_path: Path
+    ) -> None:
+        """Equal overprediction and underprediction cancel only the signed error."""
+        prediction = (
+            torch.tensor([1.0, 0.0]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1)
+        )
+        target = 1.0 - prediction
+        scores = self._score_batches(
+            stage, ["iiee", "sieerror"], prediction, target, batch_size, tmp_path
+        )
+
+        # One 25 km by 25 km ocean cell disagrees in each sample and forecast lead.
+        for name, metric, expected in (
+            ("iiee", IntegratedIceEdgeErrorPerForecastDay(), torch.full((2,), 625.0)),
+            ("sieerror", SeaIceExtentErrorPerForecastDay(), torch.zeros(2)),
+        ):
+            metric.update(prediction, target)
+            assert torch.allclose(metric.compute(), expected)
+            assert torch.allclose(scores[name], expected)
+
+    @pytest.mark.parametrize(
+        "stage", ["train", "validation", "test"], ids=lambda s: f"stage-{s}"
+    )
+    @pytest.mark.parametrize("batch_size", [1, 2], ids=lambda n: f"batch_size-{n}")
+    def test_mae_and_rmse_are_independent_of_batch_size(
+        self, stage: str, batch_size: int, tmp_path: Path
+    ) -> None:
+        """MAE and RMSE must retain their different update rules across batches."""
+        prediction = (
+            torch.tensor([1.0, 0.5]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1)
+        )
+        target = torch.zeros_like(prediction)
+        scores = self._score_batches(
+            stage, ["mae", "rmse"], prediction, target, batch_size, tmp_path
+        )
+
+        for name, metric, expected in (
+            ("mae", MAEPerForecastDay(), torch.full((2,), 0.75)),
+            ("rmse", RMSEPerForecastDay(), torch.full((2,), 0.625).sqrt()),
+        ):
+            metric.update(prediction, target)
+            assert torch.allclose(metric.compute(), expected)
+            assert torch.allclose(scores[name], expected)
+
+
+class TestBaseModelLossConfig:
+    """Tests that the loss function config is correctly picked up by BaseModel."""
+
+    def test_missing_loss_raises(
+        self, cfg_input_space: DictConfig, cfg_output_space: DictConfig
+    ) -> None:
+        with pytest.raises(TypeError, match=r"argument: 'loss'"):
+            Persistence(
+                target_variable_indices=[0],
+                hemisphere=Hemisphere.NORTH,
+                name="persistence",
+                input_spaces=[cfg_input_space],
+                n_forecast_steps=1,
+                n_history_steps=1,
+                output_space=cfg_output_space,
+                optimizer=DictConfig({}),
+                scheduler=DictConfig({}),
+                lr_scheduler=DictConfig({}),
+                metrics=[],
+            )
+
+    @pytest.mark.parametrize(
+        ("loss_cfg", "loss_type"),
+        [
+            pytest.param(
+                OmegaConf.create({"_target_": "torch.nn.MSELoss"}),
+                torch.nn.MSELoss,
+                id="mse",
+            ),
+            pytest.param(
+                OmegaConf.create({"_target_": "torch.nn.L1Loss"}),
+                torch.nn.L1Loss,
+                id="mae",
+            ),
+            pytest.param(
+                OmegaConf.create({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
+                torch.nn.HuberLoss,
+                id="huber",
+            ),
+            pytest.param(
+                OmegaConf.create({"_target_": "torch.nn.SmoothL1Loss", "beta": 0.5}),
+                torch.nn.SmoothL1Loss,
+                id="smooth_l1",
+            ),
+            pytest.param(
+                OmegaConf.create({"_target_": "icenet_mp.losses.rmse_loss.RMSELoss"}),
+                RMSELoss,
+                id="rmse",
+            ),
+            pytest.param(
+                OmegaConf.create({"_target_": "icenet_mp.losses.amse_loss.AMSELoss"}),
+                AMSELoss,
+                id="amse",
+            ),
+            pytest.param(
+                OmegaConf.create(
+                    {
+                        "_target_": (
+                            "icenet_mp.losses.weighted_bce_loss.WeightedBCEWithLogitsLoss"
+                        )
+                    }
+                ),
+                WeightedBCEWithLogitsLoss,
+                id="weighted_bce",
+            ),
+            pytest.param(
+                OmegaConf.create(
+                    {"_target_": "icenet_mp.losses.weighted_l1_loss.WeightedL1Loss"}
+                ),
+                WeightedL1Loss,
+                id="weighted_l1",
+            ),
+            pytest.param(
+                OmegaConf.create(
+                    {"_target_": "icenet_mp.losses.weighted_mse_loss.WeightedMSELoss"}
+                ),
+                WeightedMSELoss,
+                id="weighted_mse",
+            ),
+        ],
+    )
+    def test_loss_type(
+        self,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        *,
+        loss_cfg: DictConfig,
+        loss_type: type[torch.nn.Module],
+    ) -> None:
+        model = Persistence(
+            target_variable_indices=[0],
+            hemisphere=Hemisphere.NORTH,
+            name="persistence",
+            input_spaces=[cfg_input_space],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=cfg_output_space,
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            loss=loss_cfg,
+            metrics=[],
+        )
+        assert isinstance(model.loss_fn, loss_type)
+
+    def test_nonexistent_loss_raises(
+        self, cfg_input_space: DictConfig, cfg_output_space: DictConfig
+    ) -> None:
+        bad_loss = OmegaConf.create(
+            {"_target_": "icenet_mp.losses.does_not_exist.FakeLoss"}
+        )
+        with pytest.raises(
+            InstantiationException,
+            match=r"Error locating target 'icenet_mp\.losses\.does_not_exist\.FakeLoss'",
+        ):
+            Persistence(
+                target_variable_indices=[0],
+                hemisphere=Hemisphere.NORTH,
+                name="persistence",
+                input_spaces=[cfg_input_space],
+                n_forecast_steps=1,
+                n_history_steps=1,
+                output_space=cfg_output_space,
+                optimizer=DictConfig({}),
+                scheduler=DictConfig({}),
+                lr_scheduler=DictConfig({}),
+                loss=bad_loss,
+                metrics=[],
+            )

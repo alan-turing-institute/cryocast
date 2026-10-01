@@ -193,7 +193,7 @@ class TestCommonDataModuleClimatology:
             .astype(np.float64)
             .mean(axis=0)
         )
-        with pytest.raises(AssertionError):
+        with pytest.raises(AssertionError, match="Not equal to tolerance"):
             np.testing.assert_allclose(
                 table[july_15, channel], wrong[channel], atol=1e-6
             )
@@ -220,7 +220,7 @@ class TestCommonDataModuleClimatology:
         ]
         full_index = {d.date(): i for i, d in enumerate(_all_dates())}
         wrong = zero_filled[[full_index[d.date()] for d in march_15_days], channel]
-        with pytest.raises(AssertionError):
+        with pytest.raises(AssertionError, match="Not equal to tolerance"):
             np.testing.assert_allclose(
                 table[march_15, channel], wrong.mean(axis=0), atol=1e-6
             )

@@ -120,7 +120,7 @@ class TestRenderVideoSinglet:
         dates = [datetime.combine(d, datetime.min.time()) for d in test_dates_short]
         renderer = PanelRenderer(no_land_mask, Metadata(), base_plot_spec)
 
-        with pytest.raises(InvalidArrayError):
+        with pytest.raises(InvalidArrayError, match=r"Expected a 3D \[T, H, W\] array"):
             renderer.video_singlet(
                 era5_temperature_2d,  # type: ignore[arg-type]
                 dates=Timespan(dates),
@@ -139,7 +139,7 @@ class TestRenderVideoSinglet:
         ]
         renderer = PanelRenderer(no_land_mask, Metadata(), base_plot_spec)
 
-        with pytest.raises(InvalidArrayError):
+        with pytest.raises(InvalidArrayError, match=r"Expected a 3D \[T, H, W\] array"):
             renderer.video_singlet(
                 era5_temperature_thw,
                 dates=Timespan(dates),

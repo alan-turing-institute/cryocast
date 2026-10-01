@@ -7,9 +7,13 @@ from omegaconf import DictConfig
 from icenet_mp.models import EncodeProcessDecode
 
 
-@pytest.mark.parametrize("test_n_forecast_steps", [1, 2, 5])
-@pytest.mark.parametrize("test_n_history_steps", [1, 2, 5])
 class TestEncodeProcessDecode:
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 2, 5], ids=["history1", "history2", "history5"]
+    )
     def test_init(
         self,
         cfg_decoder: DictConfig,
@@ -49,8 +53,17 @@ class TestEncodeProcessDecode:
         assert model.output_space.channels == cfg_output_space["channels"]
         assert model.output_space.name == cfg_output_space["name"]
         assert model.output_space.shape == cfg_output_space["shape"]
+        assert model.multistage_only is False
 
-    @pytest.mark.parametrize("test_batch_size", [1, 2, 5])
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 2, 5], ids=["history1", "history2", "history5"]
+    )
+    @pytest.mark.parametrize(
+        "test_batch_size", [1, 2, 5], ids=["batch1", "batch2", "batch5"]
+    )
     def test_forward(
         self,
         cfg_decoder: DictConfig,
@@ -107,18 +120,8 @@ class TestEncodeProcessDecode:
             cfg_output_space["shape"][1],
         )
 
-
-class TestEncodeProcessDecodeMultistageOnly:
-    @pytest.mark.parametrize(
-        ("computes_loss_in_latent_space", "expected_multistage_only"),
-        [(False, False), (True, True)],
-        ids=["physical-loss", "latent-loss"],
-    )
-    def test_multistage_only_follows_processor_loss_space(
+    def test_processor_with_custom_loss_multistage_only(
         self,
-        *,
-        computes_loss_in_latent_space: bool,
-        expected_multistage_only: bool,
         cfg_decoder: DictConfig,
         cfg_encoders: DictConfig,
         cfg_processor: DictConfig,
@@ -127,17 +130,13 @@ class TestEncodeProcessDecodeMultistageOnly:
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
     ) -> None:
-        """Only a processor that computes its loss in latent space needs multistage."""
-        processor = DictConfig(
-            {
-                **cfg_processor,
-                "computes_loss_in_latent_space": computes_loss_in_latent_space,
-            }
+        cfg_processor = DictConfig(
+            {**cfg_processor, "computes_loss_in_latent_space": True}
         )
         model = EncodeProcessDecode(
             name="encode-null-decode",
             encoders=cfg_encoders,
-            processor=processor,
+            processor=cfg_processor,
             decoder=cfg_decoder,
             hemisphere="north",
             input_spaces=[cfg_input_space],
@@ -151,4 +150,4 @@ class TestEncodeProcessDecodeMultistageOnly:
             lr_scheduler=DictConfig({}),
             target_variable_indices=[0],
         )
-        assert model.multistage_only is expected_multistage_only
+        assert model.multistage_only is True
