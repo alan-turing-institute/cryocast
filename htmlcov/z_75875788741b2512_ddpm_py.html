@@ -54,9 +54,9 @@
             </div>
         </aside>
         <h2>
-            <span class="text">147 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">140<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">7<span class="text"> missing</span></button>
+            <span class="text">149 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">141<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">8<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_fa2610fa95ddce3d___init___py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-01 15:00 +0000
+            created at 2026-10-01 19:47 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -689,8 +689,10 @@
     <p class="run"><span class="n"><a id="t607" href="#t607">607</a></span><span class="t">        <span class="nam">target</span> <span class="op">=</span> <span class="nam">y</span><span class="op">.</span><span class="nam">unflatten</span><span class="op">(</span><span class="num">1</span><span class="op">,</span> <span class="op">(</span><span class="nam">T</span><span class="op">,</span> <span class="nam">C</span><span class="op">)</span><span class="op">)</span>  <span class="com"># [B, T, C, H, W]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t608" href="#t608">608</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t609" href="#t609">609</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">test_metrics</span><span class="op">.</span><span class="nam">update</span><span class="op">(</span><span class="nam">prediction</span><span class="op">,</span> <span class="nam">target</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t610" href="#t610">610</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t611" href="#t611">611</a></span><span class="t">        <span class="key">return</span> <span class="nam">ModelStepOutput</span><span class="op">(</span><span class="nam">prediction</span><span class="op">,</span> <span class="nam">target</span><span class="op">,</span> <span class="nam">loss</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t610" href="#t610">610</a></span><span class="t">        <span class="key">if</span> <span class="str">&quot;climatology&quot;</span> <span class="key">in</span> <span class="nam">batch</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t611" href="#t611">611</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">climatology_metrics</span><span class="op">.</span><span class="nam">update</span><span class="op">(</span><span class="nam">batch</span><span class="op">[</span><span class="str">&quot;climatology&quot;</span><span class="op">]</span><span class="op">,</span> <span class="nam">target</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t612" href="#t612">612</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t613" href="#t613">613</a></span><span class="t">        <span class="key">return</span> <span class="nam">ModelStepOutput</span><span class="op">(</span><span class="nam">prediction</span><span class="op">,</span> <span class="nam">target</span><span class="op">,</span> <span class="nam">loss</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -700,7 +702,7 @@
             <a class="nav" href="z_fa2610fa95ddce3d___init___py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-01 15:00 +0000
+            created at 2026-10-01 19:47 +0000
         </p>
     </div>
 </footer>
