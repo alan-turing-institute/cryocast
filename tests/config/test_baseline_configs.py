@@ -21,7 +21,7 @@ def expected_model_name(config_name: str) -> str:
 class TestBaselineConfigs:
     """Regression tests for icenet-mp baseline configs."""
 
-    @pytest.mark.parametrize("config_name", BASELINE_CONFIGS)
+    @pytest.mark.parametrize("config_name", BASELINE_CONFIGS, ids=BASELINE_CONFIGS)
     def test_baseline_configs_compose(
         self, compose_config: Callable[..., DictConfig], config_name: str
     ) -> None:
@@ -34,7 +34,7 @@ class TestBaselineConfigs:
         assert "train" in config
         assert "evaluate" in config
 
-    @pytest.mark.parametrize("config_name", BASELINE_CONFIGS)
+    @pytest.mark.parametrize("config_name", BASELINE_CONFIGS, ids=BASELINE_CONFIGS)
     def test_baselines_accept_standard_data_override(
         self, compose_config: Callable[..., DictConfig], config_name: str
     ) -> None:

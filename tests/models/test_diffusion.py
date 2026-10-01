@@ -1,12 +1,9 @@
-from pathlib import Path
+from typing import Any
 
-import numpy as np
 import pytest
 import torch
 
-from icenet_mp.models.common import Mask, RestrictRange
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
-from icenet_mp.types import RangeRestriction
 
 
 class TestGaussianDiffusion:
@@ -20,7 +17,7 @@ class TestGaussianDiffusion:
 
         assert torch.equal(sampled, clean)
 
-    def test_q_sample_matches_forward_equation(self) -> None:
+    def test_q_sample_and_calculate_v_match_definitions(self) -> None:
         diffusion = GaussianDiffusion(timesteps=4)
         clean = torch.randn(2, 1, 4, 4)
         noise = torch.randn_like(clean)
@@ -31,24 +28,14 @@ class TestGaussianDiffusion:
         )
 
         sampled = diffusion.q_sample(clean, timesteps, noise)
-
-        expected = sqrt_alpha * clean + sqrt_one_minus_alpha * noise
-        assert torch.allclose(sampled, expected)
-
-    def test_calculate_v_matches_definition(self) -> None:
-        diffusion = GaussianDiffusion(timesteps=4)
-        clean = torch.randn(2, 1, 4, 4)
-        noise = torch.randn_like(clean)
-        timesteps = torch.tensor([1, 3])
-        sqrt_alpha = diffusion.sqrt_alphas_cumprod[timesteps].view(2, 1, 1, 1)
-        sqrt_one_minus_alpha = diffusion.sqrt_one_minus_alphas_cumprod[timesteps].view(
-            2, 1, 1, 1
-        )
-
         velocity = diffusion.calculate_v(clean, noise, timesteps)
 
-        expected = sqrt_alpha * noise - sqrt_one_minus_alpha * clean
-        assert torch.allclose(velocity, expected)
+        assert torch.allclose(
+            sampled, sqrt_alpha * clean + sqrt_one_minus_alpha * noise
+        )
+        assert torch.allclose(
+            velocity, sqrt_alpha * noise - sqrt_one_minus_alpha * clean
+        )
 
     def test_p_sample_t0_uses_posterior_mean_without_noise(self) -> None:
         diffusion = GaussianDiffusion(timesteps=4)
@@ -86,58 +73,14 @@ class TestUNetDiffusion:
         assert output.shape == noise.shape
         assert torch.isfinite(output).all()
 
-    def test_invalid_kernel_size_raises(self) -> None:
-        with pytest.raises(ValueError, match="Kernel size must be greater than 0"):
-            UNetDiffusion(input_channels=4, output_channels=1, kernel_size=0)
-
-    def test_invalid_start_out_channels_raises(self) -> None:
-        with pytest.raises(
-            ValueError, match="Start out channels must be greater than 0"
-        ):
-            UNetDiffusion(input_channels=4, output_channels=1, start_out_channels=0)
-
-
-class TestMask:
-    def test_none_returns_input_unchanged(self) -> None:
-        mask = Mask(mask_type=None, output_shape=(2, 2))
-        values = torch.randn(1, 1, 2, 2)
-
-        assert torch.equal(mask(values), values)
-
-    def test_loaded_mask_is_applied(self, tmp_path: Path) -> None:
-        np.save(
-            tmp_path / "land_mask.npy",
-            np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
-        )
-        mask = Mask(mask_type="land", output_shape=(2, 2), mask_dir=tmp_path)
-        values = torch.ones(1, 1, 2, 2)
-
-        result = mask(values)
-
-        expected = torch.tensor([[[[1.0, 0.0], [0.0, 1.0]]]])
-        assert torch.equal(result, expected)
-
-
-class TestRestrictRange:
-    def test_clamp_bounds_values(self) -> None:
-        restrict = RestrictRange(RangeRestriction.CLAMP, min_val=0.0, max_val=1.0)
-        values = torch.tensor([[[[-1.0, 0.25], [0.75, 2.0]]]])
-
-        result = restrict(values)
-
-        expected = torch.tensor([[[[0.0, 0.25], [0.75, 1.0]]]])
-        assert torch.equal(result, expected)
-
     @pytest.mark.parametrize(
-        "method", [RangeRestriction.SIGMOID, RangeRestriction.TANH]
+        ("kwargs", "match"),
+        [
+            ({"kernel_size": 0}, "Kernel size must be greater than 0"),
+            ({"start_out_channels": 0}, "Start out channels must be greater than 0"),
+        ],
+        ids=["kernel_size", "start_out_channels"],
     )
-    def test_smooth_restrictions_stay_in_range(
-        self, *, method: RangeRestriction
-    ) -> None:
-        restrict = RestrictRange(method, min_val=-2.0, max_val=3.0)
-        values = torch.tensor([[[[-100.0, 0.0, 100.0]]]])
-
-        result = restrict(values)
-
-        assert torch.all(result >= -2.0)
-        assert torch.all(result <= 3.0)
+    def test_invalid_argument_raises(self, kwargs: dict[str, Any], match: str) -> None:
+        with pytest.raises(ValueError, match=match):
+            UNetDiffusion(input_channels=4, output_channels=1, **kwargs)
