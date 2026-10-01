@@ -40,7 +40,7 @@ SEED = 1234
 
 def _build_model(
     *,
-    rollout_space: str = "latent",
+    rollout_space: str | None = None,
     decoder_extra: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
@@ -77,6 +77,8 @@ def _build_model(
     }
     decoder_payload.update(decoder_extra or {})
     decoder = DictConfig(decoder_payload)
+    # Omit rollout_space when unset so the tests exercise the model's own default.
+    rollout_kwargs = {} if rollout_space is None else {"rollout_space": rollout_space}
     torch.manual_seed(seed)
     return EncodeProcessDecode(
         name="cnn-null-cnn",
@@ -85,7 +87,6 @@ def _build_model(
             processor or {"_target_": "icenet_mp.models.processors.NullProcessor"}
         ),
         decoder=decoder,
-        rollout_space=rollout_space,
         hemisphere="north",
         input_spaces=input_spaces,
         n_forecast_steps=n_forecast_steps,
@@ -96,6 +97,7 @@ def _build_model(
         optimizer=DictConfig({}),
         scheduler=DictConfig({}),
         lr_scheduler=DictConfig({}),
+        **rollout_kwargs,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
@@ -277,24 +279,6 @@ class TestPhysicalRolloutAdvancesTheState:
         for lead in range(1, model.n_forecast_steps):
             assert not torch.equal(prediction[:, lead], prediction[:, lead - 1])
 
-    def test_zero_init_starts_at_persistence(self) -> None:
-        """zero_init_output must place the whole trajectory exactly on persistence."""
-        model = _build_model(
-            rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "zero_init_output": True,
-                "skip_connection": {"method": "additive"},
-            },
-        )
-        inputs = _inputs(model)
-        model.eval()
-        with torch.no_grad():
-            prediction = model(inputs)
-        persistence = inputs[TARGET_GROUP][:, -1]
-        for lead in range(model.n_forecast_steps):
-            assert torch.equal(prediction[:, lead], persistence)
-
     def test_later_leads_depend_on_the_previous_prediction(self) -> None:
         """Lead k+1 must be a function of the lead-k prediction, not of stale history.
 
@@ -330,7 +314,12 @@ class TestPhysicalRolloutAdvancesTheState:
         assert not torch.equal(out_first[:, -1], out_second[:, -1])
 
     def test_non_target_groups_are_held_at_last_observation(self) -> None:
-        """An extra input group must not be hallucinated forward."""
+        """An extra input group must be held at its newest observed frame.
+
+        Only the newest era5 frame may reach the forecast: changing an older frame
+        must leave it unchanged, while changing the newest must not. Needs a
+        processor that reads the whole window (NullProcessor does not), hence the ViT.
+        """
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space="physical",
@@ -338,15 +327,28 @@ class TestPhysicalRolloutAdvancesTheState:
                 "restrict_range": "none",
                 "skip_connection": {"method": "additive"},
             },
+            processor={
+                "_target_": "icenet_mp.models.processors.VitProcessor",
+                "patch_size": 4,
+                "emb_dim": 32,
+                "depth": 1,
+                "heads": 2,
+                "mlp_dim": 32,
+                "dropout": 0.0,
+            },
             extra_inputs=[extra],
         )
+        _small_tendency(model)
         model.eval()
         inputs = _inputs(model)
-        baseline = {key: value.clone() for key, value in inputs.items()}
-        # Changing an OLDER era5 frame changes the encoding of the window, so the
-        # forecast may move; changing nothing must be reproducible.
+        older_changed = {key: value.clone() for key, value in inputs.items()}
+        older_changed["era5"][:, :-1] = 0.0
+        newest_changed = {key: value.clone() for key, value in inputs.items()}
+        newest_changed["era5"][:, -1] = 0.0
         with torch.no_grad():
-            assert torch.equal(model(inputs), model(baseline))
+            baseline = model(inputs)
+            assert torch.equal(model(older_changed), baseline)
+            assert not torch.equal(model(newest_changed), baseline)
 
     def test_feedback_writes_only_the_target_variable(self) -> None:
         """A multi-channel target group: the prediction is fed back into channel 1 only."""

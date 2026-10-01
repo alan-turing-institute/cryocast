@@ -1,3 +1,4 @@
+import copy
 import datetime
 from pathlib import Path
 from typing import Any
@@ -482,7 +483,7 @@ def mock_data_non_normalized_times(
     mock_data: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     """Fixture to create a mock dataset for testing."""
-    output = dict(**mock_data)
+    output = copy.deepcopy(mock_data)
     output["coords"]["time"]["data"] = [
         datetime.datetime(2020, 1, 1, 3, 47, 42),
         datetime.datetime(2020, 1, 2, 3, 47, 42),

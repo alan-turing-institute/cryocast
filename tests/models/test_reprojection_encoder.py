@@ -169,12 +169,10 @@ class TestReprojectionEncoder:
             latitudes_fn=lambda: {INPUT_NAME: lats, OUTPUT_NAME: lats},
             longitudes_fn=lambda: {INPUT_NAME: lons, OUTPUT_NAME: lons},
         )
-        nn_h, nn_w = encoder.nearest_neighbours(torch.device("cpu"))
-        assert nn_h.shape == shape
-        assert nn_w.shape == shape
+        encoder.eval()
         x_nchw = torch.randn(2, channels, *shape)
-        out = encoder(x_nchw)
-        assert out.shape == (2, channels, *shape)
+        with torch.no_grad():
+            assert torch.equal(encoder(x_nchw), encoder.norm(x_nchw))
 
     def test_forward_channels_preserved(self) -> None:
         input_shape = (4, 4)
