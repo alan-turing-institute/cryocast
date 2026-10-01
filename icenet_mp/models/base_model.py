@@ -1,6 +1,7 @@
+import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
-from functools import cached_property, partial
+from collections.abc import Callable, Mapping, Sequence
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -16,20 +17,9 @@ from lightning.pytorch.utilities.types import (
 )
 from omegaconf import DictConfig
 from torchmetrics import Metric, MetricCollection
+from typing_extensions import override
 
-from icenet_mp.metrics import (
-    CentroidErrorPerForecastDay,
-    DistanceAveragedIceEdgeErrorPerForecastDay,
-    FractionalSkillScorePerForecastDay,
-    IceNetAccuracyPerForecastDay,
-    IntegratedIceEdgeErrorPerForecastDay,
-    MAEPerForecastDay,
-    RMSEPerForecastDay,
-    SeaIceExtentErrorPerForecastDay,
-    SpatialMeanGroundTruthPerForecastDay,
-    SpatialMeanPredictionPerForecastDay,
-    SSIMPerForecastDay,
-)
+from icenet_mp.metrics import LandMaskMixin, SingleChannelMetricMixin
 from icenet_mp.models.common import Mask
 from icenet_mp.types import (
     DataSpace,
@@ -40,7 +30,10 @@ from icenet_mp.types import (
 )
 
 if TYPE_CHECKING:
+    from torch.nn.modules.module import _IncompatibleKeys
     from torch.optim import Optimizer
+
+log = logging.getLogger(__name__)
 
 
 class BaseModel(LightningModule, ABC):
@@ -48,7 +41,7 @@ class BaseModel(LightningModule, ABC):
 
     # Parameters that should be excluded from hyperparameter logging
     ignored_hparams: ClassVar[frozenset[str]] = frozenset(
-        ("latitudes_fn", "longitudes_fn", "mask_dir")
+        ("latitudes_fn", "longitudes_fn", "mask_dir", "metrics")
     )
 
     def __init__(  # noqa: PLR0913
@@ -62,7 +55,7 @@ class BaseModel(LightningModule, ABC):
         loss: DictConfig,
         mask_dir: str | Path | None = None,
         lr_scheduler: DictConfig,
-        metrics: Sequence[str],
+        metrics: Sequence[Mapping[str, Any]],
         n_forecast_steps: int,
         n_history_steps: int,
         name: str,
@@ -83,8 +76,10 @@ class BaseModel(LightningModule, ABC):
         metrics use it to exclude land/ice boundaries from ice-edge detection, so only
         ocean ice/no-ice transitions count as the sea-ice edge.
 
-        ``metrics`` is the list of metric names to compute during training,
-        validation, and testing.
+        ``metrics`` is the list of metrics to compute during training, validation, and
+        testing. A TypeError is raised if an entry is not a mapping with string
+        ``name`` and ``_target_`` keys, and a ValueError if a name is used more than
+        once.
         """
         super().__init__(**kwargs)
 
@@ -118,6 +113,25 @@ class BaseModel(LightningModule, ABC):
         self.lr_scheduler_cfg = lr_scheduler
         self.loss_cfg = loss
 
+        # Validate and store the metric configs
+        self.metric_cfgs: dict[str, dict[str, Any]] = {}
+        for metric_cfg in metrics:
+            if not (
+                isinstance(metric_cfg, Mapping)
+                and isinstance(metric_name := metric_cfg.get("name"), str)
+                and isinstance(metric_cfg.get("_target_"), str)
+            ):
+                msg = (
+                    f"Metric config {metric_cfg!r} must be a mapping with 'name' and "
+                    "'_target_' keys, e.g. {'name': 'mae', '_target_': "
+                    "'my_package.my_metric.MyMetricClass'}."
+                )
+                raise TypeError(msg)
+            if metric_name in self.metric_cfgs:
+                msg = f"Metric name {metric_name!r} is configured more than once."
+                raise ValueError(msg)
+            self.metric_cfgs[metric_name] = dict(metric_cfg)
+
         # Land mask for ice-edge metrics (excludes land/ice boundaries from FSS/DIIEE).
         try:
             land_mask = Mask(
@@ -128,48 +142,19 @@ class BaseModel(LightningModule, ABC):
         except FileNotFoundError:
             land_mask = None
 
-        # Metrics
-        self.metrics = list(metrics)
-        fss_metric_classes: dict[str, Callable[[], Metric]] = {
-            f"fss_neighbourhood_size_{neighbourhood_size}": partial(
-                FractionalSkillScorePerForecastDay,
-                neighbourhood_size=neighbourhood_size,
-                land_mask=land_mask,
+        # Build test/train/validation metrics
+        self.test_metrics = self.build_metrics(land_mask)
+        self.train_metrics = self.build_metrics(land_mask)
+        self.validation_metrics = self.build_metrics(land_mask)
+        # Climatology baseline metrics, used if there is a climatology batch in testing
+        self.climatology_metrics = self.build_metrics(land_mask)
+        if skipped := [met for met in self.metric_cfgs if met not in self.test_metrics]:
+            log.warning(
+                "Disabling single-channel metrics for %s (%d output channels): %s.",
+                type(self).__name__,
+                self.output_space.channels,
+                ", ".join(skipped),
             )
-            for neighbourhood_size in (
-                int(metric.removeprefix("fss_neighbourhood_size_"))
-                for metric in self.metrics
-                if metric.startswith("fss_neighbourhood_size_")
-            )
-        }
-        _metric_classes: dict[str, Callable[[], Metric]] = {
-            "accuracy": partial(IceNetAccuracyPerForecastDay, land_mask=land_mask),
-            "centroid_error": partial(CentroidErrorPerForecastDay, land_mask=land_mask),
-            "diiee": partial(
-                DistanceAveragedIceEdgeErrorPerForecastDay, land_mask=land_mask
-            ),
-            **fss_metric_classes,
-            "iiee": partial(IntegratedIceEdgeErrorPerForecastDay, land_mask=land_mask),
-            "mae": partial(MAEPerForecastDay, land_mask=land_mask),
-            "rmse": partial(RMSEPerForecastDay, land_mask=land_mask),
-            "sieerror": partial(SeaIceExtentErrorPerForecastDay, land_mask=land_mask),
-            "spatial_mean_ground_truth": partial(
-                SpatialMeanGroundTruthPerForecastDay, land_mask=land_mask
-            ),
-            "spatial_mean_prediction": partial(
-                SpatialMeanPredictionPerForecastDay, land_mask=land_mask
-            ),
-            "ssim": partial(SSIMPerForecastDay, land_mask=land_mask),
-        }
-        self.test_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in self.metrics}
-        )
-        self.train_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in self.metrics}
-        )
-        self.validation_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in self.metrics}
-        )
 
         # All arguments to the ultimate child class will be logged as hyperparameters,
         # and saved to W&B, unless explicitly ignored here.
@@ -186,6 +171,47 @@ class BaseModel(LightningModule, ABC):
     @property
     def multistage_only(self) -> bool:
         return False
+
+    def build_metrics(self, land_mask: torch.Tensor | None) -> MetricCollection:
+        """Build a metric collection from the configured metrics.
+
+        Each configured metric is a mapping with a ``name`` (its key in logs), a Hydra
+        ``_target_`` and any other constructor arguments, e.g.
+        ``{"name": "my_metric", "_target_": "my_package.MyMetric", "k": 3}``. Targets
+        that subclass `LandMaskMixin` are also given the land mask.
+
+        This should include only metrics that are compatible with the output space. We
+        therefore filter out single-channel metrics from the metric collection if the
+        model will predict multiple channels.
+
+        Args:
+            land_mask: Optional boolean tensor of shape (H, W), True for ocean cells and
+                       False for land. This is passed to every `LandMaskMixin`
+                       metric, and is used to exclude land cells from the metric.
+
+        Returns:
+            A MetricCollection containing the requested metrics.
+
+        """
+        requested: dict[str, Metric] = {}
+        for name, metric_cfg in self.metric_cfgs.items():
+            # Build fresh arguments, so the stored config is never modified
+            kwargs = {key: value for key, value in metric_cfg.items() if key != "name"}
+            target = hydra.utils.get_object(kwargs["_target_"])
+            # Only metrics that use a land mask are given one
+            if isinstance(target, type) and issubclass(target, LandMaskMixin):
+                kwargs["land_mask"] = land_mask
+            requested[name] = hydra.utils.instantiate(kwargs)
+        # Disable compute groups to avoid erroneous automated groupings
+        return MetricCollection(
+            {
+                name: metric
+                for name, metric in requested.items()
+                if self.output_space.channels == 1
+                or not isinstance(metric, SingleChannelMetricMixin)
+            },
+            compute_groups=False,
+        )
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         """Construct the optimizer and optional scheduler from the config."""
@@ -236,6 +262,26 @@ class BaseModel(LightningModule, ABC):
 
         """
 
+    @override
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], *args: Any, **kwargs: Any
+    ) -> "_IncompatibleKeys":
+        """Load a state dict, ignoring any metric collections it contains."""
+        metric_prefixes = tuple(
+            f"{name}."
+            for name, module in self.named_modules()
+            if isinstance(module, MetricCollection)
+        )
+        return super().load_state_dict(
+            {k: v for k, v in state_dict.items() if not k.startswith(metric_prefixes)},
+            *args,
+            **kwargs,
+        )
+
+    def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
+        """Calculate the loss given a prediction and target."""
+        return self.loss_fn(prediction, target)
+
     @property
     def loss_cfg(self) -> DictConfig:
         """Get the loss configuration."""
@@ -252,10 +298,6 @@ class BaseModel(LightningModule, ABC):
             )
             raise TypeError(msg)
         self._loss_cfg = cfg
-
-    def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
-        """Calculate the loss given a prediction and target."""
-        return self.loss_fn(prediction, target)
 
     def process_batch(self, batch: dict[str, TensorNTCHW]) -> dict[str, TensorNTCHW]:
         """Process a batch before the forward pass and loss computation.
@@ -274,6 +316,7 @@ class BaseModel(LightningModule, ABC):
 
         - Separate the batch into inputs and target
         - Run inputs through the model
+        - Update the test metrics (and climatology metrics if appropriate)
         - Return the prediction, target and loss
 
         Args:
@@ -300,6 +343,8 @@ class BaseModel(LightningModule, ABC):
             sync_dist=True,
         )
         self.test_metrics.update(prediction, target)
+        if "climatology" in batch:
+            self.climatology_metrics.update(batch["climatology"], target)
 
         return ModelStepOutput(prediction, target, loss)
 

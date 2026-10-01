@@ -23,6 +23,16 @@ class TestSanitisedName:
             ("loss.delta", "loss.delta"),
             ("predict.n_forecast_steps", "predict.n_forecast_steps"),
         ],
+        ids=[
+            "model-decoder",
+            "model-encoders",
+            "model-processor",
+            "train-optimizer-nested",
+            "train-scheduler",
+            "train-optimizer-leaf",
+            "loss-unprefixed",
+            "predict-unprefixed",
+        ],
     )
     def test_strips_known_prefixes(self, name: str, expected: str) -> None:
         assert CategoricalParameter(name, [1]).sanitised_name == expected

@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 from icenet_mp.types import ArrayTCHW
 
-from .calendar_day import calendar_day_index
+from .calendar_day_climatology import CalendarDayClimatology
 from .single_dataset import SingleDataset
 
 
@@ -156,7 +156,7 @@ class CombinedDataset(Dataset):
         if self.climatology is None:
             return None
         day_indices = [
-            calendar_day_index(forecast_step)
+            CalendarDayClimatology.day_index(forecast_step)
             for forecast_step in self.get_forecast_steps(start_date)
         ]
         return self.climatology[day_indices]

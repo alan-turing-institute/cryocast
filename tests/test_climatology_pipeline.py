@@ -37,7 +37,13 @@ def _cfg(base_path: Path) -> DictConfig:
             "evaluate": {"callbacks": {}},
             "reporting": {
                 "loggers": {},
-                "metrics": ["mae", "rmse"],
+                "metrics": [
+                    {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+                    {
+                        "name": "rmse",
+                        "_target_": "icenet_mp.metrics.RMSEPerForecastDay",
+                    },
+                ],
             },
             "loss": {"_target_": "torch.nn.HuberLoss", "delta": 0.5},
             "model": {

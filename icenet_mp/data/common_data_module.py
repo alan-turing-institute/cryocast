@@ -4,6 +4,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from lightning import LightningDataModule
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
@@ -11,7 +12,7 @@ from torch.utils.data import DataLoader
 from icenet_mp.types import ArrayTCHW, DataloaderArgs, DataSpace, Hemisphere, MaskType
 from icenet_mp.utils import mask_dir
 
-from .climatology import build_climatology
+from .calendar_day_climatology import CalendarDayClimatology
 from .combined_dataset import CombinedDataset
 from .single_dataset import SingleDataset
 from .variable_selection import VariableSelection
@@ -76,27 +77,55 @@ class CommonDataModule(LightningDataModule):
         )
 
     @cached_property
-    def climatology(self) -> ArrayTCHW | None:
-        """Return the climatology: calendar-day means of the target variables.
+    def climatology(self) -> CalendarDayClimatology | None:
+        """Return the calendar-day statistics of the target variables.
 
-        See `build_climatology` for details of the averaging period and the 29
-        February fallback.
+        For each calendar day (month/day label), the [366, C, H, W] mean and standard
+        deviation tables hold statistics of the normalised target fields over dates
+        sharing that calendar day within the date range under consideration. This range
+        is the overlap of the training periods with the dates available in the target
+        dataset. NaN pixels resulting from missing data are excluded.
+
+        Each calendar day's statistics are smoothed over a weighted window of
+        ``CalendarDayClimatology.HALF_WINDOW`` days either side, so 29th February draws
+        on its neighbours in every year (see ``CalendarDayClimatology.from_dataset``).
 
         Returns:
-            A [366, C, H, W] table of calendar-day means of the target variables, or
-            `None` if the climatology could not be built.
+            A ``CalendarDayClimatology`` object holding the mean, standard deviation,
+            and number of dates contributing to each calendar day or None if the
+            climatology cannot be built.
 
         """
-        try:
-            target = self.datasets[self.target_group_name].subset(
-                variables=self.target_variables
+        target = self.datasets[self.target_group_name].subset(
+            variables=self.target_variables
+        )
+        period_dates = [day for day in target.dates if self._in_train_periods(day)]
+        if not period_dates:
+            msg = (
+                "Cannot build climatology: none of the configured training periods "
+                "have available dates in the target dataset "
+                f"({target.start_date} to {target.end_date})."
             )
-            return build_climatology(target, self.train_periods)
-        except ValueError as exc:
-            log.warning(
-                "Climatology baseline unavailable, continuing without it: %s", exc
-            )
+            log.warning(msg)
             return None
+        log.info(
+            "Computing calendar-day climatology over %d dates between %s and %s.",
+            len(period_dates),
+            min(period_dates),
+            max(period_dates),
+        )
+        climatology = CalendarDayClimatology.from_dataset(target, period_dates)
+        nan_days = np.isnan(climatology.mean).any(axis=(1, 2, 3))
+        if n_nan_days := int(nan_days.sum()):
+            msg = (
+                f"Cannot build climatology: {n_nan_days} calendar days have pixels "
+                f"with no finite values in the period ({min(period_dates)} to "
+                f"{max(period_dates)}). Check the configured training periods against "
+                "the available data range."
+            )
+            log.warning(msg)
+            return None
+        return climatology
 
     @cached_property
     def datasets(self) -> dict[str, SingleDataset]:
@@ -237,7 +266,7 @@ class CommonDataModule(LightningDataModule):
             n_history_steps=self.n_history_steps,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
-            climatology=self.climatology,
+            climatology=self.climatology.mean if self.climatology else None,
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":
@@ -251,6 +280,25 @@ class CommonDataModule(LightningDataModule):
             dataset.end_date.astype("datetime64[m]"),
         )
         return dataset
+
+    def _in_train_periods(self, day: np.datetime64) -> bool:
+        """Return whether the date falls within any of the training period ranges.
+
+        Bounds are compared at day precision, so a bound carrying a time component
+        (e.g. ``2019-01-01T12:00:00``) behaves like ``2019-01-01``.
+        """
+        day_day = day.astype("datetime64[D]")
+        for period in self.train_periods:
+            start = period.get("start")
+            end = period.get("end")
+            if start is not None and day_day < np.datetime64(start).astype(
+                "datetime64[D]"
+            ):
+                continue
+            if end is not None and day_day > np.datetime64(end).astype("datetime64[D]"):
+                continue
+            return True
+        return False
 
     @staticmethod
     def _normalise(periods: list[dict[Any, Any]]) -> list[dict[str, str | None]]:
