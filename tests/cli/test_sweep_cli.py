@@ -270,6 +270,54 @@ class TestSweepSummariseCLI:
         assert "Study contains 0 trial(s)" in caplog.text
         assert "No trials have completed yet" in caplog.text
 
+    def test_reports_parameter_importance_with_varying_trial_scores(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        study_path, _ = _build_study(tmp_path, n_completed=0)
+        sweep = OptunaSweep.from_path(study_path)
+        for score in (0.1, 0.5, 0.9):
+            trial, _ = sweep.ask()
+            sweep.tell(trial, score)
+
+        with caplog.at_level(logging.INFO):
+            result = runner.call(
+                ["sweep", "summarise", "--sweep-path", str(study_path)]
+            )
+        assert result.exit_code == 0, result.output
+        assert "Parameter importance" in caplog.text
+        assert "train.optimizer.lr" in caplog.text
+
+    def test_skips_parameter_importance_with_a_single_completed_trial(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        study_path, _ = _build_study(tmp_path, n_completed=1)
+        with caplog.at_level(logging.INFO):
+            result = runner.call(
+                ["sweep", "summarise", "--sweep-path", str(study_path)]
+            )
+        assert result.exit_code == 0, result.output
+        assert "Could not estimate parameter importance" in caplog.text
+
+    def test_skips_parameter_importance_when_every_trial_scores_the_same(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        study_path, _ = _build_study(tmp_path, n_completed=2)
+        with caplog.at_level(logging.INFO):
+            result = runner.call(
+                ["sweep", "summarise", "--sweep-path", str(study_path)]
+            )
+        assert result.exit_code == 0, result.output
+        assert "Could not estimate parameter importance" in caplog.text
+
 
 class TestSweepTrialCLI:
     def test_help(self) -> None:
@@ -285,6 +333,33 @@ class TestSweepTrialCLI:
                 r"--help\s+-h\s+Show this message and exit.",
             ],
         )
+
+    def test_trial_marks_study_failed_and_exits_cleanly_on_oom(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+        runner: CustomCliRunner,
+        tmp_path: Path,
+    ) -> None:
+        """CUDA OOM is a routine sampling outcome: fail cleanly, no raw traceback."""
+        study_path, _ = _build_study(tmp_path, n_completed=0)
+
+        def _raise_oom(_config: object) -> ModelService:
+            msg = "Simulated CUDA out of memory."
+            raise torch.OutOfMemoryError(msg)
+
+        monkeypatch.setattr(ModelService, "from_config", _raise_oom)
+
+        with caplog.at_level(logging.ERROR):
+            result = runner.call(["sweep", "trial", "--sweep-path", str(study_path)])
+
+        assert result.exit_code == 1
+        assert not isinstance(result.exception, torch.OutOfMemoryError)
+        assert "ran out of GPU memory" in caplog.text
+
+        trials = OptunaSweep.from_path(study_path).study.get_trials()
+        assert len(trials) == 1
+        assert trials[0].state == TrialState.PRUNED
 
     def test_trial_marks_study_failed_instead_of_leaving_it_running_on_a_crash(
         self,
