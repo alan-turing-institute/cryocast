@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - override /train/trainer: default  # needed as dawn overrides this
+  - _self_
+
+base_path: /srv/icenet-mp/

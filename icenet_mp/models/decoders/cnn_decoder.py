@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+import torch
 from torch import nn
 
 from icenet_mp.models.common import ConvBlockUpsample, ResizingInterpolation
@@ -26,7 +27,7 @@ class CNNDecoder(BaseDecoder):
         TensorNTCHW with (batch_size, n_timeslices, output_channels, output_height, output_width)
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         activation: str = "ReLU",
@@ -35,9 +36,25 @@ class CNNDecoder(BaseDecoder):
         n_subblocks: int = 2,
         norm_type: str = "batchnorm",
         scale_factor: int = 2,
+        zero_init_output: bool = False,
         **kwargs: Any,
     ) -> None:
-        """Initialise a CNNDecoder."""
+        """Initialise a CNNDecoder.
+
+        Args:
+            activation: activation function used inside the upsampling blocks.
+            kernel_size: kernel size of the convolutional blocks.
+            n_layers: number of size-increasing convolutional blocks.
+            n_subblocks: ConvNormAct blocks per upsampling block.
+            norm_type: normalisation inside the blocks ("groupnorm", "batchnorm", "none").
+            scale_factor: spatial upscaling per block.
+            zero_init_output: if True, the final output convolution starts with zero
+                weights and bias, so an untrained decoder emits exactly zero. Used by
+                residual (tendency) models so that the initial prediction is exactly
+                the anchor field passed to the skip connection.
+            **kwargs: forwarded to ``BaseDecoder`` (spaces, masks, range, skip).
+
+        """
         super().__init__(**kwargs)
 
         # Calculate the factor by which the scale changes after n_layers
@@ -122,6 +139,18 @@ class CNNDecoder(BaseDecoder):
 
         # Combine the layers sequentially
         self.model = nn.Sequential(*layers)
+
+        # If zero_init_output is requested then zero the weights in the final
+        # convolution layer so that the untrained decoder outputs exactly zero.
+        if zero_init_output:
+            if isinstance(final := self.model[-1], nn.Conv2d):
+                with torch.no_grad():
+                    final.weight.zero_()
+                    if final.bias is not None:
+                        final.bias.zero_()
+            else:
+                msg = "zero_init_output needs the final decoder layer to be a Conv2d."
+                raise ValueError(msg)
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
         """Forward step: decode latent space into output space with a CNN.

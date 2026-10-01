@@ -1,0 +1,22 @@
+# cnn-vit-cnn with the forecast loop closed in PHYSICAL space and a residual
+# (tendency) head.
+defaults:
+  - cnn_vit_cnn
+  - _self_
+
+name: cnn-vit-cnn-residual
+
+# Perform the rollout in physical space: each forecast step encodes the current
+# window of physical frames, takes one processor step, decodes, then re-encodes
+# and rolls the updated PHYSICAL field into the window (re-encoded next step)
+# instead of feeding the processor raw latent back into its own input
+rollout_space: physical
+
+decoder:
+  # Start with a zero-initialized output layer so that an untrained model
+  # produces no output
+  zero_init_output: true
+  # Combining an additive skip connection with a zero-initialized output layer
+  # means that an untrained model will produce persistence exactly.
+  skip_connection:
+    method: additive

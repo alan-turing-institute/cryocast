@@ -26,9 +26,10 @@ Once the release has been published, train the default set of models for a 24-ho
 For each training run, set the W&B run `name` to the version and the model type (e.g. `2026-07-persistence`) via the local config:
 
 ```yaml
-loggers:
-  wandb:
-    name: <name>
+reporting:
+  loggers:
+    wandb:
+      name: <name>
 ```
 
 Evaluate each trained model, again using the version-based name for the evaluation run, and upload summary evaluation plots/metrics to GitHub as release attachments.

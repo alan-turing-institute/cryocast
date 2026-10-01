@@ -94,14 +94,15 @@ class EncoderStage(BaseModel):
             output_space=template.output_space.to_dict(),
             scheduler=copy.deepcopy(template.scheduler_cfg),
             loss=copy.deepcopy(template.loss_cfg),
+            metrics=copy.deepcopy(template.metrics),
         )
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Forward step of the model.
 
-        - squeeze time dimension to get [NCHW] [batch, n_input_channels, H_input, W_input]
-        - encode into latent space [NCHW] [batch, n_latent_channels_total, H_latent, W_latent]
-        - decode to target space via rollout() so restrict_range applies [NTCHW] [batch, 1, n_output_channels, H_output, W_output],
+        - squeeze time dimension to get `NCHW` (batch, n_input_channels, H_input, W_input)
+        - encode into latent space `NCHW` (batch, n_latent_channels_total, H_latent, W_latent)
+        - decode to target space via rollout() so restrict_range applies `NTCHW` (batch, 1, n_output_channels, H_output, W_output),
         """
         latent = self.encoder(inputs["target"].squeeze(1)).unsqueeze(1)
         # Ignore persistence as we want to learn the best autoencoder

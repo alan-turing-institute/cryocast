@@ -2,10 +2,9 @@ from dataclasses import dataclass
 from typing import NamedTuple, TypedDict
 
 from anemoi.datasets.create.recipe import Recipe
-from matplotlib.colors import Normalize
 from torch import Tensor
 
-from .typedefs import ArrayHW, TensorNTCHW
+from .annotations import TensorNTCHW
 
 
 @dataclass
@@ -14,7 +13,6 @@ class AnemoiCleanupArgs:
 
     path: str
     command: str = "unused"
-    delta: list[str] | None = None
 
 
 class AnemoiDatasetStatus(NamedTuple):
@@ -77,62 +75,9 @@ class DataloaderArgs(TypedDict):
     worker_init_fn: None
 
 
-class DiffColourmapSpec(NamedTuple):
-    """Specify the colour scale used for a difference panel.
-
-    Attributes:
-        norm: Normalisation for mapping values to colours (e.g. TwoSlopeNorm for signed diffs).
-        vmin: Lower bound if no norm is provided.
-        vmax: Upper bound if no norm is provided.
-        cmap: Matplotlib colourmap name.
-
-    """
-
-    norm: Normalize | None
-    vmin: float | None
-    vmax: float | None
-    cmap: str
-
-
-@dataclass
-class Metadata:
-    """Structured metadata extracted from training configuration.
-
-    Attributes:
-        model: Model name (if available).
-        max_epochs: Maximum number of training epochs (if available).
-        current_epoch: Current training epoch (if available).
-        start: Training start date string (if available).
-        end: Training end date string (if available).
-        cadence: Training data cadence string (if available).
-        n_points: Number of training points calculated from date range and cadence.
-        vars_by_source: Dictionary mapping dataset source names to lists of variable names.
-        n_history_steps: Number of history steps used as model input window (days).
-
-    """
-
-    model: str | None = None
-    max_epochs: int | None = None
-    current_epoch: int | None = None
-    start: str | None = None
-    end: str | None = None
-    cadence: str | None = None
-    n_points: int | None = None
-    n_history_steps: int | None = None
-    vars_by_source: dict[str, list[str]] | None = None
-
-
-@dataclass
+@dataclass(frozen=True)
 class ProcessorOutput:
     """Output of a processor rollout step."""
 
     prediction: TensorNTCHW
     loss: Tensor | None = None
-
-
-class UncertaintyArrays(NamedTuple):
-    """The observed, predicted and uncertainty arrays for a standardised difference."""
-
-    ground_truth: ArrayHW
-    prediction: ArrayHW
-    uncertainty: ArrayHW

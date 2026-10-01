@@ -2,7 +2,7 @@ defaults:
   - base
   - override /data: synthetic
   - override /evaluate: synthetic
-  - override /loggers: local_files
+  - override /reporting/loggers: local_files
   - override /predict: synthetic-2d
   - override /train: synthetic
   - _self_

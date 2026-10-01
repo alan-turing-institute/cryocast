@@ -15,7 +15,7 @@ Description:
 import math
 
 import torch
-import torch.nn.functional as f
+import torch.nn.functional as F
 
 from icenet_mp.types import BetaSchedule
 
@@ -51,7 +51,7 @@ class GaussianDiffusion:
 
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-        self.alphas_cumprod_prev = f.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
+        self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - self.alphas_cumprod)
         self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)

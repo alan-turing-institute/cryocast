@@ -15,12 +15,12 @@ encoders:
 
 processor:
   _target_: icenet_mp.models.processors.UNetProcessor
-  kernel_size: 3
+  kernel_size: 7
   start_out_channels: 128
 
 decoder:
   _target_: icenet_mp.models.decoders.NaiveLinearDecoder
   mask_type: active
-  restrict_range: sigmoid
+  restrict_range: none
   skip_connection:
-    method: none
+    method: additive

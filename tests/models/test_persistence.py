@@ -19,6 +19,7 @@ class TestPersistence:
         test_n_history_steps: int,
         test_output_shape: tuple[int, int, int],
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
     ) -> None:
         input_space = {
             "channels": test_input_shape[2],
@@ -35,6 +36,7 @@ class TestPersistence:
             hemisphere="north",
             input_spaces=[input_space],
             loss=cfg_loss,
+            metrics=cfg_metrics,
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             output_space=output_space,
@@ -62,7 +64,10 @@ class TestPersistence:
         result: torch.Tensor = model(batch)
         assert result.shape == batch["target"].shape
 
-    def test_optimizer(self, cfg_loss: DictConfig) -> None:
+    def test_forward_ignores_climatology_key(
+        self, cfg_loss: DictConfig, cfg_metrics: list[str]
+    ) -> None:
+        """An extra climatology batch key must not change a non-climatology model's output."""
         model = Persistence(
             name="persistence",
             hemisphere="north",
@@ -74,6 +79,43 @@ class TestPersistence:
                 }
             ],
             loss=cfg_loss,
+            metrics=cfg_metrics,
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space={
+                "channels": 1,
+                "name": "target",
+                "shape": (1, 1),
+            },
+            optimizer={},
+            scheduler={},
+            lr_scheduler={},
+            target_variable_indices=[0],
+        )
+        batch_without = {
+            "input": torch.randn(1, 1, 1, 1, 1),
+            "target": torch.randn(1, 1, 1, 1, 1),
+        }
+        batch_with = {
+            **batch_without,
+            "climatology": torch.randn(1, 1, 1, 1, 1),
+        }
+
+        assert torch.equal(model(batch_without), model(batch_with))
+
+    def test_optimizer(self, cfg_loss: DictConfig, cfg_metrics: list[str]) -> None:
+        model = Persistence(
+            name="persistence",
+            hemisphere="north",
+            input_spaces=[
+                {
+                    "channels": 1,
+                    "name": "input",
+                    "shape": (1, 1),
+                }
+            ],
+            loss=cfg_loss,
+            metrics=cfg_metrics,
             n_forecast_steps=1,
             n_history_steps=1,
             output_space={

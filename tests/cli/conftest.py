@@ -10,7 +10,7 @@ from icenet_mp.cli.main import app
 class CustomCliRunner(CliRunner):
     def __init__(self) -> None:
         """A custom CLI runner for IceNet-MP tests."""
-        super().__init__()
+        super().__init__(env={"COLUMNS": "120"})
         self.colorstrip = re.compile(r"\x1b\[[0-9;]*m")
 
     def call(self, commands: Sequence[str]) -> Result:

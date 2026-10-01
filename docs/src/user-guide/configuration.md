@@ -45,7 +45,7 @@ uv run imp <command> ++base_path=/local/path/to/my/data
 ```
 
 !!! warning
-    `baseline/00_persistence.yaml` overrides the options in `base.yaml` needed to run the `persistence` model.
+    `baseline/00_persistence.yaml` overrides the options in `base.yaml` needed to run the `persistence` model. `baseline/00_climatology.yaml` does the same for the `climatology` baseline model, which predicts the calendar-day-mean (climatology) field for each forecast step.
 
 ## HPC systems
 
