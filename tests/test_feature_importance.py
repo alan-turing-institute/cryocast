@@ -60,6 +60,20 @@ class TestComputeFeatureImportance:
         # The near-constant variable carries no signal and must rank last.
         assert ranked[-1][0] == "group1/ice_thickness"
 
+    def test_is_reproducible_across_runs(self, mock_dataset: Path) -> None:
+        """Repeated calls must return identical importances (unshuffled training data)."""
+        base_path = mock_dataset.parents[2]
+        config = _cfg(
+            base_path,
+            {"ds1": {"name": "mock_dataset", "group_as": "group1"}},
+            target_group="group1",
+        )
+
+        first = compute_feature_importance(config, n_estimators=10)
+        second = compute_feature_importance(config, n_estimators=10)
+
+        assert first == second
+
     def test_two_dataset_groups_are_both_used_as_features(
         self, mock_dataset: Path
     ) -> None:
@@ -99,8 +113,10 @@ class TestComputeFeatureImportance:
 
         def _nan_train_dataloader(
             self: CommonDataModule,
+            *,
+            shuffle: bool = True,
         ) -> Iterator[dict[str, ArrayTCHW]]:
-            for batch in original_train_dataloader(self):
+            for batch in original_train_dataloader(self, shuffle=shuffle):
                 batch["group1"][0, 0, 0, 0, 0] = float("nan")
                 yield batch
 

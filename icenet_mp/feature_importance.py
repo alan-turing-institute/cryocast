@@ -53,7 +53,9 @@ def compute_feature_importance(
 
     rows: list[np.ndarray] = []
     targets: list[np.ndarray] = []
-    for batch in data_module.train_dataloader():
+    # Unshuffled: the forest's bootstrap sampling is seeded by row position, so a
+    # shuffled row order would make the reported importances non-reproducible.
+    for batch in data_module.train_dataloader(shuffle=False):
         target = batch.pop("target")
         batch.pop("climatology", None)  # optional baseline field, not a feature
         rows.append(

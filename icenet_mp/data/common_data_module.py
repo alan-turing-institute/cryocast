@@ -356,6 +356,8 @@ class CommonDataModule(LightningDataModule):
 
     def train_dataloader(
         self,
+        *,
+        shuffle: bool = True,
     ) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct train dataloader."""
         dataset = self.training_dataset
@@ -365,7 +367,7 @@ class CommonDataModule(LightningDataModule):
             dataset.start_date,
             dataset.end_date,
         )
-        return DataLoader(dataset, shuffle=True, **self._common_dataloader_kwargs)
+        return DataLoader(dataset, shuffle=shuffle, **self._common_dataloader_kwargs)
 
     def val_dataloader(
         self,
