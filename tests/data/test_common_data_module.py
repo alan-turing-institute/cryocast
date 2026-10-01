@@ -16,6 +16,8 @@ from tests.conftest import (
     CLIMATOLOGY_MISSING,
     CLIMATOLOGY_START,
     CLIMATOLOGY_VARIABLES,
+    build_zarr,
+    make_climatology_data_dict,
 )
 
 FEB_29 = CalendarDayClimatology.day_index(np.datetime64("2000-02-29"))
@@ -343,6 +345,36 @@ class TestCommonDataModuleClimatology:
             assert dm.climatology is None
         # January data covers 25 December to 7 February: 45 of 366 calendar days
         assert "321 calendar days have pixels with no finite values" in caplog.text
+
+    def test_always_nan_pixel_returns_none(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A pixel with no finite value on any date gives no climatology at all.
+
+        This is intentional: a climatology with NaN pixels is never returned, even if
+        those pixels are NaN on every date (e.g. fill values).
+        """
+        zarr_path = build_zarr(
+            tmp_path / "data" / "anemoi" / "sic_south.zarr",
+            make_climatology_data_dict(
+                CLIMATOLOGY_START, CLIMATOLOGY_END, CLIMATOLOGY_MISSING
+            ),
+            full_dates=_all_dates(),
+            missing_dates=CLIMATOLOGY_MISSING,
+        )
+        # Blank one pixel of the first channel on every date, keeping the per-channel
+        # statistics finite so that normalisation leaves the other pixels intact
+        store = zarr.open_group(str(zarr_path), mode="r+")
+        data = np.asarray(store["data"])
+        data[:, 0, 0, 0] = np.nan
+        store["data"][:] = data
+        store["minimum"][:] = np.nanmin(data, axis=(0, 2, 3)).astype(np.float64)
+        store["maximum"][:] = np.nanmax(data, axis=(0, 2, 3)).astype(np.float64)
+
+        dm = CommonDataModule(_climatology_cfg(tmp_path, TRAIN_PERIODS))
+        with caplog.at_level("WARNING"):
+            assert dm.climatology is None
+        assert "366 calendar days have pixels with no finite values" in caplog.text
 
     def test_29_february_smoothed_without_leap_years(
         self, climatology_zarr: Path

@@ -60,6 +60,40 @@ def _dataset() -> SingleDataset:
     )
 
 
+def test_day_index_has_one_slot_per_leap_year_day() -> None:
+    """Index every month/day label of a leap year, in calendar order."""
+    assert N_DAYS == 366
+    assert list(CalendarDayClimatology.DAY_INDEX.values()) == list(range(N_DAYS))
+
+
+@pytest.mark.parametrize(
+    ("day", "expected"),
+    [
+        (np.datetime64("2001-01-01"), 0),
+        (np.datetime64("2000-02-28"), 58),
+        (np.datetime64("2000-02-29"), 59),
+        (np.datetime64("2000-03-01"), 60),
+        (np.datetime64("2001-03-01"), 60),
+        (np.datetime64("2001-12-31"), 365),
+        (np.datetime64("2020-01-01T12:00:00", "s"), 0),
+        (np.datetime64("2019-12-31T23:59:59", "s"), 365),
+    ],
+    ids=[
+        "jan-01",
+        "feb-28",
+        "feb-29-leap",
+        "mar-01-leap",
+        "mar-01-non-leap",
+        "dec-31-non-leap",
+        "jan-01-seconds",
+        "dec-31-seconds",
+    ],
+)
+def test_day_index(day: np.datetime64, expected: int) -> None:
+    """Map dates to month/day slots, ignoring year, leap status and time of day."""
+    assert CalendarDayClimatology.day_index(day) == expected
+
+
 def test_daily_climatology_averages_calendar_days_and_ignores_nonfinite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
