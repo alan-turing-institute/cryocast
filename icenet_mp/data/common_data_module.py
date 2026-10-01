@@ -11,13 +11,7 @@ from torch.utils.data import DataLoader
 from icenet_mp.types import ArrayTCHW, DataloaderArgs, DataSpace, Hemisphere, MaskType
 from icenet_mp.utils import mask_dir
 
-from .calendar_day import (
-    CALENDAR_DAY_LABELS,
-    FEBRUARY_28_INDEX,
-    FEBRUARY_29_INDEX,
-    N_CALENDAR_DAYS,
-    calendar_day_index,
-)
+from .calendar_day_climatology import CalendarDayClimatology
 from .combined_dataset import CombinedDataset
 from .single_dataset import SingleDataset
 
@@ -218,17 +212,19 @@ class CommonDataModule(LightningDataModule):
             raise ValueError(msg)
         by_day: dict[int, list[np.datetime64]] = defaultdict(list)
         for day in period_dates:
-            by_day[calendar_day_index(day)].append(day)
-        table = np.zeros((N_CALENDAR_DAYS, *target.space.chw), dtype=np.float64)
-        for index, label in enumerate(CALENDAR_DAY_LABELS):
+            by_day[CalendarDayClimatology.day_index(day)].append(day)
+        table = np.zeros(
+            (CalendarDayClimatology.N_DAYS, *target.space.chw), dtype=np.float64
+        )
+        for index, label in enumerate(CalendarDayClimatology.LABELS):
             day_dates = by_day.get(index, [])
             if not day_dates:
-                if index == FEBRUARY_29_INDEX:
+                if index == CalendarDayClimatology.FEBRUARY_29:
                     logger.info(
                         "Climatology: no 29 February dates in the averaging period; "
                         "using the 28 February mean for that day instead."
                     )
-                    table[index] = table[FEBRUARY_28_INDEX]
+                    table[index] = table[CalendarDayClimatology.FEBRUARY_28]
                     continue
                 msg = (
                     f"Cannot build climatology: calendar day {label} has no available "

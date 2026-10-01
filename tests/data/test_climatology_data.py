@@ -10,12 +10,11 @@ import pytest
 import zarr
 from omegaconf import DictConfig
 
-from icenet_mp.data import CombinedDataset, CommonDataModule, SingleDataset
-from icenet_mp.data.calendar_day import (
-    FEBRUARY_28_INDEX,
-    FEBRUARY_29_INDEX,
-    N_CALENDAR_DAYS,
-    calendar_day_index,
+from icenet_mp.data import (
+    CalendarDayClimatology,
+    CombinedDataset,
+    CommonDataModule,
+    SingleDataset,
 )
 from tests.conftest import (
     CLIMATOLOGY_END,
@@ -100,19 +99,23 @@ def _expected_daily_means(
     rows = _normalised_rows(zarr_path, period_dates)
     by_day: dict[int, list[np.ndarray]] = defaultdict(list)
     for date, row in zip(period_dates, rows, strict=True):
-        by_day[calendar_day_index(np.datetime64(date))].append(row)
+        by_day[CalendarDayClimatology.day_index(np.datetime64(date))].append(row)
     expected: dict[str, np.ndarray] = {}
     for variable in variables:
         channel = variables.index(variable)
-        table = np.zeros((N_CALENDAR_DAYS, *rows.shape[2:]), dtype=np.float64)
+        table = np.zeros(
+            (CalendarDayClimatology.N_DAYS, *rows.shape[2:]), dtype=np.float64
+        )
         for day_index, day_rows in by_day.items():
             table[day_index] = (
                 np.stack([row[channel] for row in day_rows], axis=0)
                 .astype(np.float64)
                 .mean(axis=0)
             )
-        if FEBRUARY_29_INDEX not in by_day:
-            table[FEBRUARY_29_INDEX] = table[FEBRUARY_28_INDEX]
+        if CalendarDayClimatology.FEBRUARY_29 not in by_day:
+            table[CalendarDayClimatology.FEBRUARY_29] = table[
+                CalendarDayClimatology.FEBRUARY_28
+            ]
         expected[variable] = table
     return expected
 
@@ -172,7 +175,7 @@ class TestCommonDataModuleClimatology:
         table = dm.climatology
         variable = CLIMATOLOGY_VARIABLES[0]
         channel = CLIMATOLOGY_VARIABLES.index(variable)
-        july_15 = calendar_day_index(np.datetime64("2000-07-15"))
+        july_15 = CalendarDayClimatology.day_index(np.datetime64("2000-07-15"))
 
         expected = _expected_daily_means(climatology_zarr, _period_dates(TRAIN_PERIODS))
         # The correct 15 July mean only includes 2017 and 2018 (the union ends
@@ -208,7 +211,7 @@ class TestCommonDataModuleClimatology:
         # (using the missing day's zero-filled row) would differ from the table.
         variable = CLIMATOLOGY_VARIABLES[0]
         channel = CLIMATOLOGY_VARIABLES.index(variable)
-        march_15 = calendar_day_index(np.datetime64("2000-03-15"))
+        march_15 = CalendarDayClimatology.day_index(np.datetime64("2000-03-15"))
         expected = _expected_daily_means(climatology_zarr, _period_dates(TRAIN_PERIODS))
         np.testing.assert_allclose(
             table[march_15, channel], expected[variable][march_15], atol=1e-6
@@ -243,7 +246,8 @@ class TestCommonDataModuleClimatology:
 
         table = dm.climatology
         np.testing.assert_array_equal(
-            table[FEBRUARY_29_INDEX], table[FEBRUARY_28_INDEX]
+            table[CalendarDayClimatology.FEBRUARY_29],
+            table[CalendarDayClimatology.FEBRUARY_28],
         )
 
     def test_raises_when_no_dates_in_train_periods(
@@ -337,8 +341,8 @@ class TestCombinedDatasetClimatology:
     @staticmethod
     def _table() -> np.ndarray:
         """A [366, C, H, W] table whose value encodes the calendar-day index."""
-        table = np.zeros((N_CALENDAR_DAYS, 1, 2, 2), dtype=np.float32)
-        for index in range(N_CALENDAR_DAYS):
+        table = np.zeros((CalendarDayClimatology.N_DAYS, 1, 2, 2), dtype=np.float32)
+        for index in range(CalendarDayClimatology.N_DAYS):
             table[index] = 100.0 * index + 0.5
         return table
 
@@ -352,8 +356,8 @@ class TestCombinedDatasetClimatology:
         assert set(batch.keys()) == {"sic_south", "target", "climatology"}
         assert batch["climatology"].shape == (2, 1, 2, 2)
         # Forecast steps are 2019-12-31 and 2020-01-01.
-        dec_31 = calendar_day_index(np.datetime64("2019-12-31"))
-        jan_1 = calendar_day_index(np.datetime64("2020-01-01"))
+        dec_31 = CalendarDayClimatology.day_index(np.datetime64("2019-12-31"))
+        jan_1 = CalendarDayClimatology.day_index(np.datetime64("2020-01-01"))
         np.testing.assert_array_equal(batch["climatology"][0], table[dec_31])
         np.testing.assert_array_equal(batch["climatology"][1], table[jan_1])
 
@@ -386,8 +390,8 @@ class TestCombinedDatasetClimatology:
         result = combined.climatology_for(start)
         assert result is not None
         # Forecast steps are 2020-01-01 and 2020-01-02.
-        jan_1 = calendar_day_index(np.datetime64("2020-01-01"))
-        jan_2 = calendar_day_index(np.datetime64("2020-01-02"))
+        jan_1 = CalendarDayClimatology.day_index(np.datetime64("2020-01-01"))
+        jan_2 = CalendarDayClimatology.day_index(np.datetime64("2020-01-02"))
         np.testing.assert_array_equal(result[0], table[jan_1])
         np.testing.assert_array_equal(result[1], table[jan_2])
 
