@@ -2,15 +2,10 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-import numpy as np
 import typer
 from omegaconf import DictConfig
 
-from icenet_mp.data import (
-    SingleDataset,
-    generate_daily_climatology,
-    save_daily_climatology,
-)
+from icenet_mp.data import SingleDataset
 from icenet_mp.ingestion import build_downloaders
 from icenet_mp.visualisations import DatasetMediaWriter
 
@@ -39,70 +34,6 @@ def create(
         except RuntimeError as exc:
             logger.error("Failed to create %s: %s", downloader.name, exc)  # noqa: TRY400
             raise typer.Exit(1) from exc
-
-
-@datasets_cli.command("climatology")
-@hydra_adaptor
-def climatology(
-    config: DictConfig,
-    *,
-    dataset: Annotated[
-        str, typer.Option(help="Configured SIC dataset to use as the reference record")
-    ],
-    variable: Annotated[
-        str, typer.Option(help="Variable to average into the daily climatology")
-    ] = "ice_conc",
-    years: Annotated[
-        int, typer.Option(help="Number of complete reference years to average")
-    ] = 35,
-    reference_end_year: Annotated[
-        int | None,
-        typer.Option(help="Final reference year; defaults to the dataset's final year"),
-    ] = None,
-    output: Annotated[
-        Path | None,
-        typer.Option(help="Output .npz path; defaults under data/climatology"),
-    ] = None,
-) -> None:
-    """Generate a reusable daily SIC climatology baseline."""
-    downloader = next(
-        (item for item in build_downloaders(config) if item.name == dataset), None
-    )
-    if downloader is None:
-        logger.error("Configured dataset %s was not found.", dataset)
-        raise typer.Exit(1)
-    if not downloader.path_dataset.exists():
-        logger.error("Dataset %s not found at %s", dataset, downloader.path_dataset)
-        raise typer.Exit(1)
-
-    source = SingleDataset(
-        name=dataset,
-        input_files=[downloader.path_dataset],
-        normalise=False,
-    )
-    if reference_end_year is None:
-        reference_end_year = int(np.datetime_as_string(source.end_date, unit="Y"))
-
-    result = generate_daily_climatology(
-        source,
-        variable=variable,
-        reference_end_year=reference_end_year,
-        years=years,
-    )
-    output_path = output or (
-        Path(config["base_path"])
-        / "data"
-        / "climatology"
-        / f"{dataset}-{variable}-{years}y-{reference_end_year}.npz"
-    )
-    saved = save_daily_climatology(result, output_path)
-    logger.info(
-        "Saved %d-day climatology for %s:%s to %s.",
-        len(result.month_day),
-        dataset,
-        variable,
-        saved,
-    )
 
 
 @datasets_cli.command("inspect")
