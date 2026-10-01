@@ -1,0 +1,3 @@
+prediction_writer:
+  _target_: icenet_mp.callbacks.PredictionWriter
+  enabled: false

@@ -7,6 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 class LandMask:
+    """Load and apply land masks to data arrays."""
+
     def __init__(self, land_mask_path: Path | None) -> None:
         """A helper class to apply land masks to data arrays."""
         self._cache: dict[tuple[int, int], np.ndarray] = {}
