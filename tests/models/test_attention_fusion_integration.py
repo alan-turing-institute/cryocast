@@ -55,7 +55,7 @@ def test_encode_process_decode_uses_attention_fusion() -> None:
         "target": torch.randn(2, 3, 3, 16, 16),
     }
 
-    latent = model.encode_inputs(inputs)
+    latent = model._encode_inputs(inputs)
     result = model(inputs)
 
     assert isinstance(model.fusion, LatentFusion)

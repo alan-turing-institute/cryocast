@@ -11,13 +11,13 @@ from icenet_mp.losses.weighted_bce_loss import WeightedBCEWithLogitsLoss
 from icenet_mp.losses.weighted_l1_loss import WeightedL1Loss
 from icenet_mp.losses.weighted_mse_loss import WeightedMSELoss
 from icenet_mp.models import BaseModel
-from icenet_mp.types import TensorNTCHW
+from icenet_mp.types import Hemisphere, TensorNTCHW
 
 
 class FakeDataModelNoDefault(BaseModel):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialise a fake data model with no default loss for testing purposes."""
-        super().__init__(*args, hemisphere="north", **kwargs)
+        super().__init__(*args, hemisphere=Hemisphere.NORTH, **kwargs)
         self.model = torch.nn.Linear(1, 1)
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:

@@ -46,6 +46,7 @@ dependencies = [
     "pytorch-triton-xpu>=0.0; sys_platform == 'linux' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'", # only needed for XPU-enabled machines, but we don't have a simple way to determine that
     "pytorch-triton>=0.0; sys_platform == 'linux' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.9.0",
     "torch>=2.8.0,!=2.10.0", # uv will constantly reinstall torch 2.10.0 due to incorrect metadata https://github.com/astral-sh/uv/issues/17711
     "torchmetrics>=1.9.0",
     "tqdm>=4.68.0",
