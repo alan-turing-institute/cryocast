@@ -1,9 +1,0 @@
-plotting:
-  _target_: icenet_mp.callbacks.PlottingCallback
-  frequency:
-    number: 3 # plot exactly 3 batches equally spaced across the epoch
-  make_input_plots: false
-  make_static_plots: true
-  make_video_plots: false
-  plot_spec:
-    dpi: 72

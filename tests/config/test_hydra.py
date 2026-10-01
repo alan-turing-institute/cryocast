@@ -1,9 +1,7 @@
 import inspect
-from importlib.resources import files
+from collections.abc import Callable
 
 import pytest
-from hydra import compose, initialize_config_dir
-from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig
 
 from icenet_mp.cli.hydra import hydra_adaptor
@@ -12,57 +10,79 @@ from icenet_mp.cli.hydra import hydra_adaptor
 class TestHydraConfigLoading:
     """Regression tests for icenet-mp config composition via hydra."""
 
-    CONFIG_DIR = str(files("icenet_mp.config"))
-
-    def setup_method(self) -> None:
-        GlobalHydra.instance().clear()
-
-    def teardown_method(self) -> None:
-        GlobalHydra.instance().clear()
-
-    def load_config(
-        self, config_name: str = "sample", overrides: list[str] | None = None
-    ) -> DictConfig:
-        """Compose a config from the icenet-mp config directory with any overrides."""
-        with initialize_config_dir(config_dir=self.CONFIG_DIR, version_base=None):
-            return compose(config_name=config_name, overrides=overrides or [])
-
-    def test_sample_config_has_expected_top_level_keys(self) -> None:
-        cfg = self.load_config()
+    def test_sample_config_has_expected_top_level_keys(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config()
         for key in ("data", "model", "train", "loss", "predict", "evaluate"):
             assert key in cfg, f"Key '{key}' missing from composed config"
 
-    def test_model_group_overridden_by_sample(self) -> None:
+    def test_model_group_overridden_by_sample(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
         # sample.yaml uses `override /model: quick_test`, replacing the base default
-        cfg = self.load_config()
+        cfg = compose_config()
         assert cfg.model.name == "quick-test"
         assert cfg.model._target_ == "icenet_mp.models.EncodeProcessDecode"
 
-    def test_loss_defaults_resolved_from_base(self) -> None:
-        cfg = self.load_config()
+    def test_loss_defaults_resolved_from_base(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config()
         assert cfg.loss._target_ == "icenet_mp.losses.amse_loss.AMSELoss"
         assert cfg.loss.delta == pytest.approx(0.5)
 
-    def test_scalar_override_applied(self) -> None:
-        cfg = self.load_config(overrides=["loss.delta=1.0"])
+    def test_scalar_override_applied(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(overrides=["loss.delta=1.0"])
         assert cfg.loss.delta == pytest.approx(1.0)
 
-    def test_wandb_offline_override(self) -> None:
-        cfg = self.load_config()
-        assert cfg.loggers.wandb.offline is False
+    def test_wandb_offline_override(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config()
+        assert cfg.reporting.loggers.wandb.offline is False
 
-        cfg = self.load_config(overrides=["loggers.wandb.offline=true"])
-        assert cfg.loggers.wandb.offline is True
+        cfg = compose_config(overrides=["reporting.loggers.wandb.offline=true"])
+        assert cfg.reporting.loggers.wandb.offline is True
 
-    def test_config_group_override_swaps_loss(self) -> None:
-        cfg = self.load_config(overrides=["loss=mse"])
+    def test_csv_logger_override(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(overrides=["reporting/loggers=csv"])
+        assert "wandb" not in cfg.reporting.loggers
+        assert (
+            cfg.reporting.loggers.csv._target_
+            == "lightning.pytorch.loggers.csv_logs.CSVLogger"
+        )
+        assert cfg.reporting.loggers.csv.name == "loss_logs"
+
+    def test_config_group_override_swaps_loss(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(overrides=["loss=mse"])
         assert cfg.loss._target_ == "torch.nn.MSELoss"
 
-    def test_synthetic_config_uses_local_logger(self) -> None:
-        cfg = self.load_config(config_name="synthetic")
-        assert "local_files" in cfg.loggers
-        assert "wandb" not in cfg.loggers
-        assert cfg.loggers.local_files._target_ == "icenet_mp.loggers.LocalFileLogger"
+    def test_climatology_baseline_composes(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(config_name="baseline/00_climatology")
+        assert cfg.model._target_ == "icenet_mp.models.Climatology"
+        assert cfg.model.name == "climatology"
+        assert cfg.train.trainer.max_epochs == 1
+        assert cfg.train.trainer.gradient_clip_val is None
+
+    def test_synthetic_config_uses_local_logger(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(config_name="synthetic")
+        assert "local_files" in cfg.reporting.loggers
+        assert "wandb" not in cfg.reporting.loggers
+        assert (
+            cfg.reporting.loggers.local_files._target_
+            == "icenet_mp.loggers.LocalFileLogger"
+        )
         assert "metric_summary" not in cfg.train.callbacks
         assert "metric_summary" not in cfg.evaluate.callbacks
 
@@ -79,14 +99,6 @@ class TestHydraAdaptor:
         assert "config_name" in params
         assert "overrides" in params
 
-    def test_preserves_positional_params(self) -> None:
-        def fn(x: int, config: DictConfig) -> None:
-            del x, config
-
-        params = list(inspect.signature(hydra_adaptor(fn)).parameters)
-        assert "x" in params
-        assert "config" not in params
-
     def test_preserves_keyword_only_params(self) -> None:
         def fn(config: DictConfig, *, flag: bool = False) -> None:
             del config, flag
@@ -102,15 +114,13 @@ class TestHydraAdaptor:
         assert hydra_adaptor(fn).__name__ == "fn"
         assert hydra_adaptor(fn).__doc__ == "My docstring."
 
-    def test_wrapped_function_receives_dictconfig(self) -> None:
-        received: list[DictConfig] = []
+    def test_preserves_positional_params(self) -> None:
+        def fn(x: int, config: DictConfig) -> None:
+            del x, config
 
-        def fn(config: DictConfig) -> None:
-            received.append(config)
-
-        hydra_adaptor(fn)(config_name="sample")  # type: ignore[arg-type]
-        assert len(received) == 1
-        assert isinstance(received[0], DictConfig)
+        params = list(inspect.signature(hydra_adaptor(fn)).parameters)
+        assert "x" in params
+        assert "config" not in params
 
     def test_wrapped_function_forwards_kwargs(self) -> None:
         received: list[tuple] = []
@@ -121,3 +131,13 @@ class TestHydraAdaptor:
         hydra_adaptor(fn)(x=42, config_name="sample")  # type: ignore[arg-type]
         assert received[0][0] == 42
         assert isinstance(received[0][1], DictConfig)
+
+    def test_wrapped_function_receives_dictconfig(self) -> None:
+        received: list[DictConfig] = []
+
+        def fn(config: DictConfig) -> None:
+            received.append(config)
+
+        hydra_adaptor(fn)(config_name="sample")  # type: ignore[arg-type]
+        assert len(received) == 1
+        assert isinstance(received[0], DictConfig)

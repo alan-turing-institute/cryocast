@@ -1,5 +1,5 @@
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
@@ -16,8 +16,12 @@ from icenet_mp.utils import (
     get_device_name,
     get_timestamp,
     get_wandb_run,
+    iso_from_date,
     mask_dir,
     npdatetime_from_datetime,
+    safe_nanmax,
+    safe_nanmin,
+    sanitise_filename,
     to_list,
 )
 
@@ -29,6 +33,20 @@ class TestDatetimeFromNpdatetime:
 
         assert result.tzinfo is UTC
         assert result.microsecond == 789000
+
+
+class TestFormatDateKey:
+    def test_date_object(self) -> None:
+        """Format a plain date object as an ISO date string."""
+        result = iso_from_date(date(2023, 12, 25))
+
+        assert result == "2023-12-25"
+
+    def test_datetime_object_drops_time(self) -> None:
+        """Format a datetime object, stripping the time component."""
+        result = iso_from_date(datetime(2023, 12, 25, 14, 30))
+
+        assert result == "2023-12-25"
 
 
 class TestNpdatetimeFromDatetime:
@@ -168,3 +186,105 @@ class TestToList:
         values = ["ice_conc", "2t"]
 
         assert to_list(values) is values
+
+
+class TestSafeNanmin:
+    def test_normal_array(self) -> None:
+        """Return the true minimum for a fully finite array."""
+        result = safe_nanmin(np.array([3.0, 1.0, 2.0]))
+
+        assert result == pytest.approx(1.0)
+
+    def test_ignores_nan(self) -> None:
+        """NaN entries are ignored when a finite value is present."""
+        result = safe_nanmin(np.array([np.nan, 5.0, 2.0]))
+
+        assert result == pytest.approx(2.0)
+
+    def test_all_nan_returns_default(self) -> None:
+        """An all-NaN array falls back to the default value."""
+        result = safe_nanmin(np.array([np.nan, np.nan]), default=-9.0)
+
+        assert result == pytest.approx(-9.0)
+
+    def test_empty_array_returns_default(self) -> None:
+        """An empty array falls back to the default value."""
+        result = safe_nanmin(np.array([]), default=7.0)
+
+        assert result == pytest.approx(7.0)
+
+    def test_all_infinite_returns_default(self) -> None:
+        """An array of only +/-inf falls back to the default value."""
+        result = safe_nanmin(np.array([np.inf, -np.inf]), default=3.0)
+
+        assert result == pytest.approx(3.0)
+
+    def test_mixed_negative_infinity_and_finite_ignores_the_infinity(self) -> None:
+        """-inf entries must not suppress the true finite minimum."""
+        result = safe_nanmin(np.array([-np.inf, 10.0]), default=0.0)
+
+        assert result == pytest.approx(10.0)
+
+    def test_mixed_negative_infinity_nan_and_finite_ignores_both(self) -> None:
+        """-inf and NaN entries together must still yield the true finite minimum."""
+        result = safe_nanmin(np.array([-np.inf, np.nan, 4.0]), default=0.0)
+
+        assert result == pytest.approx(4.0)
+
+
+class TestSafeNanmax:
+    def test_normal_array(self) -> None:
+        """Return the true maximum for a fully finite array."""
+        result = safe_nanmax(np.array([3.0, 1.0, 2.0]))
+
+        assert result == pytest.approx(3.0)
+
+    def test_ignores_nan(self) -> None:
+        """NaN entries are ignored when a finite value is present."""
+        result = safe_nanmax(np.array([np.nan, 5.0, 2.0]))
+
+        assert result == pytest.approx(5.0)
+
+    def test_all_nan_returns_default(self) -> None:
+        """An all-NaN array falls back to the default value."""
+        result = safe_nanmax(np.array([np.nan, np.nan]), default=42.0)
+
+        assert result == pytest.approx(42.0)
+
+    def test_empty_array_returns_default(self) -> None:
+        """An empty array falls back to the default value."""
+        result = safe_nanmax(np.array([]), default=8.0)
+
+        assert result == pytest.approx(8.0)
+
+    def test_all_infinite_returns_default(self) -> None:
+        """An array of only +/-inf falls back to the default value."""
+        result = safe_nanmax(np.array([np.inf, -np.inf]), default=6.0)
+
+        assert result == pytest.approx(6.0)
+
+    def test_mixed_positive_infinity_and_finite_ignores_the_infinity(self) -> None:
+        """+inf entries must not suppress the true finite maximum."""
+        result = safe_nanmax(np.array([np.inf, 10.0]), default=1.0)
+
+        assert result == pytest.approx(10.0)
+
+    def test_mixed_positive_infinity_nan_and_finite_ignores_both(self) -> None:
+        """+inf and NaN entries together must still yield the true finite maximum."""
+        result = safe_nanmax(np.array([np.inf, np.nan, 4.0]), default=1.0)
+
+        assert result == pytest.approx(4.0)
+
+
+class TestSanitiseFilename:
+    def test_replaces_a_single_unsafe_character(self) -> None:
+        """Replace one unsafe character with an underscore."""
+        assert sanitise_filename("a:b") == "a_b"
+
+    def test_collapses_a_run_of_unsafe_characters(self) -> None:
+        """Collapse a run of consecutive unsafe characters into one underscore."""
+        assert sanitise_filename("a :/b") == "a_b"
+
+    def test_leaves_safe_characters_unchanged(self) -> None:
+        """Leave letters, digits, underscores, periods and hyphens untouched."""
+        assert sanitise_filename("Safe-Name_123.png") == "Safe-Name_123.png"

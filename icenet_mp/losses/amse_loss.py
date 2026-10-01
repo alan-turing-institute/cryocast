@@ -331,9 +331,15 @@ class AMSELoss(nn.Module):
             )
             return out.index_select(1, present)
 
-        power_p = accumulate(spec_p.abs().reshape(n_fields, -1) ** 2)
-        power_t = accumulate(spec_t.abs().reshape(n_fields, -1) ** 2)
-        cross = accumulate((spec_p * spec_t.conj()).real.reshape(n_fields, -1))
+        # Avoid using .abs() and .conj() which are causing crashes on the DGX Spark
+        # ("invalid value for --gpu-architecture") due to NVRTC JIT issues.
+        power_p = accumulate((spec_p.real**2 + spec_p.imag**2).reshape(n_fields, -1))
+        power_t = accumulate((spec_t.real**2 + spec_t.imag**2).reshape(n_fields, -1))
+        cross = accumulate(
+            (spec_p.real * spec_t.real + spec_p.imag * spec_t.imag).reshape(
+                n_fields, -1
+            )
+        )
         return power_p, power_t, cross, dc
 
     def spectral_excess(

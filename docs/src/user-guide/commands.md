@@ -87,10 +87,10 @@ See [Train in stages](../how-to/train-multistage.md) for a full walkthrough.
 
 ### Weights & Biases logging
 
-To disable logging to W&B, set either `loggers.wandb.offline=true` or the `WANDB_MODE=offline` environment variable
+To disable logging to W&B, set either `reporting.loggers.wandb.offline=true` or the `WANDB_MODE=offline` environment variable
 
 ```bash
-uv run imp train loggers.wandb.offline=true
+uv run imp train reporting.loggers.wandb.offline=true
 WANDB_MODE=offline uv run imp train
 ```
 
@@ -136,6 +136,14 @@ See [Run a hyperparameter sweep](../how-to/sweeps.md) for the full workflow.
 ```bash
 uv run imp evaluate --checkpoint PATH_TO_A_CHECKPOINT
 ```
+
+Pass `--save-predictions` to save denormalised model predictions for the configured test period in NetCDF format, written to `predictions.nc` in the run's directory:
+
+```bash
+uv run imp evaluate --checkpoint PATH_TO_A_CHECKPOINT --save-predictions
+```
+
+Use `data.split.test` to control which dates are exported. NetCDF export currently requires single-process evaluation.
 
 ### Visualisations
 

@@ -19,7 +19,7 @@ demo-sicnorth-osisaf-25p0km-2017-2019-24h-v1:
   input:
     pipe:
       - concat:
-        # OSI-458 [AMSR-2] (2012-2020)
+        # OSI-458 [AMSR2] (2012-2020)
         # https://osi-saf.eumetsat.int/products/osi-458
         - dates:
             start: '2012-07-24T12:00:00'

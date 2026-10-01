@@ -59,10 +59,7 @@ from icenet_mp.types import ProcessorOutput, TensorNTCHW
 
 
 class MyDiffusionProcessor(BaseProcessor):
-
-    def rollout(
-        self, x: TensorNTCHW, y: TensorNTCHW | None = None
-    ) -> ProcessorOutput:
+    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
         # x: (N, T_history, C, H, W) - encoded inputs
         # y: (N, T_forecast, C, H, W) - encoded targets
         if y is not None:

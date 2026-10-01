@@ -1,0 +1,11 @@
+# Name of the dataset group containing our prediction target
+target:
+  group_name: sic-osisaf
+  variables:
+    - ice_conc
+
+# Number of future steps to predict
+n_forecast_steps: 7
+
+# Number of history steps to use when predicting
+n_history_steps: 3

@@ -24,3 +24,21 @@ class TestConfigFiles:
         assert data[expected_key]["name"] == expected_key, (
             f"name attribute {data[expected_key]['name']!r} does not match top-level key {expected_key!r}"
         )
+
+    @pytest.mark.parametrize(
+        "config_file", YAML_FILES, ids=[f.name for f in YAML_FILES]
+    )
+    def test_dataset_body_has_anemoi_recipe_structure(self, config_file: Path) -> None:
+        with config_file.open() as f:
+            data = yaml.safe_load(f)
+        body = next(iter(data.values()))
+
+        assert body.get("group_as"), "missing or empty 'group_as'"
+        dates = body.get("dates") or {}
+        assert dates.get("start"), "missing 'dates.start'"
+        assert dates.get("end"), "missing 'dates.end'"
+        assert dates.get("frequency"), "missing 'dates.frequency'"
+        # anemoi's 'input' recipe shape varies (a single source, or a pipe/join/concat
+        # combinator), so only its presence as a non-empty mapping is source-agnostic.
+        assert isinstance(body.get("input"), dict), "missing 'input' recipe"
+        assert body["input"], "empty 'input' recipe"

@@ -15,6 +15,7 @@ def encoder_stage(
     cfg_scheduler: DictConfig,
     cfg_lr_scheduler: DictConfig,
     cfg_loss: DictConfig,
+    cfg_metrics: list[str],
     cfg_decoder: DictConfig,
 ) -> EncoderStage:
     """An EncoderStage for the "test-input" dataset."""
@@ -34,6 +35,7 @@ def encoder_stage(
         scheduler=cfg_scheduler,
         lr_scheduler=cfg_lr_scheduler,
         loss=cfg_loss,
+        metrics=cfg_metrics,
     )
 
 
@@ -48,6 +50,7 @@ def decoder_stage(
     cfg_scheduler: DictConfig,
     cfg_lr_scheduler: DictConfig,
     cfg_loss: DictConfig,
+    cfg_metrics: list[str],
 ) -> DecoderStage:
     """A DecoderStage wrapping `encoder_stage`. Requires two history steps."""
     return DecoderStage(
@@ -65,4 +68,5 @@ def decoder_stage(
         scheduler=cfg_scheduler,
         lr_scheduler=cfg_lr_scheduler,
         loss=cfg_loss,
+        metrics=cfg_metrics,
     )
