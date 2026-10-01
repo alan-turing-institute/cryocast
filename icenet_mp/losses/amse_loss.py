@@ -42,6 +42,8 @@ import torch
 from torch import nn
 from torch.nn import functional
 
+from icenet_mp.types import NDIM_CHW
+
 logger = logging.getLogger(__name__)
 
 AMSEMode = Literal["hybrid", "pure"]
@@ -50,9 +52,6 @@ AMSEMode = Literal["hybrid", "pure"]
 # (flat mode->bin index, flat mode weights, indices of non-empty bins,
 #  per-bin wavenumber weight gamma_k aligned with those indices)
 BinCache = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
-
-# Fields must carry at least (batch-like, H, W) dimensions.
-MIN_FIELD_NDIM = 3
 
 # Accepted values of ``wavenumber_weight`` (None is normalised to "none").
 WAVENUMBER_WEIGHTS = ("none", "fastnet")
@@ -280,10 +279,9 @@ class AMSELoss(nn.Module):
                 f"!= target shape {tuple(target.shape)}"
             )
             raise ValueError(msg)
-        if prediction.ndim < MIN_FIELD_NDIM:
-            msg = (
-                f"expected at least {MIN_FIELD_NDIM} dimensions, got {prediction.ndim}"
-            )
+        # Fields must carry at least (batch-like, H, W) dimensions.
+        if prediction.ndim < NDIM_CHW:
+            msg = f"expected at least {NDIM_CHW} dimensions, got {prediction.ndim}"
             raise ValueError(msg)
         height, width = prediction.shape[-2], prediction.shape[-1]
         fields_p = prediction.reshape(-1, height, width).float()

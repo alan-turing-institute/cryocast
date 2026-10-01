@@ -16,7 +16,7 @@ from .complex_datatypes import (
     PlotSpec,
     Timespan,
 )
-from .constants import SEA_ICE_THRESHOLD
+from .constants import NDIM_CHW, NDIM_HW, NDIM_NTCHW, NDIM_THW, SEA_ICE_THRESHOLD
 from .enums import (
     BetaSchedule,
     DiffMode,
@@ -43,6 +43,10 @@ from .simple_datatypes import (
 )
 
 __all__ = [
+    "NDIM_CHW",
+    "NDIM_HW",
+    "NDIM_NTCHW",
+    "NDIM_THW",
     "SEA_ICE_THRESHOLD",
     "AnemoiCleanupArgs",
     "AnemoiDatasetStatus",
