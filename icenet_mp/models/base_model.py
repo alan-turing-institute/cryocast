@@ -159,14 +159,19 @@ class BaseModel(LightningModule, ABC):
             ),
             "ssim": partial(SSIMPerForecastDay, land_mask=land_mask),
         }
+        # Equal initial states do not imply equal update rules for our metrics.
+        # Keep accumulators independent across batches.
         self.test_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in metrics}
+            {name: _metric_classes[name]() for name in metrics},
+            compute_groups=False,
         )
         self.train_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in metrics}
+            {name: _metric_classes[name]() for name in metrics},
+            compute_groups=False,
         )
         self.validation_metrics = MetricCollection(
-            {name: _metric_classes[name]() for name in metrics}
+            {name: _metric_classes[name]() for name in metrics},
+            compute_groups=False,
         )
 
         # All arguments to the ultimate child class will be logged as hyperparameters,
