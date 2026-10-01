@@ -594,7 +594,7 @@ def mock_dataset_missing_dates(
     return build_zarr(
         mock_data_path / "anemoi" / "mock_dataset_missing_dates.zarr",
         mock_data_missing_dates,
-        full_dates=mock_data_missing_dates["coords"]["time"]["data"],
+        full_dates=list(dates_as_dt),
         missing_dates=[dates_as_dt[1], dates_as_dt[3]],
     )
 
