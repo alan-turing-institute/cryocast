@@ -1,29 +1,31 @@
 import torch
 from torchmetrics import Metric
 
-from .helpers import AccumulatorMixin, LandMaskMixin, SicOnlyMetricMixin
+from .helpers import AccumulatorMixin, LandMaskMixin, SingleChannelMetricMixin
 
 
-class BaseIceAreaMetric(SicOnlyMetricMixin, LandMaskMixin, AccumulatorMixin, Metric):
+class BaseIceAreaMetric(
+    SingleChannelMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
+):
     """Shared construction for threshold-based sea ice extent/edge metrics."""
 
     def __init__(
-        self, pixel_size: int = 25, land_mask: torch.Tensor | None = None
+        self,
+        *,
+        land_mask: torch.Tensor | None = None,
+        pixel_size: int = 25,
     ) -> None:
-        """Initialize shared state.
+        """Initialise shared state.
 
-        Parameters
-        ----------
-        pixel_size: int, optional
-            Physical size of one pixel in kilometers (default is 25 km -> OSISAF).
-        land_mask: torch.Tensor, optional
-            Boolean tensor of shape (H, W), True for ocean cells and False for land.
-            When given, land cells are excluded from the metric entirely.
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the metric entirely.
+            pixel_size: Physical size of one pixel in kilometres (default is 25 km, as
+                for OSISAF).
 
         """
-        super().__init__()
+        super().__init__(land_mask=land_mask)
         self.pixel_size = pixel_size
-        self._register_land_mask(land_mask)
 
     def _masked_mismatch(
         self, preds_extent: torch.Tensor, target_extent: torch.Tensor
@@ -44,10 +46,21 @@ class MeanIceAreaMetric(BaseIceAreaMetric):
     """
 
     def __init__(
-        self, pixel_size: int = 25, land_mask: torch.Tensor | None = None
+        self,
+        *,
+        land_mask: torch.Tensor | None = None,
+        pixel_size: int = 25,
     ) -> None:
-        """Initialize the metric state (see `_IceAreaMetricBase` for parameters)."""
-        super().__init__(pixel_size=pixel_size, land_mask=land_mask)
+        """Initialise the metric state.
+
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the metric entirely.
+            pixel_size: Physical size of one pixel in kilometres (default is 25 km, as
+                for OSISAF).
+
+        """
+        super().__init__(land_mask=land_mask, pixel_size=pixel_size)
         self.sum_errors: torch.Tensor
         self.sample_count: torch.Tensor
 
@@ -62,12 +75,9 @@ class MeanIceAreaMetric(BaseIceAreaMetric):
     def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
         """Update the accumulators with a new batch.
 
-        Parameters
-        ----------
-        preds : torch.Tensor
-            Model predictions of shape (B, T, C, H, W).
-        target : torch.Tensor
-            Ground truth values of shape (B, T, C, H, W).
+        Args:
+            preds: Model predictions of shape (B, T, C, H, W).
+            target: Ground truth values of shape (B, T, C, H, W).
 
         """
         self.ensure_single_channel(preds, target)

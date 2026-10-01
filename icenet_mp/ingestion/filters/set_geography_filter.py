@@ -33,14 +33,10 @@ class SetGeographyFilter(Filter):
     def forward(self, data: ekd.FieldList | pd.DataFrame) -> ekd.FieldList:
         """Wrap each input field with the configured geography.
 
-        Parameters
-        ----------
-        data : ekd.FieldList
-            The input data to be transformed.
+        Args:
+            data: The input data to be transformed.
 
-        Returns
-        -------
-        ekd.FieldList
+        Returns:
             The transformed data, wrapped with the configured geography.
 
         """

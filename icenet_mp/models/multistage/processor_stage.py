@@ -28,12 +28,13 @@ class ProcessorStage(EncodeProcessDecode):
         mask_dir: str | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialise a ProcessorStage with frozen encoders, a frozen decoder, and a trainable processor."""
-        # Initialise EncodeProcessDecode with the pre-trained encoders and decoder.
-        # - copy encoders from DecoderStage and freeze their parameters
-        # - copy the target encoder and freeze its parameters
-        # - copy the decoder from DecoderStage and freeze its parameters
-        # - copy target_variable_indices from checkpoint or from DecoderStage
+        """Initialise a ProcessorStage with a trainable processor.
+
+        - copy encoders from DecoderStage and freeze their parameters
+        - copy the target encoder and freeze its parameters
+        - copy the decoder from DecoderStage and freeze its parameters
+        - copy target_variable_indices from checkpoint or from DecoderStage
+        """
         kwargs.setdefault(
             "target_variable_indices", decoder_model.target_variable_indices
         )
@@ -73,7 +74,7 @@ class ProcessorStage(EncodeProcessDecode):
             processor=processor,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             target_encoder=target_encoder,
-            metrics=copy.deepcopy(decoder_model.metrics),
+            metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )
 
     @override
