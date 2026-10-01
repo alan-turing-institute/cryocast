@@ -89,6 +89,57 @@ def build_zarr(
     return zarr_path
 
 
+# Multi-year synthetic data for climatology tests. Values depend on channel, month,
+# day and year so that monthly means are sensitive to exactly which dates (and which
+# years) contribute.
+CLIMATOLOGY_START = datetime.datetime(2017, 1, 1)
+CLIMATOLOGY_END = datetime.datetime(2020, 1, 5)
+CLIMATOLOGY_MISSING = [datetime.datetime(2017, 3, 15)]
+CLIMATOLOGY_VARIABLES = ["ice_conc", "ice_thickness"]
+
+
+def climatology_value(channel: int, dt: datetime.datetime) -> float:
+    """Return the synthetic value for a channel and date.
+
+    The value varies by channel (100 * channel), month (10 * (month - 1)), day
+    (0.01 * day) and year (year - 2017), so monthly means depend on the dates and
+    years that contribute.
+    """
+    return 100.0 * channel + 10.0 * (dt.month - 1) + 0.01 * dt.day + (dt.year - 2017)
+
+
+def make_climatology_data_dict(
+    start: datetime.datetime,
+    end: datetime.datetime,
+    missing: list[datetime.datetime],
+    variables: list[str] = CLIMATOLOGY_VARIABLES,
+) -> dict[str, Any]:
+    """Build a build_zarr data dict covering start to end with the given missing dates."""
+    dates = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
+    missing_set = {d.date() for d in missing}
+    available = [d for d in dates if d.date() not in missing_set]
+    data_vars = {
+        var: {
+            "dims": ("time", "lat", "lon"),
+            "attrs": {},
+            "data": [
+                [[climatology_value(c, d)] * 2 for _ in range(2)] for d in available
+            ],
+        }
+        for c, var in enumerate(variables)
+    }
+    return {
+        "coords": {
+            "lat": {"dims": "lat", "attrs": {}, "data": [-89.0, -90.0]},
+            "lon": {"dims": "lon", "attrs": {}, "data": [44.0, 45.0]},
+            "time": {"dims": ("time",), "attrs": {}, "data": available},
+        },
+        "attrs": {},
+        "dims": {"lat": 2, "lon": 2, "time": len(available)},
+        "data_vars": data_vars,
+    }
+
+
 @pytest.fixture
 def cfg_common_data_module() -> DictConfig:
     """Test configuration for a CommonDataModule."""
@@ -512,6 +563,29 @@ def mock_dataset_missing_dates(
         mock_data_missing_dates,
         full_dates=mock_data_missing_dates["coords"]["time"]["data"],
         missing_dates=[dates_as_dt[1], dates_as_dt[3]],
+    )
+
+
+@pytest.fixture(scope="session")
+def climatology_zarr(mock_data_path: Path) -> Path:
+    """A multi-year synthetic zarr with values varying by channel, month, day and year.
+
+    Covers 2017-01-01 to 2020-01-05 with one missing date (2017-03-15), so that
+    calendar-day means are sensitive to both the dates and the years that contribute.
+    None of 2017-2019 are leap years, so 29 February is never present.
+    """
+    data = make_climatology_data_dict(
+        CLIMATOLOGY_START, CLIMATOLOGY_END, CLIMATOLOGY_MISSING
+    )
+    full_dates = [
+        CLIMATOLOGY_START + datetime.timedelta(days=i)
+        for i in range((CLIMATOLOGY_END - CLIMATOLOGY_START).days + 1)
+    ]
+    return build_zarr(
+        mock_data_path / "data" / "anemoi" / "sic_south.zarr",
+        data,
+        full_dates=full_dates,
+        missing_dates=CLIMATOLOGY_MISSING,
     )
 
 

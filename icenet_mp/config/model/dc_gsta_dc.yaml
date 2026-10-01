@@ -1,0 +1,63 @@
+_target_: icenet_mp.models.EncodeProcessDecode
+
+name: dc-gsta-dc
+
+encoders:
+  latent_space: [144, 144]
+  era5:
+    _target_: icenet_mp.models.encoders.DeepCompressionEncoder
+    attention_heads: {1: 6}
+    hid_channels: [96, 192]
+    hid_blocks: [3, 3]
+    latent_channels: 96
+    pixel_shuffle: true
+    stride: 3
+  float-argo:
+    _target_: icenet_mp.models.encoders.DeepCompressionEncoder
+    hid_channels: [16, 32]
+    hid_blocks: [1, 1]
+    latent_channels: 8
+    pixel_shuffle: true
+    stride: 3
+  sic-icenet:
+    _target_: icenet_mp.models.encoders.DeepCompressionEncoder
+    hid_channels: [16, 32]
+    hid_blocks: [1, 1]
+    latent_channels: 2
+    pixel_shuffle: true
+    stride: 3
+  sic-osisaf:
+    _target_: icenet_mp.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 8
+    pixel_shuffle: true
+    stride: 3
+  sic-ssmis:
+    _target_: icenet_mp.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 16
+    pixel_shuffle: true
+    stride: 3
+
+processor:
+  _target_: icenet_mp.models.processors.GSTAProcessor
+  dilation: 3
+  drop_path_prob: 0.1
+  hid_channels: 128
+  kernel_size: 15
+  mlp_ratio: 8.0
+  n_blocks: 6
+
+decoder:
+  _target_: icenet_mp.models.decoders.DeepCompressionDecoder
+  attention_heads: {1: 4}
+  hid_channels: [64, 128]
+  hid_blocks: [2, 2]
+  mask_type: active
+  pixel_shuffle: true
+  restrict_range: sigmoid
+  stride: 3
+  skip_connection:
+    method: additive

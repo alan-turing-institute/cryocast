@@ -1,18 +1,18 @@
 import logging
 import re
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import Mapping
+from copy import deepcopy
+from typing import Any, ClassVar
 
 import wandb
 from lightning import LightningModule, Trainer
 from lightning.pytorch import Callback
 from lightning.pytorch.trainer.states import TrainerFn
+from torch import Tensor
 from torchmetrics import MetricCollection
 
 from icenet_mp.utils import get_wandb_run
-
-if TYPE_CHECKING:
-    from torch import Tensor
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,19 @@ class MetricSummaryCallback(Callback):
         TrainerFn.FITTING.value: ["train", "validation"],
         TrainerFn.TESTING.value: ["test"],
     }
+
+    def __init__(self, climatology_metrics: MetricCollection | None = None) -> None:
+        """Initialise a MetricSummaryCallback.
+
+        Args:
+            climatology_metrics: Optional metric collection for accumulating climatology
+                baseline metrics during a test run. When omitted, the collection is
+                created lazily on the first test batch containing a ``climatology``
+                entry, mirroring the model's test metrics.
+
+        """
+        super().__init__()
+        self.climatology_metrics = climatology_metrics
 
     @staticmethod
     def _series_key(
@@ -44,7 +57,7 @@ class MetricSummaryCallback(Callback):
 
     def _collect_values_per_forecast_day(
         self, metrics: dict[str, MetricCollection]
-    ) -> dict[str, dict[str, "Tensor"]]:
+    ) -> dict[str, dict[str, Tensor]]:
         """Collect metric values that have a value for each forecast day."""
         values_per_forecast_day: dict[str, dict[str, Tensor]] = defaultdict(dict)
         for stage, metric_collection in metrics.items():
@@ -65,7 +78,7 @@ class MetricSummaryCallback(Callback):
 
     def _per_forecast_day_plots(
         self,
-        values_per_forecast_day: dict[str, dict[str, "Tensor"]],
+        values_per_forecast_day: dict[str, dict[str, Tensor]],
         *,
         multiple_stages: bool,
     ) -> tuple[dict[str, Any], list[str]]:
@@ -115,7 +128,7 @@ class MetricSummaryCallback(Callback):
 
     def _fss_vs_neighbourhood_size_plot(
         self,
-        values_per_forecast_day: dict[str, dict[str, "Tensor"]],
+        values_per_forecast_day: dict[str, dict[str, Tensor]],
         fss_metric_names: list[str],
     ) -> dict[str, Any]:
         """Build a plot of mean FSS (over forecast days) against neighbourhood size."""
@@ -219,6 +232,45 @@ class MetricSummaryCallback(Callback):
     def on_test_epoch_start(self, trainer: Trainer, pl_module: LightningModule) -> None:  # noqa: ARG002
         """Called at the start of a test epoch."""
         self._on_epoch_start(pl_module, "test")
+        if self.climatology_metrics is not None:
+            self.climatology_metrics.reset()
+
+    def on_test_batch_end(
+        self,
+        trainer: Trainer,  # noqa: ARG002
+        pl_module: LightningModule,
+        outputs: Tensor | Mapping[str, Any] | None,
+        batch: Any,  # noqa: ANN401
+        batch_idx: int,  # noqa: ARG002
+        dataloader_idx: int = 0,  # noqa: ARG002
+    ) -> None:
+        """Called at the end of each test batch.
+
+        Accumulate climatology baseline metrics when the batch contains a
+        ``climatology`` entry. The target is read from the model outputs, as the test
+        step has already popped it from the batch.
+        """
+        if (
+            not isinstance(batch, Mapping)
+            or "climatology" not in batch
+            or not isinstance(pl_module.test_metrics, MetricCollection)
+            or not isinstance(outputs, Mapping)
+            or "target" not in outputs
+        ):
+            return
+        if self.climatology_metrics is None:
+            self.climatology_metrics = MetricCollection(
+                {
+                    name: deepcopy(metric)
+                    for name, metric in pl_module.test_metrics.items()
+                }
+            )
+            # pl_module.test_metrics has already been updated with this batch's model
+            # prediction by test_step (which runs before this hook), so the deep-copied
+            # metrics start out contaminated with that update. Reset before accumulating
+            # the climatology baseline so the two series stay independent.
+            self.climatology_metrics.reset()
+        self.climatology_metrics.update(batch["climatology"], outputs["target"])
 
     def on_test_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Called at the end of a test epoch."""
@@ -261,4 +313,15 @@ class MetricSummaryCallback(Callback):
                 metrics[run_stage] = m
             else:
                 logger.warning("Could not load %s metrics!", run_stage)
+
+        # Include the climatology baseline when it was accumulated during testing
+        if (
+            stage == TrainerFn.TESTING.value
+            and self.climatology_metrics is not None
+            and any(
+                metric.update_called for metric in self.climatology_metrics.values()
+            )
+        ):
+            metrics["climatology"] = self.climatology_metrics
+
         self.log_per_run_metrics(trainer, metrics)

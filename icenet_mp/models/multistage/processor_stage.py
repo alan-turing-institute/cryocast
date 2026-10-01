@@ -1,18 +1,14 @@
 import copy
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
-import hydra
 from omegaconf import DictConfig
 from typing_extensions import override
 
-from icenet_mp.models import BaseModel, EncodeProcessDecode
+from icenet_mp.models import EncodeProcessDecode
 
 from .decoder_stage import DecoderStage
 from .encoder_stage import EncoderStage
-
-if TYPE_CHECKING:
-    from icenet_mp.models.processors import BaseProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -33,41 +29,23 @@ class ProcessorStage(EncodeProcessDecode):
         **kwargs: Any,
     ) -> None:
         """Initialise a ProcessorStage with frozen encoders, a frozen decoder, and a trainable processor."""
-        # We skip EncodeProcessDecode initialisation since we want to use pre-trained
-        # encoders, processor and decoder. This relies on the assumption that nothing
-        # else is done during initialisation aside from creating these modules.
-        BaseModel.__init__(self, mask_dir=mask_dir, **kwargs)
-
-        # Copy encoders from DecoderStage, freeze their parameters and register them.
-        self.encoder_names = decoder_model.encoder_names
-        self.encoders = [
-            copy.deepcopy(encoder).freeze() for encoder in decoder_model.encoders
-        ]
-        for encoder in self.encoders:
-            self.add_module(encoder.name, encoder)
-
-        # Load the target encoder and freeze it
-        self.target_encoder = target_encoder.encoder.freeze()
-
-        # Verify the output channels for each encoder
-        for encoder in (*self.encoders, self.target_encoder):
-            encoder.verify_output_channels(self.device)
-
-        # Copy combined latent space from DecoderStage
-        combined_latent_space = decoder_model.decoder.data_space_in
-
-        # Copy decoder from DecoderStage and freeze it
-        self.decoder = copy.deepcopy(decoder_model.decoder).freeze()
-        self.target_variable_indices = decoder_model.target_variable_indices
-
-        # Trainable processor
-        self.processor: BaseProcessor = hydra.utils.instantiate(
-            processor,
-            data_space=combined_latent_space,
-            data_space_target=self.target_encoder.data_space_out,
-            n_forecast_steps=self.n_forecast_steps,
-            n_history_steps=self.n_history_steps,
-            target_channel_offset=self.find_target_channel_offset(),
+        # Initialise EncodeProcessDecode with the pre-trained encoders and decoder.
+        # - copy encoders from DecoderStage and freeze their parameters
+        # - copy the target encoder and freeze its parameters
+        # - copy the decoder from DecoderStage and freeze its parameters
+        # - copy target_variable_indices from checkpoint or from DecoderStage
+        kwargs.setdefault(
+            "target_variable_indices", decoder_model.target_variable_indices
+        )
+        super().__init__(
+            encoders=[
+                copy.deepcopy(encoder).freeze() for encoder in decoder_model.encoders
+            ]
+            + [target_encoder.encoder.freeze()],
+            processor=processor,
+            decoder=copy.deepcopy(decoder_model.decoder).freeze(),
+            mask_dir=mask_dir,
+            **kwargs,
         )
 
     @classmethod
