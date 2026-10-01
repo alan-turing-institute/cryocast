@@ -28,9 +28,9 @@
 | icenet\_mp/compatibility/torch/patch\_parameter\_deepcopy.py         |       12 |        7 |     42% |     16-28 |
 | icenet\_mp/config/\_\_init\_\_.py                                    |        0 |        0 |    100% |           |
 | icenet\_mp/data/\_\_init\_\_.py                                      |        5 |        0 |    100% |           |
-| icenet\_mp/data/calendar\_day.py                                     |       10 |        0 |    100% |           |
+| icenet\_mp/data/calendar\_day\_climatology.py                        |       40 |        0 |    100% |           |
 | icenet\_mp/data/combined\_dataset.py                                 |       53 |        0 |    100% |           |
-| icenet\_mp/data/common\_data\_module.py                              |      146 |        9 |     94% |116-117, 128, 133, 176, 294-297 |
+| icenet\_mp/data/common\_data\_module.py                              |      132 |        9 |     93% |161-162, 173, 178, 221, 257-260 |
 | icenet\_mp/data/single\_dataset.py                                   |      145 |        4 |     97% |206, 211, 305-310 |
 | icenet\_mp/exceptions.py                                             |        3 |        0 |    100% |           |
 | icenet\_mp/geotools/\_\_init\_\_.py                                  |       10 |        0 |    100% |           |
@@ -166,7 +166,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       88 |        2 |     98% |     64-65 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6018** |  **398** | **93%** |           |
+| **TOTAL**                                                            | **6034** |  **398** | **93%** |           |
 
 
 ## Setup coverage badge
