@@ -175,6 +175,19 @@ class CombinedDataset(Dataset):
         ]
 
     def variable_list(self) -> list[str]:
+        """Return a pretty-formatted list of input variables in the combined dataset.
+
+        Returns:
+            A list of pretty-formatted strings like:
+
+            [
+                "Combined dataset has 3 input variables:",
+                "  1) dataset1/variableA",
+                "  2) dataset1/variableB",
+                "  3) dataset2/variableC",
+            ]
+
+        """
         variable_ids = [
             f"{ds.name}/{variable_name}"
             for ds in self.inputs
