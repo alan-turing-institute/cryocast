@@ -1,4 +1,5 @@
 from collections import deque
+from collections.abc import Iterable
 
 from torch import cat, nn, stack
 
@@ -89,17 +90,32 @@ class BaseProcessor(nn.Module):
 
         """
         # The current window of n_history_steps timesteps, oldest to newest
-        window: deque[TensorNCHW] = deque(
-            x[:, idx_t, :, :, :] for idx_t in range(self.n_history_steps)
-        )
+        window: deque[TensorNCHW] = deque(x.unbind(dim=1))
 
         # Slide the window forward, predicting one timestep at a time from the whole
         # window and then dropping the oldest timestep to make room for the prediction.
         outputs: list[TensorNCHW] = []
         for _ in range(self.n_forecast_steps):
-            next_step = self(cat(list(window), dim=1))
+            next_step = self.step(window)
             outputs.append(next_step)
             window.popleft()
             window.append(next_step)
 
         return ProcessorOutput(prediction=stack(outputs, dim=1))
+
+    def step(self, window: Iterable[TensorNCHW]) -> TensorNCHW:
+        """Predict the next timestep from a window of timesteps.
+
+        Folds the window along the channel dimension, oldest to newest, and calls
+        `self.forward` once to generate a single prediction for the next timestep.
+
+        Args:
+            window: n_history_steps TensorNCHW timesteps, oldest to newest, each with
+                shape (batch_size, n_channels, latent_height, latent_width).
+
+        Returns:
+            TensorNCHW with shape (batch_size, n_channels, latent_height, latent_width),
+            i.e. the single next predicted timestep.
+
+        """
+        return self(cat(list(window), dim=1))

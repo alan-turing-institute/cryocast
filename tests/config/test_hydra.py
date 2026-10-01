@@ -64,6 +64,15 @@ class TestHydraConfigLoading:
         cfg = compose_config(overrides=["loss=mse"])
         assert cfg.loss._target_ == "torch.nn.MSELoss"
 
+    def test_climatology_baseline_composes(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(config_name="baseline/00_climatology")
+        assert cfg.model._target_ == "icenet_mp.models.Climatology"
+        assert cfg.model.name == "climatology"
+        assert cfg.train.trainer.max_epochs == 1
+        assert cfg.train.trainer.gradient_clip_val is None
+
     def test_synthetic_config_uses_local_logger(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:

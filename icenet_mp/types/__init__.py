@@ -1,12 +1,36 @@
-from .complex_datatypes import DataSpace, ModelStepOutput, PlotSpec
+from .annotations import (
+    ArrayCHW,
+    ArrayHW,
+    ArrayHWV,
+    ArrayIndices2D,
+    ArrayTCHW,
+    ArrayTHW,
+    TensorNCHW,
+    TensorNTCHW,
+)
+from .complex_datatypes import (
+    ColourScale,
+    DataSpace,
+    Metadata,
+    ModelStepOutput,
+    PlotSpec,
+    Timespan,
+)
 from .constants import SEA_ICE_THRESHOLD
 from .enums import (
     BetaSchedule,
+    DiffMode,
+    Hemisphere,
     MaskType,
     RangeRestriction,
+    RolloutSpace,
     SkipConnectionType,
 )
-from .protocols import SupportsImageLogging, SupportsMetadata, SupportsVideoLogging
+from .protocols import (
+    SupportsImageLogging,
+    SupportsMetadataFromDataset,
+    SupportsVideoLogging,
+)
 from .simple_datatypes import (
     AnemoiCleanupArgs,
     AnemoiDatasetStatus,
@@ -15,23 +39,7 @@ from .simple_datatypes import (
     AnemoiInspectArgs,
     AnemoiLoadArgs,
     DataloaderArgs,
-    DiffColourmapSpec,
-    Metadata,
     ProcessorOutput,
-    UncertaintyArrays,
-)
-from .typedefs import (
-    ArrayCHW,
-    ArrayHW,
-    ArrayHWV,
-    ArrayIndices2D,
-    ArrayTCHW,
-    ArrayTHW,
-    DiffMode,
-    DiffStrategy,
-    Hemisphere,
-    TensorNCHW,
-    TensorNTCHW,
 )
 
 __all__ = [
@@ -49,11 +57,10 @@ __all__ = [
     "ArrayTCHW",
     "ArrayTHW",
     "BetaSchedule",
+    "ColourScale",
     "DataSpace",
     "DataloaderArgs",
-    "DiffColourmapSpec",
     "DiffMode",
-    "DiffStrategy",
     "Hemisphere",
     "MaskType",
     "Metadata",
@@ -61,11 +68,12 @@ __all__ = [
     "PlotSpec",
     "ProcessorOutput",
     "RangeRestriction",
+    "RolloutSpace",
     "SkipConnectionType",
     "SupportsImageLogging",
-    "SupportsMetadata",
+    "SupportsMetadataFromDataset",
     "SupportsVideoLogging",
     "TensorNCHW",
     "TensorNTCHW",
-    "UncertaintyArrays",
+    "Timespan",
 ]
