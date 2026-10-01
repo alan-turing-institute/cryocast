@@ -6,8 +6,9 @@ train:
   trainer:
     max_epochs: 10
 
-loggers:
-  wandb:
-    entity: null
+reporting:
+  loggers:
+    wandb:
+      entity: null
 
 base_path: ../my_data

@@ -691,6 +691,10 @@ full-floatsouth-argo-25p0km-1999-2025-24h-v2:
     - '2003-11-03T12:00:00'
     - '2003-11-14T12:00:00'
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       # Get the ARGO data

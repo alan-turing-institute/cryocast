@@ -1,7 +1,7 @@
 samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1:
   name: samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1
   group_as: sic-osisaf
-  description: Sea ice concentration from SMMR/SSMI/SSMIS + AMSR-E/AMSR-2 + AMSR2 for southern hemisphere
+  description: Sea ice concentration from SMMR/SSMI/SSMIS + AMSR-E/AMSR2 + AMSR2 for southern hemisphere
   attribution: EUMETSAT/OSISAF
   licence: CC-BY-4.0
 
@@ -24,10 +24,14 @@ samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1:
     mask_generator:
       _target_: icenet_mp.ingestion.postprocessors.StatusFlagMaskGenerator
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       - concat:
-        # OSI-458 [AMSR-2] (2012-2020)
+        # OSI-458 [AMSR2] (2012-2020)
         # https://osi-saf.eumetsat.int/products/osi-458
         - dates:
             start: '2012-07-24T12:00:00'

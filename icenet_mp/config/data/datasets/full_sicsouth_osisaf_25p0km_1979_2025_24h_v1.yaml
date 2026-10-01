@@ -1,7 +1,7 @@
 full-sicsouth-osisaf-25p0km-1979-2025-24h-v1:
   name: full-sicsouth-osisaf-25p0km-1979-2025-24h-v1
   group_as: sic-osisaf
-  description: Sea ice concentration from SMMR/SSMI/SSMIS + AMSR-E/AMSR-2 + AMSR2 for southern hemisphere
+  description: Sea ice concentration from SMMR/SSMI/SSMIS + AMSR-E/AMSR2 + AMSR2 for southern hemisphere
   attribution: EUMETSAT/OSISAF
   licence: CC-BY-4.0
 
@@ -1744,6 +1744,10 @@ full-sicsouth-osisaf-25p0km-1979-2025-24h-v1:
     - '2013-05-12T12:00:00'
     - '2013-05-13T12:00:00'
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       - concat:
@@ -1774,7 +1778,7 @@ full-sicsouth-osisaf-25p0km-1979-2025-24h-v1:
           ftp:
             url: ftp://osisaf.met.no/reprocessed/ice/conc/v3p1/{date:strftime(%Y)}/{date:strftime(%m)}/ice_conc_sh_ease2-250_cdr-v3p1_{date:strftime(%Y%m%d)}1200.nc
 
-        # OSI-458 [AMSR-2] (2012-2020)
+        # OSI-458 [AMSR2] (2012-2020)
         # https://osi-saf.eumetsat.int/products/osi-458
         - dates:
             start: '2012-07-24T12:00:00'

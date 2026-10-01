@@ -81,6 +81,7 @@ class TestDecoderStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
     ) -> None:
         with pytest.raises(ValueError, match="at least two history steps"):
             DecoderStage(
@@ -98,6 +99,7 @@ class TestDecoderStage:
                 scheduler=cfg_scheduler,
                 lr_scheduler=cfg_lr_scheduler,
                 loss=cfg_loss,
+                metrics=cfg_metrics,
             )
 
     def test_variable_indices_channel_mismatch_raises(
@@ -111,6 +113,7 @@ class TestDecoderStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
     ) -> None:
         with pytest.raises(ValueError, match="target_variable_indices selects"):
             DecoderStage(
@@ -128,6 +131,7 @@ class TestDecoderStage:
                 scheduler=cfg_scheduler,
                 lr_scheduler=cfg_lr_scheduler,
                 loss=cfg_loss,
+                metrics=cfg_metrics,
             )
 
     def test_encoder_parameters_are_frozen(self, decoder_stage: DecoderStage) -> None:
@@ -160,6 +164,7 @@ class TestDecoderStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
     ) -> None:
         # from_template reads n_history_steps/n_forecast_steps/etc. off the source
         # EncoderStage, so it must be built with two history steps here (DecoderStage
@@ -180,6 +185,7 @@ class TestDecoderStage:
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
+            metrics=cfg_metrics,
         )
 
         decoder_stage = DecoderStage.from_template(

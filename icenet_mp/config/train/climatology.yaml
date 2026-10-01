@@ -1,0 +1,12 @@
+defaults:
+  - default
+  - override callbacks:
+    - learning_rate
+    - metric_summary
+    - media_logging
+    - unconditional_checkpoint
+  - _self_
+
+trainer:
+  max_epochs: 1
+  gradient_clip_val: null

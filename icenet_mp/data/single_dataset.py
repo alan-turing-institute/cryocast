@@ -29,6 +29,7 @@ class SingleDataset(Dataset):
         input_files: Sequence[Path],
         *,
         date_ranges: Sequence[dict[str, str | None]] = [{"start": None, "end": None}],
+        group: str | None = None,
         normalise: bool = True,
         variables: Sequence[str] = (),
     ) -> None:
@@ -36,16 +37,30 @@ class SingleDataset(Dataset):
 
         The underlying Anemoi dataset has shape [T; C; ensembles; position].
         We reshape this to CHW before returning.
+
+        Args:
+            name: The name of the dataset, used to identify it in plots and logs.
+            input_files: The paths to the Anemoi dataset files.
+            date_ranges: The ranges of dates to include in the dataset. Each range is a
+                dict with "start" and "end" keys, which can be None to indicate
+                open-ended ranges.
+            group: The group name for the dataset, used to identify it in plots and
+                logs. If None, the group name defaults to the dataset name.
+            normalise: Whether to normalise the data to [0, 1] for each channel.
+            variables: The names of the variables to include in the dataset. If empty,
+                all variables are included.
+
         """
         super().__init__()
-        self._date_ranges = self.normalise_date_ranges(date_ranges)
         self.hemisphere: Hemisphere = (
-            "north"
+            Hemisphere.NORTH
             if any("north" in str(input_file).lower() for input_file in input_files)
-            else "south"
+            else Hemisphere.SOUTH
         )
+        self.name = name
+        self.group = name if group is None else group
+        self._date_ranges = self.normalise_date_ranges(date_ranges)
         self._input_files = tuple(sorted(input_files))
-        self._name = name
         self._normalise = normalise
         self._norm_offset: np.ndarray | None = None
         self._norm_scale: np.ndarray | None = None
@@ -150,7 +165,7 @@ class SingleDataset(Dataset):
         """Get all slices of contiguous dates from the underlying Anemoi dataset."""
         return [
             self.load_dataset(self._input_files)._subset(
-                name=self._name,
+                name=self.name,
                 start=date_range["start"],
                 end=date_range["end"],
                 **({"select": self._variables} if self._variables else {}),
@@ -194,11 +209,6 @@ class SingleDataset(Dataset):
     def longitudes(self) -> list[float]:
         """Return the longitudes of the dataset."""
         return self.dataslices[0].longitudes.tolist()
-
-    @cached_property
-    def name(self) -> str:
-        """Return the name of the dataset."""
-        return self._name
 
     @cached_property
     def space(self) -> DataSpace:
@@ -329,6 +339,7 @@ class SingleDataset(Dataset):
             name=self.name,
             input_files=self._input_files,
             date_ranges=date_ranges or self._date_ranges,
+            group=self.group,
             normalise=self._normalise if normalise is None else normalise,
             variables=variables or list(self._variables),
         )

@@ -1,3 +1,7 @@
+# Apple Silicon (M1/M2/M3/M4): force Conda to resolve ARM64 packages when
+# creating this legacy notebook environment:
+#   CONDA_SUBDIR=osx-arm64 conda env create -f seaice_env_min.yml
+# This avoids Conda selecting x86_64 TensorFlow/Keras builds on Apple Silicon.
 name: seaice_env_min
 channels:
   - conda-forge

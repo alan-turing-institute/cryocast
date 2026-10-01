@@ -16,6 +16,7 @@ class TestEncoderStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
     ) -> None:
         encoder_stage = EncoderStage(
             channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
@@ -38,6 +39,7 @@ class TestEncoderStage:
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
+            metrics=cfg_metrics,
         )
 
         assert encoder_stage.decoder.skip_connection is None
@@ -90,6 +92,7 @@ class TestEncoderStage:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[str],
     ) -> None:
         template = EncodeProcessDecode(
             name="template",
@@ -105,6 +108,7 @@ class TestEncoderStage:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
             loss=cfg_loss,
+            metrics=cfg_metrics,
             target_variable_indices=[0],
         )
 
