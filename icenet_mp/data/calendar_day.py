@@ -25,6 +25,7 @@ _CALENDAR_DAY_INDEX: dict[str, int] = {
 
 FEBRUARY_28_INDEX = _CALENDAR_DAY_INDEX["02-28"]
 FEBRUARY_29_INDEX = _CALENDAR_DAY_INDEX["02-29"]
+MARCH_1_INDEX = _CALENDAR_DAY_INDEX["03-01"]
 
 
 def calendar_day_index(day: np.datetime64) -> int:
