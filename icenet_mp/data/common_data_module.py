@@ -339,11 +339,10 @@ class CommonDataModule(LightningDataModule):
         )
         return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)
 
-    def train_dataloader(
-        self,
-    ) -> DataLoader[dict[str, ArrayTCHW]]:
-        """Construct train dataloader."""
-        dataset = CombinedDataset(
+    @cached_property
+    def training_dataset(self) -> CombinedDataset:
+        """Return the dataset used for training."""
+        return CombinedDataset(
             [
                 ds.subset(date_ranges=self.train_periods)
                 for ds in self.datasets.values()
@@ -354,6 +353,12 @@ class CommonDataModule(LightningDataModule):
             target_variables=self.target_variables,
             climatology=self._climatology_or_none,
         )
+
+    def train_dataloader(
+        self,
+    ) -> DataLoader[dict[str, ArrayTCHW]]:
+        """Construct train dataloader."""
+        dataset = self.training_dataset
         logger.info(
             "Loaded training dataset with %d dates between %s and %s.",
             len(dataset),

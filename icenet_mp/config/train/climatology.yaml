@@ -3,7 +3,7 @@ defaults:
   - override callbacks:
     - learning_rate
     - metric_summary
-    - plotting
+    - media_logging
     - unconditional_checkpoint
   - _self_
 

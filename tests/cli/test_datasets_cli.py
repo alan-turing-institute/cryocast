@@ -3,6 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from icenet_mp.data import SingleDataset
+from icenet_mp.visualisations import DatasetMediaWriter
+
 from .conftest import CustomCliRunner
 
 
@@ -196,9 +199,12 @@ class TestDatasetsPlotCLI:
     class FakeDownloader:
         """A minimal downloader stub exposing only what `plot` needs."""
 
-        def __init__(self, name: str, path_dataset: Path) -> None:
-            """Store the downloader's name and dataset path."""
+        def __init__(
+            self, name: str, path_dataset: Path, group: str | None = None
+        ) -> None:
+            """Store the downloader's name, group, and dataset path."""
             self.name = name
+            self.group = name if group is None else group
             self.path_dataset = path_dataset
 
     def test_help(self, runner: CustomCliRunner) -> None:
@@ -234,25 +240,22 @@ class TestDatasetsPlotCLI:
         calls = []
 
         def fake_plot_dataset(
+            self: DatasetMediaWriter,
             *,
-            base_path: Path,
-            dataset_name: str,
-            dataset_path: Path,
+            dataset: SingleDataset,
             timestep: int,
         ) -> int:
-            calls.append((base_path, dataset_name, dataset_path, timestep))
+            calls.append((self.base_path, dataset.name, dataset._input_files, timestep))
             return 2
 
-        monkeypatch.setattr(
-            "icenet_mp.cli.datasets.plot_variables_static", fake_plot_dataset
-        )
+        monkeypatch.setattr(DatasetMediaWriter, "static", fake_plot_dataset)
 
         result = runner.call(
             ["datasets", "plot", f"base_path={tmp_path}", "--timestep", "1"]
         )
 
         assert result.exit_code == 0, result.output
-        assert calls == [(tmp_path.resolve(), "example", existing_path, 1)]
+        assert calls == [(tmp_path.resolve(), "example", (existing_path,), 1)]
 
     def test_plot_video_calls_plot_dataset_video_with_n_steps(
         self,
@@ -268,28 +271,28 @@ class TestDatasetsPlotCLI:
             lambda _config: [self.FakeDownloader("example", existing_path)],
         )
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.plot_variables_static",
-            lambda *_args: pytest.fail(
-                "plot_variables_static should not be called with --video"
+            DatasetMediaWriter,
+            "static",
+            lambda *_args, **_kwargs: pytest.fail(
+                "DatasetMediaWriter.static should not be called with --video"
             ),
         )
 
         calls = []
 
         def fake_plot_dataset_video(
+            self: DatasetMediaWriter,
             *,
-            base_path: Path,
-            dataset_name: str,
-            dataset_path: Path,
+            dataset: SingleDataset,
             timestep: int,
             n_steps: int,
         ) -> int:
-            calls.append((base_path, dataset_name, dataset_path, timestep, n_steps))
+            calls.append(
+                (self.base_path, dataset.name, dataset._input_files, timestep, n_steps)
+            )
             return 4
 
-        monkeypatch.setattr(
-            "icenet_mp.cli.datasets.plot_variables_video", fake_plot_dataset_video
-        )
+        monkeypatch.setattr(DatasetMediaWriter, "video", fake_plot_dataset_video)
 
         result = runner.call(
             [
@@ -303,7 +306,7 @@ class TestDatasetsPlotCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert calls == [(tmp_path.resolve(), "example", existing_path, 0, 5)]
+        assert calls == [(tmp_path.resolve(), "example", (existing_path,), 0, 5)]
 
     def test_plot_rejects_unmatched_dataset_name(
         self,
