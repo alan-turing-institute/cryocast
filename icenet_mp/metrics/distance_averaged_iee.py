@@ -16,21 +16,30 @@ class DistanceAveragedIceEdgeErrorPerForecastDay(BaseIceAreaMetric):
 
         DIIEE = 2 * (over_area + under_area) / (pred_edge_length + true_edge_length)
 
-    Edge length is approximated on the raster grid as
-    ``(edge cell count) * pixel_size``; this is coarser than a true vector polygon
-    perimeter, and needs no vector geometry, though an optional ``land_mask`` can be
-    supplied to exclude land/ice boundaries from the edge count (see `__init__`).
+    Edge length is approximated as ``(edge cell count) * pixel_size``; this is coarser
+    than a true vector polygon perimeter, and needs no vector geometry. An optional
+    ``land_mask`` can be supplied to exclude land/ice boundaries from the edge count.
     Lead times where both fields are entirely ice or entirely ice-free (combined edge
-    length zero) are undefined and reported as NaN, rather than the ``-9999.99``
-    sentinel used upstream, to compose correctly with tensor reductions (e.g.
-    `nanmean`).
+    length zero) are undefined and reported as NaN.
     """
 
     def __init__(
-        self, pixel_size: int = 25, land_mask: torch.Tensor | None = None
+        self,
+        *,
+        land_mask: torch.Tensor | None = None,
+        pixel_size: int = 25,
     ) -> None:
-        """Initialize the DIIEE metric (see `_IceAreaMetricBase` for parameters)."""
-        super().__init__(pixel_size=pixel_size, land_mask=land_mask)
+        """Initialise the DIIEE metric.
+
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the mismatch area,
+                and land/ice boundaries are excluded from the ice-edge length.
+            pixel_size: Physical size of one pixel in kilometres (default is 25 km, as
+                for OSISAF).
+
+        """
+        super().__init__(land_mask=land_mask, pixel_size=pixel_size)
         self.sum_mismatch_area: torch.Tensor
         self.sum_edge_length: torch.Tensor
 
@@ -53,12 +62,9 @@ class DistanceAveragedIceEdgeErrorPerForecastDay(BaseIceAreaMetric):
     ) -> None:
         """Update the DIIEE accumulators.
 
-        Parameters
-        ----------
-        preds : torch.Tensor
-            Model predictions of shape (B, T, C, H, W).
-        target : torch.Tensor
-            Ground-truth satellite SIC of shape (B, T, C, H, W).
+        Args:
+            preds: Model predictions of shape (B, T, C, H, W).
+            target: Ground-truth satellite SIC of shape (B, T, C, H, W).
 
         """
         self.ensure_single_channel(preds, target)

@@ -185,7 +185,7 @@ class PlotSpec:
     vmax: float | None = 1.0
 
     # Sea ice edge overlay
-    include_ice_edge: bool = False
+    include_ice_edge: bool = True
     ice_edge_threshold: float = SEA_ICE_THRESHOLD
 
     # Optional metadata for titling

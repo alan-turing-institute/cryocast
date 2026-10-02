@@ -47,7 +47,7 @@ class TestAMSELoss:
         with pytest.raises(ValueError, match="merge_bins_below"):
             AMSELoss(merge_bins_below=0)
 
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"])
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
     def test_identity_is_zero(self, mode: AMSEMode) -> None:
         prediction, _ = make_fields()
         loss_fn = AMSELoss(mode=mode)
@@ -98,7 +98,7 @@ class TestAMSELoss:
         (gradient,) = torch.autograd.grad(excess, scale)
         assert gradient.item() < 0.0
 
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"])
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
     def test_zero_field_gradients_finite(self, mode: AMSEMode) -> None:
         _, target = make_fields(seed=5)
         prediction = torch.zeros_like(target, requires_grad=True)
@@ -107,7 +107,7 @@ class TestAMSELoss:
         assert prediction.grad is not None
         assert torch.isfinite(prediction.grad).all()
 
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"])
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
     def test_masked_fields(self, mode: AMSEMode) -> None:
         """Fields zeroed outside an active region give finite loss and gradients."""
         prediction, target = make_fields(seed=6)
@@ -186,8 +186,12 @@ class TestAMSELossWavenumberWeight:
         with pytest.raises(ValueError, match="wavenumber_weight"):
             AMSELoss(wavenumber_weight="fastnetish")
 
-    @pytest.mark.parametrize("off", [None, "none", "None", "NONE"])
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"])
+    @pytest.mark.parametrize(
+        "off",
+        [None, "none", "None", "NONE"],
+        ids=["python-none", "lower", "title", "upper"],
+    )
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
     def test_off_is_bitwise_identical_to_default(
         self, off: str | None, mode: AMSEMode
     ) -> None:
@@ -223,7 +227,11 @@ class TestAMSELossWavenumberWeight:
         excess = AMSELoss().spectral_excess(prediction.detach(), target)
         assert excess.tolist() == pytest.approx(list(self.GOLDEN_EXCESS), rel=1e-6)
 
-    @pytest.mark.parametrize(("height", "width"), [(32, 32), (31, 33), (48, 64)])
+    @pytest.mark.parametrize(
+        ("height", "width"),
+        [(32, 32), (31, 33), (48, 64)],
+        ids=["32x32", "31x33", "48x64"],
+    )
     def test_gamma_matches_the_published_formula(self, height: int, width: int) -> None:
         """gamma_k == max(N_k * k**sqrt(3), 1), N_k counted on the FULL 2D DFT."""
         loss_fn = AMSELoss()
@@ -305,7 +313,7 @@ class TestAMSELossWavenumberWeight:
         ratio = float(grads[1][1].norm() / grads[0][1].norm())
         assert 0.1 < ratio < 10.0
 
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"])
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
     def test_gamma_identity_is_zero(self, mode: AMSEMode) -> None:
         """The 0/0 in the normaliser must not produce NaN for a perfect match."""
         prediction, _ = make_fields(seed=15)
@@ -314,8 +322,12 @@ class TestAMSELossWavenumberWeight:
         assert torch.isfinite(loss)
         assert loss.item() == pytest.approx(0.0, abs=1e-6)
 
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"])
-    @pytest.mark.parametrize("case", ["random", "zero", "masked", "identical"])
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
+    @pytest.mark.parametrize(
+        "case",
+        ["random", "zero", "masked", "identical"],
+        ids=["random", "zero", "masked", "identical"],
+    )
     def test_gamma_loss_and_gradients_stay_finite(
         self, mode: AMSEMode, case: str
     ) -> None:

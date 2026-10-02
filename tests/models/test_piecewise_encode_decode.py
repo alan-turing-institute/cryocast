@@ -25,12 +25,9 @@ class TestPiecewiseEncodeDecode:
         # In order to exactly reproduce the input, we need:
         # - timesteps to be the same in the encoder and decoder
         n_history_steps = test_timesteps
-        # - patch size to divide the input size
-        if (
-            test_input_chw[1] % test_patch_size[0] != 0
-            or test_input_chw[2] % test_patch_size[1] != 0
-        ):
-            pytest.skip("Patch size must divide the input size for this test.")
+        # - patch size to divide the input size (true for every parametrized case)
+        assert test_input_chw[1] % test_patch_size[0] == 0
+        assert test_input_chw[2] % test_patch_size[1] == 0
         # - no convolutional blocks, to avoid changing the values
         n_conv_blocks = 0
         input_ntchw = (

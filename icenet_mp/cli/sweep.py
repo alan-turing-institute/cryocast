@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Annotated
 
+import torch
 import typer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig
@@ -65,23 +66,40 @@ def summarise(
     sweep = OptunaSweep.from_path(sweep_path)
     trials = sweep.study.get_trials()
     n_completed = sum(1 for t in trials if t.state == TrialState.COMPLETE)
-    n_running = sum(1 for t in trials if t.state == TrialState.RUNNING)
     n_failed = sum(1 for t in trials if t.state == TrialState.FAIL)
+    n_pruned = sum(1 for t in trials if t.state == TrialState.PRUNED)
+    n_running = sum(1 for t in trials if t.state == TrialState.RUNNING)
     log.info(
-        "Study contains %d trial(s): %d completed, %d running, %d failed",
+        "Study contains %d trial(s): %d completed, %d running, %d pruned, %d failed",
         len(trials),
         n_completed,
         n_running,
+        n_pruned,
         n_failed,
     )
     if n_completed == 0:
         log.info("No trials have completed yet. Nothing to summarise.")
         return
+
+    # Log the best trial and its parameters
     best = sweep.study.best_trial
     log.info("Trial %d performed best, with loss %f.", best.number, best.value)
     log.info("Best trial parameters:")
     for parameter_name, parameter_value in best.params.items():
         log.info("  %s: %s", parameter_name, parameter_value)
+
+    # Log parameter importance, if available
+    importances = sweep.parameter_importances()
+    if not importances:
+        log.info(
+            "Could not estimate parameter importance for %d trials", sweep.n_trials
+        )
+        return
+    log.info("Parameter importance:")
+    name_width = max(len(name) for name in importances)
+    log.info("  %-*s  importance", name_width, "parameter")
+    for parameter_name, importance in importances.items():
+        log.info("  %-*s  %.3f", name_width, parameter_name, importance)
 
 
 @sweep_cli.command()
@@ -150,6 +168,17 @@ def trial(
             if isinstance(ckpt, ModelCheckpoint)
         ]
         checkpoint = checkpoints[0] if len(checkpoints) == 1 else None
+    except torch.OutOfMemoryError:
+        # CUDA OOM is a routine outcome of hyperparameter sampling, not a bug. Skip the
+        # full traceback dump and exit cleanly so logs stay readable.
+        log.error(  # noqa: TRY400
+            "Trial %d failed: ran out of GPU memory. This is likely because the "
+            "sampled hyperparameters produced a model too large to fit alongside the "
+            "configured batch size.",
+            trial.number,
+        )
+        sweep.tell(trial, state=TrialState.PRUNED)
+        raise typer.Exit(code=1) from None
     except Exception:
         # Mark the trial as failed after any exception before continuing
         log.exception("Trial %d failed.", trial.number)
