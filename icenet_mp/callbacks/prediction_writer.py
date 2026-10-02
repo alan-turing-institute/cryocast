@@ -9,7 +9,7 @@ from netCDF4 import Dataset as NetCDFDataset
 from torch import Tensor
 
 from icenet_mp.data import CombinedDataset
-from icenet_mp.types import MaskType
+from icenet_mp.types import NDIM_NTCHW, MaskType
 
 if TYPE_CHECKING:  # per rule TC003
     from pathlib import Path
@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 _TIME_UNITS = "seconds since 1970-01-01 00:00:00"
 _TIME_CALENDAR = "proleptic_gregorian"
-_NTCHW_NDIM = 5
 _OBSERVED_SUFFIX = "_observed"
 _MASK_ATTRIBUTES = {
     MaskType.LAND: {
@@ -332,7 +331,7 @@ class PredictionWriter(Callback):
             raise TypeError(msg)
 
         field = tensor.detach().float().cpu().numpy()
-        if field.ndim != _NTCHW_NDIM:
+        if field.ndim != NDIM_NTCHW:
             msg = (
                 f"Prediction writer expected NTCHW {key} values, "
                 f"received shape {field.shape}."

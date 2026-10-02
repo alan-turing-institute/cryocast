@@ -28,7 +28,8 @@ class ConvNormAct(nn.Module):
             groups: Number of groups for a grouped convolution (see nn.Conv2d).
             in_channels: Input channel size.
             kernel_size: Kernel size for the convolution.
-            norm_type: Type of normalization ("groupnorm", "batchnorm", or "none").
+            norm_type: Type of normalization to apply ("batchnorm", "channelnorm",
+                "groupnorm" or "none").
             out_channels: Output channel size.
             padding: the padding to use for the convolution.
             stride: the stride to use for the convolution.

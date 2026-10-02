@@ -36,6 +36,7 @@ encoders:
 
 processor:
   _target_: icenet_mp.models.processors.UNetProcessor
+  norm_type: batchnorm
   start_out_channels: 128
 
 decoder:

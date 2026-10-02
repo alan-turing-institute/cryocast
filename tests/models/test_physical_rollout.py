@@ -170,12 +170,9 @@ def _zero_decoder_output(model: EncodeProcessDecode) -> None:
 class TestDefaultsOff:
     """Neither option may change anything unless explicitly switched on."""
 
-    def test_rollout_space_defaults_to_latent(self) -> None:
-        model = _build_model()
-        assert model.rollout_space == "latent"
-
     def test_off_is_identical_to_absent(self) -> None:
         absent = _build_model()
+        assert absent.rollout_space == "latent"
         explicit = _build_model(rollout_space="latent")
         inputs = _inputs(absent)
         absent.eval()

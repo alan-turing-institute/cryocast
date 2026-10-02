@@ -15,6 +15,7 @@ encoders:
 
 processor:
   _target_: icenet_mp.models.processors.UNetProcessor
+  norm_type: groupnorm
   start_out_channels: 64
 
 decoder:

@@ -221,7 +221,7 @@ class TestProcessorStage:
             *cfg_output_space["shape"],
         )
 
-    def test_get_persistence_returns_tensor_when_decoder_has_skip_connection(
+    def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
         self,
         encoder_stage: EncoderStage,
         target_encoder_stage: EncoderStage,
@@ -285,10 +285,10 @@ class TestProcessorStage:
             ),
         }
 
-        persistence = processor_stage._extract_anchor(inputs["target"])
+        anchor = processor_stage._extract_anchor(inputs["target"])
 
-        assert persistence is not None
-        assert persistence.shape == (
+        assert anchor is not None
+        assert anchor.shape == (
             batch_size,
             len(decoder_stage.target_variable_indices),
             *cfg_output_space["shape"],

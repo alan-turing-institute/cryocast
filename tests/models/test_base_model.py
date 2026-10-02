@@ -8,14 +8,10 @@ import pytest
 import torch
 from hydra.errors import InstantiationException
 from omegaconf import DictConfig, OmegaConf
-from torchmetrics import MeanSquaredError
+from torchmetrics import MeanSquaredError, Metric
 
 import icenet_mp
-from icenet_mp.losses.amse_loss import AMSELoss
-from icenet_mp.losses.rmse_loss import RMSELoss
-from icenet_mp.losses.weighted_bce_loss import WeightedBCEWithLogitsLoss
-from icenet_mp.losses.weighted_l1_loss import WeightedL1Loss
-from icenet_mp.losses.weighted_mse_loss import WeightedMSELoss
+from icenet_mp.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
 from icenet_mp.metrics import (
     CentroidErrorPerForecastDay,
     DistanceAveragedIceEdgeErrorPerForecastDay,
@@ -646,50 +642,60 @@ class TestBaseModelMetricAccumulation:
         return metrics.compute()
 
     @pytest.mark.parametrize(
-        "stage", ["train", "validation", "test"], ids=lambda s: f"stage-{s}"
+        ("prediction", "target", "expected_scores"),
+        [
+            # Equal overprediction and underprediction cancel only the signed error:
+            # one 25 km by 25 km ocean cell disagrees in each sample and forecast lead.
+            (
+                torch.tensor([1.0, 0.0]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1),
+                torch.tensor([0.0, 1.0]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1),
+                [
+                    (
+                        "iiee",
+                        IntegratedIceEdgeErrorPerForecastDay,
+                        torch.full((2,), 625.0),
+                    ),
+                    ("sieerror", SeaIceExtentErrorPerForecastDay, torch.zeros(2)),
+                ],
+            ),
+            # MAE and RMSE must retain their different update rules across batches.
+            (
+                torch.tensor([1.0, 0.5]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1),
+                torch.zeros(2, 2, 1, 1, 1),
+                [
+                    ("mae", MAEPerForecastDay, torch.full((2,), 0.75)),
+                    ("rmse", RMSEPerForecastDay, torch.full((2,), 0.625).sqrt()),
+                ],
+            ),
+        ],
+        ids=["extent-errors", "mae-rmse"],
     )
-    @pytest.mark.parametrize("batch_size", [1, 2], ids=lambda n: f"batch_size-{n}")
-    def test_signed_extent_error_is_independent_of_batch_size(
-        self, stage: str, batch_size: int, tmp_path: Path
-    ) -> None:
-        """Equal overprediction and underprediction cancel only the signed error."""
-        prediction = (
-            torch.tensor([1.0, 0.0]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1)
-        )
-        target = 1.0 - prediction
-        scores = self._score_batches(
-            stage, ["iiee", "sieerror"], prediction, target, batch_size, tmp_path
-        )
-
-        # One 25 km by 25 km ocean cell disagrees in each sample and forecast lead.
-        for name, metric, expected in (
-            ("iiee", IntegratedIceEdgeErrorPerForecastDay(), torch.full((2,), 625.0)),
-            ("sieerror", SeaIceExtentErrorPerForecastDay(), torch.zeros(2)),
-        ):
-            metric.update(prediction, target)
-            assert torch.allclose(metric.compute(), expected)
-            assert torch.allclose(scores[name], expected)
-
     @pytest.mark.parametrize(
         "stage", ["train", "validation", "test"], ids=lambda s: f"stage-{s}"
     )
     @pytest.mark.parametrize("batch_size", [1, 2], ids=lambda n: f"batch_size-{n}")
-    def test_mae_and_rmse_are_independent_of_batch_size(
-        self, stage: str, batch_size: int, tmp_path: Path
+    def test_metrics_are_independent_of_batch_size(
+        self,
+        *,
+        prediction: torch.Tensor,
+        target: torch.Tensor,
+        expected_scores: list[tuple[str, type[Metric], torch.Tensor]],
+        stage: str,
+        batch_size: int,
+        tmp_path: Path,
     ) -> None:
-        """MAE and RMSE must retain their different update rules across batches."""
-        prediction = (
-            torch.tensor([1.0, 0.5]).reshape(2, 1, 1, 1, 1).repeat(1, 2, 1, 1, 1)
-        )
-        target = torch.zeros_like(prediction)
+        """Metrics accumulated over batches must match a single full-data update."""
         scores = self._score_batches(
-            stage, ["mae", "rmse"], prediction, target, batch_size, tmp_path
+            stage,
+            [name for name, _, _ in expected_scores],
+            prediction,
+            target,
+            batch_size,
+            tmp_path,
         )
 
-        for name, metric, expected in (
-            ("mae", MAEPerForecastDay(), torch.full((2,), 0.75)),
-            ("rmse", RMSEPerForecastDay(), torch.full((2,), 0.625).sqrt()),
-        ):
+        for name, metric_type, expected in expected_scores:
+            metric = metric_type()
             metric.update(prediction, target)
             assert torch.allclose(metric.compute(), expected)
             assert torch.allclose(scores[name], expected)
@@ -749,31 +755,6 @@ class TestBaseModelLossConfig:
                 AMSELoss,
                 id="amse",
             ),
-            pytest.param(
-                OmegaConf.create(
-                    {
-                        "_target_": (
-                            "icenet_mp.losses.weighted_bce_loss.WeightedBCEWithLogitsLoss"
-                        )
-                    }
-                ),
-                WeightedBCEWithLogitsLoss,
-                id="weighted_bce",
-            ),
-            pytest.param(
-                OmegaConf.create(
-                    {"_target_": "icenet_mp.losses.weighted_l1_loss.WeightedL1Loss"}
-                ),
-                WeightedL1Loss,
-                id="weighted_l1",
-            ),
-            pytest.param(
-                OmegaConf.create(
-                    {"_target_": "icenet_mp.losses.weighted_mse_loss.WeightedMSELoss"}
-                ),
-                WeightedMSELoss,
-                id="weighted_mse",
-            ),
         ],
     )
     def test_loss_type(
@@ -799,6 +780,39 @@ class TestBaseModelLossConfig:
             metrics=[],
         )
         assert isinstance(model.loss_fn, loss_type)
+
+    @pytest.mark.parametrize("struct", [False, True], ids=["plain", "struct"])
+    def test_lead_time_exponent_wraps_loss(
+        self,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        *,
+        struct: bool,
+    ) -> None:
+        loss_cfg = OmegaConf.create(
+            {"_target_": "torch.nn.HuberLoss", "delta": 0.5, "lead_time_exponent": 2.0}
+        )
+        OmegaConf.set_struct(loss_cfg, struct)
+        model = Persistence(
+            target_variable_indices=[0],
+            hemisphere=Hemisphere.NORTH,
+            name="persistence",
+            input_spaces=[cfg_input_space],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=cfg_output_space,
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            loss=loss_cfg,
+            metrics=[],
+        )
+        assert isinstance(model.loss_fn, LeadTimeWeightedLoss)
+        assert model.loss_fn.exponent == pytest.approx(2.0)
+        assert isinstance(model.loss_fn._wrapped_loss, torch.nn.HuberLoss)
+        assert model.loss_fn._wrapped_loss.delta == pytest.approx(0.5)
+        # The stored config retains the exponent so that checkpoints round-trip
+        assert model.loss_cfg.lead_time_exponent == pytest.approx(2.0)
 
     def test_nonexistent_loss_raises(
         self, cfg_input_space: DictConfig, cfg_output_space: DictConfig

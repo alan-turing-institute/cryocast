@@ -1,8 +1,9 @@
+import logging
 from typing import Any
 
 import pytest
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from icenet_mp.models.multistage import DecoderStage, EncoderStage
 from icenet_mp.types import DataSpace
@@ -168,3 +169,36 @@ class TestDecoderStage:
             spec["name"] for spec in cfg_metrics
         }
         assert decoder_stage.name == "target_decoder"
+
+    # Parametrizing `cfg_loss` overrides the shared fixture of that name, which the
+    # `decoder_stage` fixture consumes even though this test does not request it. The
+    # warning is logged while that fixture builds the stage, so it is read from the
+    # "setup" phase records: if the stage is ever built in the test body instead,
+    # switch to `caplog.records`.
+    @pytest.mark.usefixtures("decoder_stage")
+    @pytest.mark.parametrize(
+        ("cfg_loss", "expect_warning"),
+        [
+            (
+                OmegaConf.create(
+                    {"_target_": "torch.nn.HuberLoss", "lead_time_exponent": 2.0}
+                ),
+                True,
+            ),
+            (OmegaConf.create({"_target_": "torch.nn.HuberLoss"}), False),
+        ],
+        ids=["weighted", "unweighted"],
+    )
+    def test_warns_when_lead_time_weighting_ignored(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        *,
+        expect_warning: bool,
+    ) -> None:
+        records = [
+            r
+            for r in caplog.get_records("setup")
+            if r.levelno == logging.WARNING
+            and "has no effect on DecoderStage" in r.getMessage()
+        ]
+        assert bool(records) is expect_warning
