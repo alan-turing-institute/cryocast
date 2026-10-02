@@ -162,7 +162,7 @@ max-args = 6
 [tool.uv]
 constraint-dependencies = [
     "eckitlib<=2.1.0.21", # required by anemoi-datasets
-    "erddapy!=3.3.0", # required by argopy
+    "erddapy!=3.3.0,!=3.3.1", # required by argopy. argopy<=1.4.0 requires erddapy.erddapy._quote_string_constraints which are removed in 3.3.0
     "odclib<=1.6.3.21", # required by anemoi-datasets
 ]
 
