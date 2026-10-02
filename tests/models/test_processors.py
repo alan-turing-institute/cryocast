@@ -1,11 +1,12 @@
 import re
+from pathlib import Path
 
 import pytest
 import torch
 
 from icenet_mp.models.processors import (
     BaseProcessor,
-    DDPMProcessor,
+    DiffusionProcessor,
     NullProcessor,
     UNetProcessor,
     VitProcessor,
@@ -319,14 +320,14 @@ class TestDDPMProcessor:
         n_history_steps: int,
         use_autoregressive: bool,
         target_channel_offset: int = 0,
-    ) -> DDPMProcessor:
+    ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
         )
         target = DataSpace(
             name="target", channels=self.C_TARGET, shape=self.LATENT_CHW[1:]
         )
-        return DDPMProcessor(
+        return DiffusionProcessor(
             data_space=combined,
             data_space_target=target,
             n_forecast_steps=n_forecast_steps,
@@ -484,3 +485,392 @@ class TestDDPMProcessor:
                 result.prediction[:, t_step, non_target_idx],
                 last_frame[:, non_target_idx],
             )
+
+    @pytest.mark.parametrize(
+        ("test_train_sampler", "test_infer_sampler"),
+        [((None, 1.0), (1, 0.0)), ((1, 0.0), (None, 1.0)), ((2, 0.0), (1, 0.5))],
+        ids=["ddpm-to-ddim", "ddim-to-ddpm", "ddim-to-other-ddim"],
+    )
+    def test_checkpoint_can_be_sampled_with_different_settings(
+        self,
+        tmp_path: Path,
+        test_train_sampler: tuple[int | None, float],
+        test_infer_sampler: tuple[int | None, float],
+    ) -> None:
+        """Weights saved with one (ddim_steps, eta) load and sample with another."""
+        train_ddim_steps, train_eta = test_train_sampler
+        infer_ddim_steps, infer_eta = test_infer_sampler
+
+        # Train with one sampler setting; take one optimiser step so the saved
+        # weights differ from a fresh initialisation.
+        trained = self._make_processor(
+            n_forecast_steps=1, n_history_steps=1, use_autoregressive=False
+        )
+        trained.set_sampler(ddim_steps=train_ddim_steps, eta=train_eta)
+        x = torch.randn(2, 1, *self.LATENT_CHW)
+        y = torch.randn(2, 1, self.C_TARGET, *self.LATENT_CHW[1:])
+        optimizer = torch.optim.SGD(trained.parameters(), lr=0.1)
+        loss = trained.rollout(x, y).loss
+        assert loss is not None
+        loss.backward()
+        optimizer.step()
+
+        checkpoint_path = tmp_path / "processor.pt"
+        torch.save(trained.state_dict(), checkpoint_path)
+
+        # Load into a processor with a different sampler setting. Strict loading
+        # fails if the sampler setting added or removed any saved keys.
+        restored = self._make_processor(
+            n_forecast_steps=1, n_history_steps=1, use_autoregressive=False
+        )
+        restored.set_sampler(ddim_steps=infer_ddim_steps, eta=infer_eta)
+        restored.load_state_dict(torch.load(checkpoint_path))
+
+        restored_state = restored.state_dict()
+        for name, tensor in trained.state_dict().items():
+            torch.testing.assert_close(restored_state[name], tensor)
+
+        expected_ddim_steps = (
+            restored.timesteps if infer_ddim_steps is None else infer_ddim_steps
+        )
+        assert restored.ddim_steps == expected_ddim_steps
+        assert restored.eta == infer_eta
+
+        with torch.no_grad():
+            result = restored.rollout(x)
+        assert result.prediction.shape == (2, 1, *self.LATENT_CHW)
+
+
+@pytest.mark.parametrize("test_batch_size", [1, 2])
+@pytest.mark.parametrize("test_latent_chw", [(4, 16, 16)])
+@pytest.mark.parametrize("test_n_forecast_steps", [1, 2])
+@pytest.mark.parametrize("test_n_history_steps", [1, 2])
+@pytest.mark.parametrize("test_use_autoregressive", [True, False])
+class TestDDIMProcessor:
+    C_TARGET = 2
+    TIMESTEPS = 4
+    DDIM_STEPS = 2
+
+    def _make_processor(
+        self,
+        *,
+        latent_chw: tuple[int, int, int],
+        n_forecast_steps: int,
+        n_history_steps: int,
+        use_autoregressive: bool,
+        target_channel_offset: int = 0,
+        ddim_steps: int | None = None,
+        eta: float = 0.0,
+        timesteps: int | None = None,
+    ) -> DiffusionProcessor:
+        combined = DataSpace(
+            name="combined", channels=latent_chw[0], shape=latent_chw[1:]
+        )
+        target = DataSpace(name="target", channels=self.C_TARGET, shape=latent_chw[1:])
+        return DiffusionProcessor(
+            data_space=combined,
+            data_space_target=target,
+            n_forecast_steps=n_forecast_steps,
+            n_history_steps=n_history_steps,
+            timesteps=timesteps if timesteps is not None else self.TIMESTEPS,
+            ddim_steps=ddim_steps if ddim_steps is not None else self.DDIM_STEPS,
+            eta=eta,
+            start_out_channels=8,
+            time_embed_dim=256,
+            dropout_rate=0.0,
+            use_autoregressive=use_autoregressive,
+            target_channel_offset=target_channel_offset,
+            loss=torch.nn.MSELoss(),
+        )
+
+    def test_inference_forward_shape(
+        self,
+        test_batch_size: int,
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(
+            test_batch_size,
+            test_n_history_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+        with torch.no_grad():
+            result = processor.rollout(x)
+
+        assert isinstance(result, ProcessorOutput)
+        assert result.loss is None
+        assert result.prediction.shape == (
+            test_batch_size,
+            test_n_forecast_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+
+    def test_training_returns_loss_and_shape(
+        self,
+        test_batch_size: int,
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(
+            test_batch_size,
+            test_n_history_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+        y = torch.randn(
+            test_batch_size,
+            test_n_forecast_steps,
+            self.C_TARGET,
+            *test_latent_chw[1:],
+        )
+        result = processor.rollout(x, y)
+
+        assert isinstance(result, ProcessorOutput)
+        assert result.loss is not None
+        assert result.loss.ndim == 0
+        assert result.prediction.shape == (
+            test_batch_size,
+            test_n_forecast_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+
+    def test_non_target_channels_persist_from_last_frame(
+        self,
+        test_batch_size: int,
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(
+            test_batch_size,
+            test_n_history_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+        with torch.no_grad():
+            result = processor.rollout(x)
+
+        s = processor.target_channel_offset
+        assert s is not None
+        c_target = processor.c_target
+        non_target_idx = [
+            i for i in range(test_latent_chw[0]) if not (s <= i < s + c_target)
+        ]
+        last_frame = x[:, -1]
+
+        for t_step in range(test_n_forecast_steps):
+            torch.testing.assert_close(
+                result.prediction[:, t_step, non_target_idx],
+                last_frame[:, non_target_idx],
+            )
+
+    def test_training_loss_backprops(
+        self,
+        test_batch_size: int,
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(
+            test_batch_size,
+            test_n_history_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+        y = torch.randn(
+            test_batch_size,
+            test_n_forecast_steps,
+            self.C_TARGET,
+            *test_latent_chw[1:],
+        )
+        result = processor.rollout(x, y)
+        assert result.loss is not None
+        result.loss.backward()
+
+        assert any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in processor.model.parameters()
+        )
+
+    def test_rejects_ddim_steps_larger_than_timesteps(
+        self,
+        test_batch_size: int,  # noqa: ARG002
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        with pytest.raises(ValueError, match=r"ddim_steps=\d+ must be in the range"):
+            self._make_processor(
+                latent_chw=test_latent_chw,
+                n_forecast_steps=test_n_forecast_steps,
+                n_history_steps=test_n_history_steps,
+                use_autoregressive=test_use_autoregressive,
+                ddim_steps=self.TIMESTEPS + 1,
+            )
+
+    def test_rejects_ddim_steps_zero(
+        self,
+        test_batch_size: int,  # noqa: ARG002
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        with pytest.raises(ValueError, match=r"ddim_steps=\d+ must be in the range"):
+            self._make_processor(
+                latent_chw=test_latent_chw,
+                n_forecast_steps=test_n_forecast_steps,
+                n_history_steps=test_n_history_steps,
+                use_autoregressive=test_use_autoregressive,
+                ddim_steps=0,
+            )
+
+    def test_rejects_negative_eta(
+        self,
+        test_batch_size: int,  # noqa: ARG002
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        with pytest.raises(ValueError, match=r"eta=.+ must be in the range"):
+            self._make_processor(
+                latent_chw=test_latent_chw,
+                n_forecast_steps=test_n_forecast_steps,
+                n_history_steps=test_n_history_steps,
+                use_autoregressive=test_use_autoregressive,
+                eta=-0.1,
+            )
+
+    def test_eta_zero_sampling_is_deterministic(
+        self,
+        test_batch_size: int,
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+            eta=0.0,
+        )
+        processor.eval()
+        x = torch.randn(
+            test_batch_size,
+            test_n_history_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+        with torch.no_grad():
+            torch.manual_seed(0)
+            a = processor.rollout(x).prediction
+            torch.manual_seed(0)
+            b = processor.rollout(x).prediction
+        torch.testing.assert_close(a, b)
+
+    def test_ddim_steps_equal_to_timesteps_runs(
+        self,
+        test_batch_size: int,
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        """DDIM must accept ddim_steps == timesteps (walk every trained rung)."""
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+            ddim_steps=self.TIMESTEPS,
+        )
+        x = torch.randn(
+            test_batch_size,
+            test_n_history_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+        with torch.no_grad():
+            result = processor.rollout(x)
+        assert result.prediction.shape == (
+            test_batch_size,
+            test_n_forecast_steps,
+            test_latent_chw[0],
+            *test_latent_chw[1:],
+        )
+
+    def test_rejects_eta_greater_than_one(
+        self,
+        test_batch_size: int,  # noqa: ARG002
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        with pytest.raises(ValueError, match=r"eta=.+ must be in the range"):
+            self._make_processor(
+                latent_chw=test_latent_chw,
+                n_forecast_steps=test_n_forecast_steps,
+                n_history_steps=test_n_history_steps,
+                use_autoregressive=test_use_autoregressive,
+                eta=1.1,
+            )
+
+    def test_ddim_timestep_sequence_is_evenly_spaced(
+        self,
+        test_batch_size: int,  # noqa: ARG002
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+    ) -> None:
+        """The DDIM timestep subset must be evenly-spaced from timesteps-1 down to 0."""
+        processor = self._make_processor(
+            latent_chw=test_latent_chw,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+            timesteps=10,
+            ddim_steps=5,
+        )
+        torch.testing.assert_close(
+            processor._ddim_timesteps,
+            torch.tensor([9, 6, 4, 2, 0], dtype=torch.long),
+        )

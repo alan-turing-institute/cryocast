@@ -1,9 +1,33 @@
-"""Latent-space DDPM processor.
+"""Latent-space diffusion processor.
 
 This module provides a diffusion-based processor for the EncodeProcessDecode
 pipeline. It performs denoising in the shared latent space produced by the
 encoders, using v-parameterisation with `UNetDiffusion` and
 `GaussianDiffusion`.
+
+Training always uses the DDPM v-prediction loss. Sampling (validation, test
+and predict) uses either DDPM or DDIM, selected by ``ddim_steps`` and ``eta``:
+
+* ``ddim_steps=None`` (i.e. ``timesteps``) with ``eta=1.0``: ancestral DDPM
+  sampling through every trained timestep.
+* Otherwise: DDIM sampling through ``ddim_steps`` evenly-spaced trained
+  timesteps. ``eta=0`` is deterministic; ``eta=1`` adds DDPM-equivalent noise.
+
+The sampler does not change the network weights, so a checkpoint can be
+sampled with different settings from the ones it was trained with.
+
+Evaluating a DDPM-trained run with DDIM: ``imp evaluate`` builds the
+processor from the run's saved ``files/model_config.yaml`` (the processor is
+not stored in the checkpoint's hyperparameters), so command-line overrides of
+``model.processor.ddim_steps`` / ``eta`` are ignored. Instead, set them in
+that file before evaluating, and restore it afterwards. Any
+``1 <= ddim_steps <= timesteps`` and ``0 <= eta <= 1`` are valid; the values
+below are only an example (50 steps, deterministic DDIM)::
+
+    cp <run_dir>/files/model_config.yaml <run_dir>/files/model_config.yaml.bak
+    # in model_config.yaml, e.g.: model.processor.ddim_steps: 50, model.processor.eta: 0.0
+    uv run imp evaluate --checkpoint <run_dir>/checkpoints/<ckpt> --config-name <config>
+    mv <run_dir>/files/model_config.yaml.bak <run_dir>/files/model_config.yaml
 
 The processor supports two forecasting modes:
 
@@ -30,8 +54,8 @@ from icenet_mp.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTC
 from .base_processor import BaseProcessor
 
 
-class DDPMProcessor(BaseProcessor):
-    """Latent-space DDPM processor with v-prediction.
+class DiffusionProcessor(BaseProcessor):
+    """Latent-space diffusion processor with v-prediction and DDPM/DDIM sampling.
 
     Input space:
         TensorNTCHW with shape (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
@@ -48,6 +72,8 @@ class DDPMProcessor(BaseProcessor):
         self,
         *,
         timesteps: int = 1000,
+        ddim_steps: int | None = None,
+        eta: float = 1.0,
         beta_schedule: str = "cosine",
         kernel_size: int = 3,
         start_out_channels: int = 64,
@@ -59,10 +85,17 @@ class DDPMProcessor(BaseProcessor):
         loss: DictConfig | nn.Module,
         **kwargs: Any,
     ) -> None:
-        """Initialize the DDPM processor.
+        """Initialize the diffusion processor.
 
         Args:
             timesteps (int): Number of diffusion timesteps. Default is 1000.
+            ddim_steps (int | None): Number of timesteps visited when sampling.
+                Must satisfy ``1 <= ddim_steps <= timesteps``. ``None`` means
+                ``timesteps`` (visit every trained timestep). Default is None.
+            eta (float): Sampling stochasticity in ``[0, 1]``. ``eta=0`` gives
+                deterministic DDIM sampling; ``eta=1`` matches DDPM's per-step
+                noise. With ``ddim_steps == timesteps`` and ``eta=1`` the
+                processor uses ancestral DDPM sampling. Default is 1.0.
             beta_schedule (str): Beta schedule used by ``GaussianDiffusion``:
                 ``"cosine"`` or ``"linear"``. Default is ``"cosine"``.
             kernel_size (int): Convolution kernel size used in the conditional UNet.
@@ -114,6 +147,9 @@ class DDPMProcessor(BaseProcessor):
 
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+
+        # Configure the reverse-diffusion sampler (validates ddim_steps and eta).
+        self.set_sampler(ddim_steps=ddim_steps, eta=eta)
 
         # UNet conditioning channels: history folded NTCHW -> NCHW.
         cond_channels = c_combined * self.n_history_steps
@@ -172,7 +208,7 @@ class DDPMProcessor(BaseProcessor):
         """Lift the training-time x_0 estimate into an NTCHW combined-latent tensor.
 
         The returned tensor is only used for metrics/callbacks (the actual
-        training signal is the v-prediction MSE loss). Non-target channels are
+        training signal is the v-prediction loss). Non-target channels are
         filled with the last observed frame (persistence in latent space).
 
         Args:
@@ -330,7 +366,59 @@ class DDPMProcessor(BaseProcessor):
 
         return ProcessorOutput(prediction=prediction, loss=loss)
 
-    def _run_reverse_diffusion(self, y: TensorNCHW, cond: TensorNCHW) -> TensorNCHW:
+    def _run_ddim_reverse_diffusion(
+        self, y: TensorNCHW, cond: TensorNCHW
+    ) -> TensorNCHW:
+        """Iteratively denoise ``y`` using the DDIM sampler.
+
+        Args:
+            y (TensorNCHW): Noisy latent to denoise, of shape (B, C, H, W).
+            cond (TensorNCHW): History condition folded to channels, of shape
+                (B, T_hist * C_combined, H, W).
+
+        Returns:
+            TensorNCHW: Denoised latent of shape (B, C, H, W).
+
+        """
+        b = y.shape[0]
+        device = y.device
+        alphas_cumprod = self.diffusion.alphas_cumprod.to(device)
+        ts = self._ddim_timesteps.to(device)
+
+        for i in range(self.ddim_steps):
+            t = ts[i]
+            pred_v = self.model(y, t.expand(b), cond)
+
+            alpha_bar_t = alphas_cumprod[t]
+            sqrt_ab = alpha_bar_t.sqrt()
+            sqrt_1mab = (1.0 - alpha_bar_t).sqrt()
+
+            # Recover x_0 and epsilon from v-prediction.
+            pred_x0 = sqrt_ab * y - sqrt_1mab * pred_v
+            pred_eps = sqrt_1mab * y + sqrt_ab * pred_v
+
+            # Final step targets x_0 (alpha_bar_prev = 1).
+            alpha_bar_prev = (
+                alpha_bar_t.new_ones(())
+                if i == self.ddim_steps - 1
+                else alphas_cumprod[ts[i + 1]]
+            )
+
+            sigma = (
+                self.eta
+                * ((1.0 - alpha_bar_prev) / (1.0 - alpha_bar_t)).sqrt()
+                * (1.0 - alpha_bar_t / alpha_bar_prev).sqrt()
+            )
+            dir_coeff = (1.0 - alpha_bar_prev - sigma**2).clamp(min=0.0).sqrt()
+            noise = torch.randn_like(y) if self.eta > 0.0 else 0.0
+
+            y = alpha_bar_prev.sqrt() * pred_x0 + dir_coeff * pred_eps + sigma * noise
+
+        return y
+
+    def _run_ddpm_reverse_diffusion(
+        self, y: TensorNCHW, cond: TensorNCHW
+    ) -> TensorNCHW:
         """Iteratively denoise ``y`` from t=timesteps-1 down to t=0.
 
         Args:
@@ -349,6 +437,25 @@ class DDPMProcessor(BaseProcessor):
             pred_v = self.model(y, t, cond)
             y = self.diffusion.p_sample(y, t, pred_v)
         return y
+
+    def _run_reverse_diffusion(self, y: TensorNCHW, cond: TensorNCHW) -> TensorNCHW:
+        """Denoise ``y`` with DDPM or DDIM sampling depending on ``ddim_steps`` and ``eta``.
+
+        Uses ancestral DDPM sampling when ``ddim_steps == timesteps`` and
+        ``eta == 1``, and DDIM sampling otherwise.
+
+        Args:
+            y (TensorNCHW): Noisy latent to denoise, of shape (B, C, H, W).
+            cond (TensorNCHW): History condition folded to channels, of shape
+                (B, T_hist * C_combined, H, W).
+
+        Returns:
+            TensorNCHW: Denoised latent of shape (B, C, H, W).
+
+        """
+        if self.uses_ddpm_sampler:
+            return self._run_ddpm_reverse_diffusion(y, cond)
+        return self._run_ddim_reverse_diffusion(y, cond)
 
     def _sample_autoregressive(self, x: TensorNTCHW) -> TensorNTCHW:
         """Autoregressive reverse diffusion sampling (one forecast step at a time).
@@ -479,3 +586,46 @@ class DDPMProcessor(BaseProcessor):
         if y is not None:
             return self._rollout_training(x, y)
         return self._rollout_inference(x)
+
+    def set_sampler(self, *, ddim_steps: int | None = None, eta: float = 1.0) -> None:
+        """Choose how the reverse diffusion process is run at inference time.
+
+        This does not change the network weights, so it can be called on a
+        processor loaded from any checkpoint.
+
+        Args:
+            ddim_steps (int | None): Number of timesteps visited when sampling.
+                Must satisfy ``1 <= ddim_steps <= timesteps``. ``None`` means
+                ``timesteps``.
+            eta (float): Sampling stochasticity in ``[0, 1]``.
+
+        Raises:
+            ValueError: If ``ddim_steps`` or ``eta`` is out of range.
+
+        """
+        if ddim_steps is None:
+            ddim_steps = self.timesteps
+        if not 1 <= ddim_steps <= self.timesteps:
+            msg = (
+                f"ddim_steps={ddim_steps} must be in the range "
+                f"[1, timesteps={self.timesteps}]."
+            )
+            raise ValueError(msg)
+        if not 0.0 <= eta <= 1.0:
+            msg = f"eta={eta} must be in the range [0.0, 1.0]."
+            raise ValueError(msg)
+
+        self.ddim_steps = ddim_steps
+        self.eta = eta
+
+        # Evenly-spaced subset of trained timesteps, highest-first.
+        # e.g. timesteps=1000, ddim_steps=50 -> [999, ..., 0].
+        # Plain attribute (not a buffer) so checkpoints don't depend on the sampler.
+        self._ddim_timesteps = torch.linspace(
+            self.timesteps - 1, 0, ddim_steps, dtype=torch.long
+        )
+
+    @property
+    def uses_ddpm_sampler(self) -> bool:
+        """Whether inference uses ancestral DDPM sampling over every timestep."""
+        return self.ddim_steps == self.timesteps and self.eta == 1.0
