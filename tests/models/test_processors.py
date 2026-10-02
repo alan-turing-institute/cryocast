@@ -1,12 +1,12 @@
 import re
+from pathlib import Path
 
 import pytest
 import torch
 
 from icenet_mp.models.processors import (
     BaseProcessor,
-    DDIMProcessor,
-    DDPMProcessor,
+    DiffusionProcessor,
     NullProcessor,
     UNetProcessor,
     VitProcessor,
@@ -320,14 +320,14 @@ class TestDDPMProcessor:
         n_history_steps: int,
         use_autoregressive: bool,
         target_channel_offset: int = 0,
-    ) -> DDPMProcessor:
+    ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
         )
         target = DataSpace(
             name="target", channels=self.C_TARGET, shape=self.LATENT_CHW[1:]
         )
-        return DDPMProcessor(
+        return DiffusionProcessor(
             data_space=combined,
             data_space_target=target,
             n_forecast_steps=n_forecast_steps,
@@ -486,6 +486,60 @@ class TestDDPMProcessor:
                 last_frame[:, non_target_idx],
             )
 
+    @pytest.mark.parametrize(
+        ("test_train_sampler", "test_infer_sampler"),
+        [((None, 1.0), (1, 0.0)), ((1, 0.0), (None, 1.0)), ((2, 0.0), (1, 0.5))],
+        ids=["ddpm-to-ddim", "ddim-to-ddpm", "ddim-to-other-ddim"],
+    )
+    def test_checkpoint_can_be_sampled_with_different_settings(
+        self,
+        tmp_path: Path,
+        test_train_sampler: tuple[int | None, float],
+        test_infer_sampler: tuple[int | None, float],
+    ) -> None:
+        """Weights saved with one (ddim_steps, eta) load and sample with another."""
+        train_ddim_steps, train_eta = test_train_sampler
+        infer_ddim_steps, infer_eta = test_infer_sampler
+
+        # Train with one sampler setting; take one optimiser step so the saved
+        # weights differ from a fresh initialisation.
+        trained = self._make_processor(
+            n_forecast_steps=1, n_history_steps=1, use_autoregressive=False
+        )
+        trained.set_sampler(ddim_steps=train_ddim_steps, eta=train_eta)
+        x = torch.randn(2, 1, *self.LATENT_CHW)
+        y = torch.randn(2, 1, self.C_TARGET, *self.LATENT_CHW[1:])
+        optimizer = torch.optim.SGD(trained.parameters(), lr=0.1)
+        loss = trained.rollout(x, y).loss
+        assert loss is not None
+        loss.backward()
+        optimizer.step()
+
+        checkpoint_path = tmp_path / "processor.pt"
+        torch.save(trained.state_dict(), checkpoint_path)
+
+        # Load into a processor with a different sampler setting. Strict loading
+        # fails if the sampler setting added or removed any saved keys.
+        restored = self._make_processor(
+            n_forecast_steps=1, n_history_steps=1, use_autoregressive=False
+        )
+        restored.set_sampler(ddim_steps=infer_ddim_steps, eta=infer_eta)
+        restored.load_state_dict(torch.load(checkpoint_path))
+
+        restored_state = restored.state_dict()
+        for name, tensor in trained.state_dict().items():
+            torch.testing.assert_close(restored_state[name], tensor)
+
+        expected_ddim_steps = (
+            restored.timesteps if infer_ddim_steps is None else infer_ddim_steps
+        )
+        assert restored.ddim_steps == expected_ddim_steps
+        assert restored.eta == infer_eta
+
+        with torch.no_grad():
+            result = restored.rollout(x)
+        assert result.prediction.shape == (2, 1, *self.LATENT_CHW)
+
 
 @pytest.mark.parametrize("test_batch_size", [1, 2])
 @pytest.mark.parametrize("test_latent_chw", [(4, 16, 16)])
@@ -508,12 +562,12 @@ class TestDDIMProcessor:
         ddim_steps: int | None = None,
         eta: float = 0.0,
         timesteps: int | None = None,
-    ) -> DDIMProcessor:
+    ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=latent_chw[0], shape=latent_chw[1:]
         )
         target = DataSpace(name="target", channels=self.C_TARGET, shape=latent_chw[1:])
-        return DDIMProcessor(
+        return DiffusionProcessor(
             data_space=combined,
             data_space_target=target,
             n_forecast_steps=n_forecast_steps,
