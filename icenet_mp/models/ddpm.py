@@ -638,5 +638,7 @@ class DDPM(BaseModel):
         target = y.unflatten(1, (T, C))  # [B, T, C, H, W]
 
         self.test_metrics.update(prediction, target)
+        if "climatology" in batch:
+            self.climatology_metrics.update(batch["climatology"], target)
 
         return ModelStepOutput(prediction, target, loss)
