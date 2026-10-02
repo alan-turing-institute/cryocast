@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import torch
 
@@ -59,6 +61,34 @@ class TestLeadTimeWeightedLoss:
         diffs = weights.diff()
         assert bool((diffs > 0).all()) is increasing
         assert bool((diffs < 0).all()) is not increasing
+
+    @pytest.mark.parametrize(
+        ("exponent", "n_steps"),
+        [(30.0, 28), (20.0, 90), (-30.0, 28), (-20.0, 90), (1000.0, 7)],
+        ids=[
+            "pos30-steps28",
+            "pos20-steps90",
+            "neg30-steps28",
+            "neg20-steps90",
+            "pos1000-steps7",
+        ],
+    )
+    def test_weights_finite_for_large_exponents(
+        self, exponent: float, n_steps: int
+    ) -> None:
+        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent)
+        weights = loss_fn.weights(n_steps, torch.device("cpu"))
+        assert torch.isfinite(weights).all()
+        assert weights.mean().item() == pytest.approx(1.0)
+        prediction, target = make_fields(shape=(2, n_steps, 1, 4, 4))
+        assert torch.isfinite(loss_fn(prediction, target))
+
+    @pytest.mark.parametrize(
+        "exponent", [math.nan, math.inf, -math.inf], ids=["nan", "inf", "-inf"]
+    )
+    def test_rejects_non_finite_exponent(self, exponent: float) -> None:
+        with pytest.raises(ValueError, match="finite"):
+            LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent)
 
     def test_early_errors_cost_more_with_negative_exponent(self) -> None:
         _, target = make_fields()
