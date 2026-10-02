@@ -83,12 +83,6 @@ class DDPMProcessor(BaseProcessor):
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
 
         # Instantiate the configured loss function.
-        if not isinstance(loss, nn.Module) and "lead_time_exponent" in loss:
-            msg = (
-                "lead_time_exponent is not supported by the DDPM processor: its loss "
-                "is computed in v-space without a lead-time dimension."
-            )
-            raise ValueError(msg)
         self.loss_fn: nn.Module = (
             loss if isinstance(loss, nn.Module) else hydra.utils.instantiate(loss)
         )
@@ -299,48 +293,49 @@ class DDPMProcessor(BaseProcessor):
 
         # Last observed frame; its non-target channels are copied into the metrics prediction
         # (the model only predicts the target slice, so the rest is persistence).
-        last_frame = x[:, -1]  # (B, C_combined, H, W)
+        last_frame: TensorNCHW = x[:, -1]  # (B, C_combined, H, W)
 
         # History frames folded into channels for the 2D UNet.
-        cond = x.flatten(start_dim=1, end_dim=2)  # (B, T_hist * C_combined, H, W)
+        cond: TensorNCHW = x.flatten(
+            start_dim=1, end_dim=2
+        )  # (B, T_hist * C_combined, H, W)
 
-        # Clean target to denoise: AR uses step 0 only; parallel folds all steps into channels.
-        if self.use_autoregressive:
-            # AR trains on forecast step 0 (T=0) only.
-            y_flat = y[:, 0]  # (B, C_target, H, W)
-        else:
-            y_flat = y.reshape(b, self.n_forecast_steps * self.c_target, *y.shape[-2:])
+        # Either take the first step (AR0) or fold all steps into channels (parallel)
+        y_flat: TensorNCHW = (
+            y[:, 0]  # (B, C_target, H, W)
+            if self.use_autoregressive
+            else y.reshape(b, self.n_forecast_steps * self.c_target, *y.shape[-2:])
+        )
 
         # Random diffusion timestep per sample.
         t = torch.randint(0, self.timesteps, (b,), device=device).long()
 
         # Add noise to the clean target at diffusion step t.
-        noise = torch.randn_like(y_flat)
-        noisy_y = self.diffusion.q_sample(y_flat, t, noise)
+        noise: TensorNCHW = torch.randn_like(y_flat)
+        noisy_y: TensorNCHW = self.diffusion.q_sample(y_flat, t, noise)
 
         # Predict the velocity conditioned on the noisy target and history.
-        pred_v = self.model(noisy_y, t, cond)
+        pred_v: TensorNCHW = self.model(noisy_y, t, cond)
 
         # Compute the target velocity for the sampled noise and timestep.
-        target_v = self.diffusion.calculate_v(y_flat, noise, t)
+        target_v: TensorNCHW = self.diffusion.calculate_v(y_flat, noise, t)
 
-        # Compute the v-prediction training loss.
-        if getattr(self.loss_fn, "requires_time_dimension", False):
-            if self.use_autoregressive:
-                loss = self.loss_fn(pred_v.unsqueeze(1), target_v.unsqueeze(1))
-            else:
-                loss = self.loss_fn(
-                    pred_v.unflatten(1, (self.n_forecast_steps, self.c_target)),
-                    target_v.unflatten(1, (self.n_forecast_steps, self.c_target)),
-                )
-        else:
-            loss = self.loss_fn(pred_v, target_v)
+        # Compute the v-prediction training loss
+        # We unfold to NTCHW in case the loss requires a time dimension
+        # AR only predicts a single step so T=1; parallel predicts all steps
+        n_steps = 1 if self.use_autoregressive else self.n_forecast_steps
+        loss = self.loss_fn(
+            pred_v.unflatten(1, (n_steps, self.c_target)),
+            target_v.unflatten(1, (n_steps, self.c_target)),
+        )
 
         # Reconstruct x0 for metrics only; this is not used for training.
         with torch.no_grad():
             # calculate_v() has the same formula as the x_0 reconstruction,
             # so we reuse it by passing pred_v as x_start.
-            pred_x0 = self.diffusion.calculate_v(x_start=pred_v, noise=noisy_y, t=t)
+            pred_x0: TensorNCHW = self.diffusion.calculate_v(
+                x_start=pred_v, noise=noisy_y, t=t
+            )
             prediction = self._build_metrics_prediction(pred_x0, last_frame)
 
         return ProcessorOutput(prediction=prediction, loss=loss)

@@ -2,7 +2,6 @@ import re
 
 import pytest
 import torch
-from omegaconf import OmegaConf
 
 from icenet_mp.losses import TimeWeightedLoss
 from icenet_mp.models.processors import (
@@ -527,20 +526,4 @@ class TestDDPMProcessor:
             assert torch.equal(
                 result.prediction[:, t_step, non_target_idx],
                 last_frame[:, non_target_idx],
-            )
-
-
-class TestDDPMProcessorLossConfig:
-    def test_lead_time_exponent_rejected(self) -> None:
-        latent = DataSpace(name="combined", channels=4, shape=(16, 16))
-        loss = OmegaConf.create(
-            {"_target_": "torch.nn.MSELoss", "lead_time_exponent": 1.0}
-        )
-        with pytest.raises(ValueError, match="lead_time_exponent"):
-            DDPMProcessor(
-                data_space=latent,
-                data_space_target=latent,
-                n_forecast_steps=1,
-                n_history_steps=1,
-                loss=loss,
             )

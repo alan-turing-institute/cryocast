@@ -83,5 +83,3 @@ imp train --config-name <config> loss=huber +loss.lead_time_exponent=2  # Huber,
 
 - `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
   mean-reduced pointwise losses (`mse`, `mae`, `huber`, `smooth_l1`). For losses that reduce non-linearly over the whole tensor (`rmse`, `amse`) it is a per-day average instead, so it is close to, but not exactly, the unweighted loss.
-- Weighting needs a lead-time dimension, so it is not supported by models that compress the
-  time-dimension when computing their own loss in latent space, like `DDPMProcessor`.
