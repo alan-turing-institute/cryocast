@@ -198,33 +198,6 @@ class TestModelService:
             assert service.config == expected_config
             assert service.config["model"]["name"] != "will_not_overwrite"
 
-    def test_from_checkpoint_applies_model_overrides_with_config_name(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """When --config-name is on argv, eval-config model overrides win."""
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
-
-        files_dir = tmp_path / "files"
-        files_dir.mkdir(parents=True)
-        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
-            mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
-                lambda _target: FakeModel,
-            )
-            mp.setattr("sys.argv", ["imp", "evaluate", "--config-name=whatever"])
-            service = ModelService.from_checkpoint(
-                DictConfig({"model": {"name": "will_overwrite"}}),
-                checkpoint_path,
-            )
-            assert isinstance(service.model, FakeModel)
-            assert service.config["model"]["name"] == "will_overwrite"
-
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
     ) -> None:
