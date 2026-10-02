@@ -23,7 +23,6 @@ parameter documentation; this page summarises how to choose between them.
 | `mae` | absolute residual | fully outlier-robust; constant gradient | non-smooth at zero; weak signal on small errors |
 | `rmse` | `sqrt(MSE + eps)` | interpretable in target units | same optimum as MSE; gradient rescaled by the running loss value |
 | `smooth_l1` | Huber variant with `beta` transition | as Huber; PyTorch-native parameterisation | as Huber |
-| `weighted_mse` / `weighted_l1` / `weighted_bce` | elementwise `sample_weights` × MSE / L1 / BCE-with-logits | spatial weighting (e.g. emphasise the ice edge or active cells) | weights must be supplied and justified; BCE assumes a [0, 1] classification framing |
 | `amse` (default) | spectral anti-blur loss (Subich et al. 2025, arXiv:2501.19374, flat-grid adaptation) | removes the "double penalty": matching the target's power spectrum per scale band is optimal at any coherence, so partially-predictable fine scales are no longer rewarded for being damped | more expensive than pointwise losses (FFT per step); `hybrid` mode introduces `spectral_weight` to calibrate |
 
 ## Why an anti-blur loss exists (the double penalty, in two sentences)

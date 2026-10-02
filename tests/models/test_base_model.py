@@ -11,12 +11,9 @@ from omegaconf import DictConfig, OmegaConf
 from torchmetrics import MeanSquaredError, Metric
 
 import icenet_mp
-from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.losses.amse_loss import AMSELoss
+from icenet_mp.losses.lead_time_weighted_loss import LeadTimeWeightedLoss
 from icenet_mp.losses.rmse_loss import RMSELoss
-from icenet_mp.losses.weighted_bce_loss import WeightedBCEWithLogitsLoss
-from icenet_mp.losses.weighted_l1_loss import WeightedL1Loss
-from icenet_mp.losses.weighted_mse_loss import WeightedMSELoss
 from icenet_mp.metrics import (
     CentroidErrorPerForecastDay,
     DistanceAveragedIceEdgeErrorPerForecastDay,
@@ -759,31 +756,6 @@ class TestBaseModelLossConfig:
                 OmegaConf.create({"_target_": "icenet_mp.losses.amse_loss.AMSELoss"}),
                 AMSELoss,
                 id="amse",
-            ),
-            pytest.param(
-                OmegaConf.create(
-                    {
-                        "_target_": (
-                            "icenet_mp.losses.weighted_bce_loss.WeightedBCEWithLogitsLoss"
-                        )
-                    }
-                ),
-                WeightedBCEWithLogitsLoss,
-                id="weighted_bce",
-            ),
-            pytest.param(
-                OmegaConf.create(
-                    {"_target_": "icenet_mp.losses.weighted_l1_loss.WeightedL1Loss"}
-                ),
-                WeightedL1Loss,
-                id="weighted_l1",
-            ),
-            pytest.param(
-                OmegaConf.create(
-                    {"_target_": "icenet_mp.losses.weighted_mse_loss.WeightedMSELoss"}
-                ),
-                WeightedMSELoss,
-                id="weighted_mse",
             ),
         ],
     )
