@@ -20,6 +20,10 @@ samp-weathersouth-era5-25p0km-2020-2024-24h-v4:
     - start: 2024-02-01T12:00:00
       end: 2024-06-30T12:00:00
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       - join:

@@ -1,0 +1,6 @@
+# Base config inherited by all other configs
+defaults:
+  - loggers:
+    - wandb
+  - metrics: default
+  - _self_

@@ -16,7 +16,7 @@ LEAD_TIME_SUFFIX = re.compile(r"-(\d+)d$")
 class TestPredictConfigs:
     """Regression tests for icenet-mp predict configs."""
 
-    @pytest.mark.parametrize("config_name", PREDICT_CONFIGS)
+    @pytest.mark.parametrize("config_name", PREDICT_CONFIGS, ids=PREDICT_CONFIGS)
     def test_predict_configs_compose(
         self, compose_config: Callable[..., DictConfig], config_name: str
     ) -> None:
@@ -27,7 +27,7 @@ class TestPredictConfigs:
         assert config.predict.target.group_name
         assert "ice_conc" in config.predict.target.variables
 
-    @pytest.mark.parametrize("config_name", PREDICT_CONFIGS)
+    @pytest.mark.parametrize("config_name", PREDICT_CONFIGS, ids=PREDICT_CONFIGS)
     def test_predict_lead_time_matches_filename(
         self, compose_config: Callable[..., DictConfig], config_name: str
     ) -> None:

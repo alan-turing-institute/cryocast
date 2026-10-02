@@ -5,19 +5,29 @@
 [![Code style](https://github.com/alan-turing-institute/icenet-mp/actions/workflows/code_style.yaml/badge.svg)](https://github.com/alan-turing-institute/icenet-mp/actions/workflows/code_style.yaml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
-IceNet-MP is an **AI/ML framework for multimodal sea-ice forecasting**.
+IceNet-MP is a **multimodal machine-learning framework for sea-ice forecasting**. It combines satellite observations, Argo float sensor data, and ERA5 reanalysis fields to produce short-term Arctic and Antarctic sea-ice concentration forecasts.
 
-Example Arctic and Antarctic sea-ice concentration forecasts are shown below.
+Example forecasts are shown below.
 
 **Arctic**
 
-![Example IceNet-MP Arctic sea ice concentration forecast compared with observations](docs/src/assets/prediction-north-unet-v2026.07.png)
+![Example IceNet-MP Arctic sea ice concentration forecast compared with observations](docs/src/assets/prediction-fullnorth-ddpm-v2026.07.png)
 
 **Antarctic**
 
 ![Example IceNet-MP Antarctic sea ice concentration forecast compared with observations](docs/src/assets/prediction-fullsouth-ddpm-v2026.07.png)
 
-IceNet-MP fuses satellite observations, Argo float sensor data, and ERA5 reanalysis fields to produce short-term sea ice concentration forecasts. The encode-process-decode architecture translates each input dataset into a shared latent space, allowing new data sources and ML model components to be added without changing the full pipeline.
+The encode-process-decode architecture translates each input dataset into a shared latent space, allowing new data sources and model components to be added without changing the full pipeline.
+
+## Key capabilities
+
+- Multimodal data fusion across satellite observations, reanalysis fields, and in-situ sensor data.
+- Extensible encode-process-decode design for adding new input sources and prediction targets.
+- Multiple model configurations, including UNet, vision transformer, diffusion, and persistence-baseline approaches.
+
+## Project context
+
+IceNet-MP is developed at [The Alan Turing Institute](https://www.turing.ac.uk/) as a research system for Arctic and Antarctic sea-ice forecasting. The current codebase supports research, benchmarking, sensitivity experiments, and case-study analysis; it is not intended for operational forecasting, safety-critical decision making, or public warnings. See the [model card](docs/MODEL_CARD.md) for intended use and scope.
 
 ## Quick start
 

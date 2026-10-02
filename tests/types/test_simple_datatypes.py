@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 import numpy as np
 import torch
 from anemoi.datasets.create.recipe import Recipe
-from matplotlib.colors import Normalize
 
 from icenet_mp.types import (
     AnemoiCleanupArgs,
@@ -12,22 +11,63 @@ from icenet_mp.types import (
     AnemoiInitArgs,
     AnemoiInspectArgs,
     AnemoiLoadArgs,
-    DiffColourmapSpec,
     Metadata,
     ProcessorOutput,
-    UncertaintyArrays,
 )
+from icenet_mp.types.protocols import (
+    SupportsMetadataFromDataset,
+    SupportsMetadataInput,
+)
+
+
+def fake_metadata_source_input(
+    name: str, variable_names: list[str]
+) -> SupportsMetadataInput:
+    """Return a duck-typed `SupportsMetadataInput` stand-in."""
+
+    class FakeMetadataSourceInput:
+        def __init__(self, name: str, variable_names: list[str]) -> None:
+            self.name = name
+            self.variable_names = variable_names
+
+    return FakeMetadataSourceInput(name, variable_names)
+
+
+def fake_metadata_source(
+    *,
+    start_date: str = "2020-01-01",
+    end_date: str = "2020-01-10",
+    frequency: np.timedelta64 | None = None,
+    length: int = 10,
+    n_history_steps: int = 0,
+    inputs: list[SupportsMetadataInput] | None = None,
+) -> SupportsMetadataFromDataset:
+    """Return a duck-typed `SupportsMetadataFromDataset` stand-in."""
+
+    class FakeMetadataSource:
+        def __init__(self) -> None:
+            self.start_date = np.datetime64(start_date)
+            self.end_date = np.datetime64(end_date)
+            self.frequency = (
+                frequency if frequency is not None else np.timedelta64(1, "D")
+            )
+            self.n_history_steps = n_history_steps
+            self.inputs = inputs if inputs is not None else []
+
+        def __len__(self) -> int:
+            return length
+
+    return FakeMetadataSource()
 
 
 class TestAnemoiCommandArgs:
     """Tests for the Anemoi CLI command argument dataclasses."""
 
     def test_cleanup_defaults(self) -> None:
-        """Default AnemoiCleanupArgs command and delta when omitted."""
+        """Default AnemoiCleanupArgs command when omitted."""
         args = AnemoiCleanupArgs(path="dataset.zarr")
 
         assert args.command == "unused"
-        assert args.delta is None
 
     def test_finalise_defaults(self) -> None:
         """Default AnemoiFinaliseArgs command while preserving the recipe."""
@@ -89,21 +129,6 @@ class TestAnemoiDatasetStatus:
         assert status.download_complete is True
 
 
-class TestDiffColourmapSpec:
-    """Tests for DiffColourmapSpec."""
-
-    def test_preserves_normalisation_and_bounds(self) -> None:
-        """Preserve normalisation, bounds and colourmap configuration."""
-        norm = Normalize(vmin=-1.0, vmax=1.0)
-
-        spec = DiffColourmapSpec(norm=norm, vmin=None, vmax=None, cmap="coolwarm")
-
-        assert spec.norm is norm
-        assert spec.vmin is None
-        assert spec.vmax is None
-        assert spec.cmap == "coolwarm"
-
-
 class TestMetadata:
     """Tests for Metadata."""
 
@@ -111,31 +136,83 @@ class TestMetadata:
         """Accept and preserve training-summary metadata fields."""
         metadata = Metadata(
             model="cnn-vit-cnn",
-            max_epochs=20,
-            current_epoch=7,
-            start="2017-01-01",
-            end="2019-12-31",
-            cadence="24h",
-            n_points=1095,
+            trained_epochs=7,
+            training_start="2017-01-01",
+            training_end="2019-12-31",
+            n_samples=1095,
             n_history_steps=3,
             vars_by_source={"sic-ssmis": ["ice_conc"]},
         )
 
         assert metadata.model == "cnn-vit-cnn"
-        assert metadata.current_epoch == 7
+        assert metadata.trained_epochs == 7
         assert metadata.n_history_steps == 3
         assert metadata.vars_by_source == {"sic-ssmis": ["ice_conc"]}
 
     def test_defaults_are_independent_and_optional(self) -> None:
         """Keep Metadata defaults optional and independent across instances."""
-        first = Metadata()
+        first = Metadata(vars_by_source={"era5": ["2t"]})
         second = Metadata()
 
-        first.vars_by_source = {"era5": ["2t"]}
-
         assert first.model is None
-        assert first.n_points is None
+        assert first.n_samples is None
+        assert first.vars_by_source == {"era5": ["2t"]}
         assert second.vars_by_source is None
+
+
+class TestMetadataFromDataset:
+    """Tests for Metadata.from_dataset."""
+
+    def test_derives_dates_and_length_from_dataset(self) -> None:
+        """Metadata fields come from the dataset's realised state, not from config."""
+        dataset = fake_metadata_source(
+            start_date="2020-01-01T12:30:00",
+            end_date="2020-01-10T00:00:00",
+            length=10,
+            n_history_steps=3,
+        )
+
+        metadata = Metadata.from_dataset(dataset, model_name="unet", trained_epochs=5)
+
+        assert metadata.model == "unet"
+        assert metadata.trained_epochs == 5
+        assert metadata.training_start == "2020-01-01"
+        assert metadata.training_end == "2020-01-10"
+        assert metadata.n_samples == 10
+        assert metadata.n_history_steps == 3
+
+    def test_defaults_model_and_epoch_to_none(self) -> None:
+        """Omitted model_name/trained_epochs fall back to None."""
+        dataset = fake_metadata_source()
+
+        metadata = Metadata.from_dataset(dataset)
+
+        assert metadata.model is None
+        assert metadata.trained_epochs is None
+
+    def test_collects_sorted_variable_names_by_source(self) -> None:
+        """vars_by_source maps each input dataset's name to its sorted variable names."""
+        dataset = fake_metadata_source(
+            inputs=[
+                fake_metadata_source_input("era5", ["sp", "2t"]),
+                fake_metadata_source_input("osisaf-south", ["sic"]),
+            ]
+        )
+
+        metadata = Metadata.from_dataset(dataset)
+
+        assert metadata.vars_by_source == {
+            "era5": ["2t", "sp"],
+            "osisaf-south": ["sic"],
+        }
+
+    def test_empty_inputs_yields_none_vars_by_source(self) -> None:
+        """No input datasets means no variable-by-source mapping."""
+        dataset = fake_metadata_source(inputs=[])
+
+        metadata = Metadata.from_dataset(dataset)
+
+        assert metadata.vars_by_source is None
 
 
 class TestProcessorOutput:
@@ -158,26 +235,3 @@ class TestProcessorOutput:
         output = ProcessorOutput(prediction=prediction, loss=loss)
 
         assert output.loss is loss
-
-
-class TestUncertaintyArrays:
-    """Tests for UncertaintyArrays."""
-
-    def test_preserve_named_tuple_fields(self) -> None:
-        """Preserve array identities and tuple ordering for uncertainty values."""
-        ground_truth = np.zeros((2, 3), dtype=np.float32)
-        prediction = np.ones((2, 3), dtype=np.float32)
-        uncertainty = np.full((2, 3), 0.1, dtype=np.float32)
-
-        arrays = UncertaintyArrays(
-            ground_truth=ground_truth,
-            prediction=prediction,
-            uncertainty=uncertainty,
-        )
-
-        assert arrays.ground_truth is ground_truth
-        assert arrays.prediction is prediction
-        assert arrays.uncertainty is uncertainty
-        assert arrays[0] is ground_truth
-        assert arrays[1] is prediction
-        assert arrays[2] is uncertainty

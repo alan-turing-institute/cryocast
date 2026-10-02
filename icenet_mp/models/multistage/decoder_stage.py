@@ -32,7 +32,7 @@ class DecoderStage(BaseModel):
         **kwargs: Any,
     ) -> None:
         """Initialise a DecoderStage with multiple frozen encoders and a trainable decoder."""
-        super().__init__(**kwargs)
+        super().__init__(mask_dir=mask_dir, **kwargs)
 
         # We require at least two history steps to train the decoder
         if self.n_history_steps < 2:  # noqa: PLR2004
@@ -84,6 +84,7 @@ class DecoderStage(BaseModel):
         *,
         decoder: DictConfig,
         encoders: list[EncoderStage],
+        output_space: DataSpace,
         target_dataset_name: str,
         target_variable_indices: list[int],
         mask_dir: str | None = None,
@@ -96,15 +97,16 @@ class DecoderStage(BaseModel):
             target_variable_indices=target_variable_indices,
             mask_dir=mask_dir,
             hemisphere=encoders[0].hemisphere,
-            input_spaces=[s.to_dict() for s in encoders[0].input_spaces],
+            input_spaces=[e.encoder.data_space_in.to_dict() for e in encoders],
             lr_scheduler=copy.deepcopy(encoders[0].lr_scheduler_cfg),
             n_forecast_steps=encoders[0].n_forecast_steps,
             n_history_steps=encoders[0].n_history_steps,
             name=f"{target_dataset_name}_decoder".replace("-", "_"),
             optimizer=copy.deepcopy(encoders[0].optimizer_cfg),
-            output_space=encoders[0].output_space.to_dict(),
+            output_space=output_space.to_dict(),
             scheduler=copy.deepcopy(encoders[0].scheduler_cfg),
             loss=copy.deepcopy(encoders[0].loss_cfg),
+            metrics=copy.deepcopy(list(encoders[0].metric_cfgs.values())),
         )
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:

@@ -13,7 +13,11 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 from wandb.sdk.lib.runid import generate_id
 
-from icenet_mp.callbacks import PlottingCallback, UnconditionalCheckpoint
+from icenet_mp.callbacks import (
+    MediaLoggingCallback,
+    PredictionWriter,
+    UnconditionalCheckpoint,
+)
 from icenet_mp.compatibility.torch import (
     patch_interpolate_antialias,
     patch_open_file_limit,
@@ -21,7 +25,6 @@ from icenet_mp.compatibility.torch import (
 from icenet_mp.data import CommonDataModule
 from icenet_mp.models import BaseModel, EncodeProcessDecode
 from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from icenet_mp.types import SupportsMetadata
 from icenet_mp.utils import get_device_name, get_timestamp, get_wandb_run
 
 log = logging.getLogger(__name__)
@@ -79,6 +82,7 @@ class ModelService:
             loss=config["loss"],
             lr_scheduler=config["train"]["lr_scheduler"],
             mask_dir=str(builder.data_module.mask_directory),
+            metrics=config["reporting"]["metrics"],
             n_forecast_steps=builder.data_module.n_forecast_steps,
             n_history_steps=builder.data_module.n_history_steps,
             optimizer=config["train"]["optimizer"],
@@ -126,14 +130,27 @@ class ModelService:
             builder.config["model"]["_target_"]
         )
         log.info("Loading a trained %s model...", builder.config["model"]["name"])
+        # For each of the keyword arguments that we know this model class ignores, we
+        # attempt to load them from the model config rather than the checkpoint.
+        non_checkpoint_kwargs = {
+            key: builder.config["model"][key]
+            for key in model_cls.ignored_hparams
+            if key in builder.config["model"]
+        }
         builder.model_ = model_cls.load_from_checkpoint(
             checkpoint_path,
-            mask_dir=str(builder.data_module.mask_directory),
             latitudes_fn=lambda: builder.data_module.latitudes,
             longitudes_fn=lambda: builder.data_module.longitudes,
-            map_location="cpu",  # portability: will be moved to the correct device later
+            map_location="cpu",  # Lightning will move this to the correct device
+            mask_dir=str(builder.data_module.mask_directory),
+            metrics=combined_cfg["reporting"]["metrics"],
             weights_only=False,
+            **non_checkpoint_kwargs,
         )
+        # Load the current epoch from the checkpoint
+        builder.model_.checkpoint_epoch = torch.load(
+            checkpoint_path, map_location="cpu", weights_only=False
+        ).get("epoch")
 
         return builder
 
@@ -173,7 +190,7 @@ class ModelService:
         Args:
             model: Model to train. Defaults to ``self.model`` if not provided.
             config: Job-specific config section (e.g. ``self.config["train"]``).
-            job_stage: Label passed to ``PlottingCallback.prefix`` and used in log messages.
+            job_stage: Label passed to ``MediaLoggingCallback.prefix`` and used in log messages.
             ckpt_path: Optional checkpoint to load training state from.
 
         Returns:
@@ -297,7 +314,7 @@ class ModelService:
         Args:
             config: Job-specific config section (e.g. ``self.config["train"]``).
             project: W&B project name (one of "train" or "evaluate").
-            job_stage: Optional label passed to ``PlottingCallback.prefix`` and used
+            job_stage: Optional label passed to ``MediaLoggingCallback.prefix`` and used
                 in log messages. Also sets the W&B ``job_type`` to ``"multistage"``
                 when provided, or ``"single-stage"`` otherwise.
 
@@ -313,7 +330,8 @@ class ModelService:
 
         # Setup Lightning loggers — only pass job_type/project to W&B loggers.
         extra_loggers = []
-        for logger_config in self.config.get("loggers", {}).values():
+        logger_configs = self.config.get("reporting", {}).get("loggers", {})
+        for logger_config in logger_configs.values():
             is_wandb = logger_config.get("_target_", "").split(".")[-1] == "WandbLogger"
             if is_wandb:
                 extra_loggers.append(
@@ -390,17 +408,10 @@ class ModelService:
         # Additional configuration for callbacks
         for callback in cast("list[Callback]", trainer.callbacks):  # type: ignore[attr-defined]
             log.debug("Configuring callback %s.", callback.__class__.__name__)
-            # Set metadata for supported callbacks
-            if isinstance(callback, SupportsMetadata):
-                log.debug("Setting metadata for %s.", callback.__class__.__name__)
-                model_name = self.config["model"].get(
-                    "name", self.model.__class__.__name__
-                )
-                callback.set_metadata(self.config, model_name)
-            # Set plotting stage
-            if isinstance(callback, PlottingCallback):
+            # Set image logging prefix
+            if isinstance(callback, MediaLoggingCallback):
                 log.debug(
-                    "Setting plotting prefix for %s to %s.",
+                    "Setting image logging prefix for %s to %s.",
                     callback.__class__.__name__,
                     job_stage,
                 )
@@ -413,6 +424,16 @@ class ModelService:
                     run_directory / "checkpoints",
                 )
                 callback.dirpath = run_directory / "checkpoints"
+            # Set prediction output path for the prediction writer, if enabled
+            if isinstance(callback, PredictionWriter) and callback.enabled:
+                output_path = run_directory / "files" / "predictions.nc"
+                log.debug(
+                    "Setting output_path for %s to %s.",
+                    callback.__class__.__name__,
+                    output_path,
+                )
+                callback.output_path = output_path
+                callback.mask_dir = self.data_module.mask_directory
 
         return trainer
 
@@ -492,7 +513,7 @@ class ModelService:
 
         log.info("Preparing to train the encoders...")
         trained_encoders = self.train_stage_encoders(
-            config=self._merged_config("encoders"),
+            train_cfg=self._merged_config("encoders"),
             checkpoint_dir=checkpoint_dir,
         )
         target_encoder = trained_encoders.pop()  # the decoder must not use this
@@ -500,14 +521,14 @@ class ModelService:
         log.info("Preparing to train the decoder...")
         trained_decoder = self.train_stage_decoder(
             trained_encoders,
-            config=self._merged_config("decoder"),
+            train_cfg=self._merged_config("decoder"),
             checkpoint_dir=checkpoint_dir,
         )
 
         log.info("Preparing to train the processor...")
         processor_model = self.train_stage_processor(
             trained_decoder,
-            config=self._merged_config("processor"),
+            train_cfg=self._merged_config("processor"),
             checkpoint_dir=checkpoint_dir,
             target_encoder=target_encoder,
         )
@@ -515,14 +536,14 @@ class ModelService:
         log.info("Preparing to finetune...")
         return self.train_stage_finetune(
             processor_model=processor_model,
-            config=self._merged_config("finetune"),
+            train_cfg=self._merged_config("finetune"),
         )
 
     def train_stage_decoder(
         self,
         encoder_models: list[EncoderStage],
         *,
-        config: DictConfig,
+        train_cfg: DictConfig,
         checkpoint_dir: Path | None = None,
     ) -> DecoderStage:
         """Train a decoder on the combined latent space of all frozen encoders."""
@@ -541,18 +562,20 @@ class ModelService:
             )
             return DecoderStage.load_from_checkpoint(
                 checkpoint_path,
-                map_location="cpu",  # portability: will be moved to the correct device later
-                weights_only=False,
                 decoder=self.config["model"]["decoder"],
                 encoders=encoder_models,
+                map_location="cpu",  # Lightning will move this to the correct device
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
                 target_dataset_name=self.data_module.target_group_name,
                 target_variable_indices=self.data_module.target_variable_indices,
-                mask_dir=str(self.data_module.mask_directory),
+                weights_only=False,
             )
 
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
             encoders=encoder_models,
+            output_space=self.data_module.output_space,
             target_dataset_name=self.data_module.target_group_name,
             target_variable_indices=self.data_module.target_variable_indices,
             mask_dir=str(self.data_module.mask_directory),
@@ -562,7 +585,7 @@ class ModelService:
             decoder_model.decoder.data_space_in.chw,
             decoder_model.decoder.data_space_out.chw,
         )
-        trainer = self._fit(model=decoder_model, config=config, job_stage="decoder")
+        trainer = self._fit(model=decoder_model, config=train_cfg, job_stage="decoder")
         ckpt_path = self._save_stage_checkpoint(trainer, "decoder")
         # Reload the best weights into the decoder model
         decoder_model.load_state_dict(
@@ -571,7 +594,7 @@ class ModelService:
         return decoder_model
 
     def train_stage_encoders(
-        self, *, config: DictConfig, checkpoint_dir: Path | None = None
+        self, *, train_cfg: DictConfig, checkpoint_dir: Path | None = None
     ) -> list[EncoderStage]:
         """Train each encoder separately with a disposable decoder."""
         if not isinstance(self.model, EncodeProcessDecode):
@@ -606,10 +629,11 @@ class ModelService:
                 encoder_models.append(
                     EncoderStage.load_from_checkpoint(
                         checkpoint_path,
-                        map_location="cpu",  # portability: will be moved to the correct device later
-                        weights_only=False,
                         latitudes_fn=lambda: self.data_module.latitudes,
                         longitudes_fn=lambda: self.data_module.longitudes,
+                        map_location="cpu",  # Lightning will move this to the correct device
+                        metrics=self.config["reporting"]["metrics"],
+                        weights_only=False,
                     )
                 )
                 continue
@@ -630,7 +654,7 @@ class ModelService:
             )
             trainer = self._fit(
                 model=encoder_model,
-                config=config,
+                config=train_cfg,
                 job_stage=f"encoder-{encoder.name}",
             )
             ckpt_path = self._save_stage_checkpoint(trainer, f"encoder-{encoder.name}")
@@ -643,7 +667,7 @@ class ModelService:
         return encoder_models
 
     def train_stage_finetune(
-        self, *, config: DictConfig, processor_model: ProcessorStage
+        self, *, train_cfg: DictConfig, processor_model: ProcessorStage
     ) -> Trainer:
         """Load pretrained weights from all stages into the full model and finetune end-to-end."""
         model = cast("EncodeProcessDecode", self.model)
@@ -655,7 +679,7 @@ class ModelService:
         log.info("Loaded pretrained weights for processor.")
         model.decoder.load_state_dict(processor_model.decoder.state_dict())
         log.info("Loaded pretrained weights for decoder.")
-        trainer = self._fit(config=config, job_stage="finetune")
+        trainer = self._fit(config=train_cfg, job_stage="finetune")
         self._save_stage_checkpoint(trainer, "finetune")
         return trainer
 
@@ -664,7 +688,7 @@ class ModelService:
         decoder_model: DecoderStage,
         target_encoder: EncoderStage,
         *,
-        config: DictConfig,
+        train_cfg: DictConfig,
         checkpoint_dir: Path | None = None,
     ) -> ProcessorStage:
         """Train a processor on the latent space using frozen encoders and decoder."""
@@ -678,17 +702,20 @@ class ModelService:
             )
             return ProcessorStage.load_from_checkpoint(
                 checkpoint_path,
-                map_location="cpu",  # portability: will be moved to the correct device later
-                weights_only=False,
-                processor=self.config["model"]["processor"],
                 decoder_model=decoder_model,
+                map_location="cpu",  # Lightning will move this to the correct device
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
+                processor=self.config["model"]["processor"],
                 target_encoder=target_encoder,
+                weights_only=False,
             )
 
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,
             target_encoder=target_encoder,
+            mask_dir=str(self.data_module.mask_directory),
         )
         log.info(
             "Training processor: history (%d, %d, %d, %d) -> forecast (%d, %d, %d, %d)",
@@ -697,7 +724,9 @@ class ModelService:
             processor_model.processor.n_forecast_steps,
             *processor_model.processor.data_space.chw,
         )
-        trainer = self._fit(model=processor_model, config=config, job_stage="processor")
+        trainer = self._fit(
+            model=processor_model, config=train_cfg, job_stage="processor"
+        )
         ckpt_path = self._save_stage_checkpoint(trainer, "processor")
         # Reload the best weights into the processor model
         processor_model.load_state_dict(

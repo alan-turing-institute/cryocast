@@ -105,6 +105,7 @@ class TestUnsetProperties:
             ("study_name", "Study name has not been set"),
             ("study_path", "Study path has not been set"),
         ],
+        ids=["entity", "study_name", "study_path"],
     )
     def test_raises_when_unset(self, attr: str, message: str) -> None:
         with pytest.raises(ValueError, match=message):
@@ -209,7 +210,7 @@ class TestOptunaSweepGenerateTrialConfig:
         sampler = build_sampler(CONFIG, tmp_path)
         _, overrides = sampler.ask()
         trial_cfg = sampler.generate_trial_config(overrides)
-        wandb_config = OmegaConf.select(trial_cfg, "loggers.wandb.config")
+        wandb_config = OmegaConf.select(trial_cfg, "reporting.loggers.wandb.config")
         assert set(wandb_config) == {"optimizer.lr", "loss.delta", "model.name"}
         assert wandb_config["optimizer.lr"] == OmegaConf.select(
             trial_cfg, "train.optimizer.lr"
@@ -225,7 +226,7 @@ class TestOptunaSweepGenerateTrialConfig:
         parameter = CategoricalParameter("model.name", ["off", "null", "unet"])
         trial_cfg = sampler.generate_trial_config([(parameter, "off")])
         assert OmegaConf.select(trial_cfg, "model.name") == "off"
-        wandb_config = OmegaConf.select(trial_cfg, "loggers.wandb.config")
+        wandb_config = OmegaConf.select(trial_cfg, "reporting.loggers.wandb.config")
         assert wandb_config["model.name"] == "off"
 
     def test_unknown_parameter_path_raises(self, tmp_path: Path) -> None:
@@ -356,7 +357,9 @@ class TestOptunaSweepInitialiseSweep:
 
         monkeypatch.setattr(wandb, "sweep", fake_sweep)
         sampler = OptunaSweep(CONFIG)
-        model_cfg = DictConfig({"loggers": {"wandb": {"entity": "my-entity"}}})
+        model_cfg = DictConfig(
+            {"reporting": {"loggers": {"wandb": {"entity": "my-entity"}}}}
+        )
 
         sweep_id = sampler.initialise_sweep(model_cfg)
 
@@ -382,7 +385,7 @@ class TestOptunaSweepInitialiseSweep:
         )
         monkeypatch.setenv("WANDB_ENTITY", "env-entity")
         sampler = OptunaSweep(CONFIG)
-        model_cfg = DictConfig({"loggers": {"wandb": {"entity": None}}})
+        model_cfg = DictConfig({"reporting": {"loggers": {"wandb": {"entity": None}}}})
 
         sampler.initialise_sweep(model_cfg)
 

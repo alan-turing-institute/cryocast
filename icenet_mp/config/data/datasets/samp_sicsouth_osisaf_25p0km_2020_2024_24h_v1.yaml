@@ -24,6 +24,10 @@ samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1:
     mask_generator:
       _target_: icenet_mp.ingestion.postprocessors.StatusFlagMaskGenerator
 
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
   input:
     pipe:
       - concat:

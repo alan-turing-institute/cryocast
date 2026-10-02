@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from omegaconf import DictConfig
 
@@ -11,11 +13,11 @@ class TestEncoderStage:
         self,
         cfg_encoders: DictConfig,
         cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         encoder_stage = EncoderStage(
             channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
@@ -34,10 +36,11 @@ class TestEncoderStage:
             n_history_steps=1,
             name="test-input_encoder",
             optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
+            output_space=cfg_input_space,
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
+            metrics=cfg_metrics,
         )
 
         assert encoder_stage.decoder.skip_connection is None
@@ -77,6 +80,11 @@ class TestEncoderStage:
 
         assert torch.equal(processed["target"], test_input[:, 0].unsqueeze(1))
 
+    def test_single_channel_metrics_are_disabled_for_multi_channel_input(
+        self, encoder_stage: EncoderStage
+    ) -> None:
+        assert set(encoder_stage.validation_metrics.keys()) == {"mae", "rmse", "ssim"}
+
     def test_dataset_name_returns_input_space_name(
         self, encoder_stage: EncoderStage
     ) -> None:
@@ -90,6 +98,7 @@ class TestEncoderStage:
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
     ) -> None:
         template = EncodeProcessDecode(
             name="template",
@@ -105,6 +114,7 @@ class TestEncoderStage:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
             loss=cfg_loss,
+            metrics=cfg_metrics,
             target_variable_indices=[0],
         )
 
@@ -125,3 +135,6 @@ class TestEncoderStage:
             == template.encoders[0].data_space_out.shape
         )
         assert encoder_stage.name == "test_input_encoder"
+        # The encoder stage reconstructs its own input, not the forecast target
+        assert [s.to_dict() for s in encoder_stage.input_spaces] == [cfg_input_space]
+        assert encoder_stage.output_space.to_dict() == cfg_input_space

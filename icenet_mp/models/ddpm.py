@@ -2,7 +2,7 @@ import logging
 from typing import Any, ClassVar, NoReturn
 
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 
 from icenet_mp.models.common import Mask, RestrictRange
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
@@ -96,7 +96,7 @@ class DDPM(BaseModel):
             **kwargs: Additional arguments passed to ``BaseModel``.
 
         """
-        super().__init__(**kwargs)
+        super().__init__(mask_dir=mask_dir, **kwargs)
 
         self.use_autoregressive = use_autoregressive
         self.osisaf_key = self.output_space.name
@@ -607,5 +607,7 @@ class DDPM(BaseModel):
         target = y.unflatten(1, (T, C))  # [B, T, C, H, W]
 
         self.test_metrics.update(prediction, target)
+        if "climatology" in batch:
+            self.climatology_metrics.update(batch["climatology"], target)
 
         return ModelStepOutput(prediction, target, loss)
