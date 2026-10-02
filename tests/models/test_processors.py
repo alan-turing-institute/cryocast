@@ -4,8 +4,10 @@ import re
 import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
+from torch import nn
 
 from icenet_mp.losses import LeadTimeWeightedLoss
+from icenet_mp.models.common.normalisations import ChannelNorm2D
 from icenet_mp.models.processors import (
     BaseProcessor,
     DDPMProcessor,
@@ -176,6 +178,43 @@ class TestUNetProcessor:
                 n_forecast_steps=1,
                 n_history_steps=1,
                 start_out_channels=test_start_out_channels,
+            )
+
+    @pytest.mark.parametrize(
+        ("test_norm_type", "expected_norm"),
+        [
+            ("batchnorm", nn.BatchNorm2d),
+            ("channelnorm", ChannelNorm2D),
+            ("groupnorm", nn.GroupNorm),
+        ],
+        ids=["batchnorm", "channelnorm", "groupnorm"],
+    )
+    def test_norm_type_used_throughout(
+        self, test_norm_type: str, expected_norm: type[nn.Module]
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=(32, 32))
+        processor = UNetProcessor(
+            data_space=latent_space,
+            kernel_size=1,
+            n_forecast_steps=1,
+            n_history_steps=1,
+            norm_type=test_norm_type,
+            start_out_channels=8,
+        )
+        norm_classes = (nn.BatchNorm2d, ChannelNorm2D, nn.GroupNorm)
+        norms = [m for m in processor.modules() if isinstance(m, norm_classes)]
+        assert norms
+        assert all(isinstance(m, expected_norm) for m in norms)
+
+    def test_rejects_unknown_norm_type(self) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=(32, 32))
+        with pytest.raises(ValueError, match=r"Unknown norm_type: unknown"):
+            UNetProcessor(
+                data_space=latent_space,
+                n_forecast_steps=1,
+                n_history_steps=1,
+                norm_type="unknown",
+                start_out_channels=8,
             )
 
     @pytest.mark.parametrize(
