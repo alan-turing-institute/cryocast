@@ -179,9 +179,9 @@ def penalty_by_bin(
     excess = (torch.maximum(power_p, power_t) - geo_mean).clamp_min(0.0)
     contributions = 2.0 * excess * (1.0 - coherence)
     height, width = prediction.shape[-2], prediction.shape[-1]
-    weighted = loss_fn._weight_bins(contributions, height, width)
+    weighted = loss_fn._weight_bins(contributions.unsqueeze(0), height, width)
     _, _, present, _ = loss_fn._binning(height, width, prediction.device)
-    return present.float(), weighted.sum(dim=0)
+    return present.float(), weighted.sum(dim=(0, 1))
 
 
 def share_above(
@@ -350,3 +350,38 @@ class TestAMSELossWavenumberWeight:
         for weight in (None, "fastnet"):
             loss = AMSELoss(mode="pure", wavenumber_weight=weight)(prediction, target)
             assert loss.item() == pytest.approx(0.25**2, rel=1e-5)
+
+
+class TestAMSELossPerLeadTime:
+    @parametrize_weight
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
+    def test_matches_per_step_loop(
+        self, mode: AMSEMode, wavenumber_weight: str | None
+    ) -> None:
+        """One vectorised pass equals calling the loss once per lead time."""
+        prediction, target = make_fields(shape=(2, 5, 2, 32, 32))
+        loss_fn = AMSELoss(mode=mode, wavenumber_weight=wavenumber_weight)
+        expected = torch.stack(
+            [loss_fn(prediction[:, t], target[:, t]) for t in range(5)]
+        )
+        per_step = loss_fn.per_lead_time_loss(prediction, target)
+        assert per_step.shape == (5,)
+        torch.testing.assert_close(per_step, expected)
+
+    def test_gradients_match_per_step_loop(self) -> None:
+        prediction, target = make_fields(shape=(2, 3, 1, 32, 32))
+        loss_fn = AMSELoss(wavenumber_weight="fastnet")
+        looped = prediction.clone().requires_grad_()
+        torch.stack(
+            [loss_fn(looped[:, t], target[:, t]) for t in range(3)]
+        ).sum().backward()
+        vectorised = prediction.clone().requires_grad_()
+        loss_fn.per_lead_time_loss(vectorised, target).sum().backward()
+        assert looped.grad is not None
+        assert vectorised.grad is not None
+        torch.testing.assert_close(vectorised.grad, looped.grad)
+
+    def test_rejects_inputs_without_lead_time(self) -> None:
+        prediction, target = make_fields(shape=(2, 1, 32, 32))
+        with pytest.raises(ValueError, match="NTCHW"):
+            AMSELoss().per_lead_time_loss(prediction, target)

@@ -42,7 +42,7 @@ import torch
 from torch import nn
 from torch.nn import functional
 
-from icenet_mp.types import NDIM_NHW
+from icenet_mp.types import NDIM_NHW, NDIM_NTCHW
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ class AMSELoss(nn.Module):
     def _weight_bins(
         self, contributions: torch.Tensor, height: int, width: int
     ) -> torch.Tensor:
-        """Apply the FastNet per-bin upweighting to [n_fields, n_bins] terms.
+        """Apply the FastNet per-bin upweighting to [n_groups, n_fields, n_bins] terms.
 
         With ``wavenumber_weight="none"`` the input is returned untouched, so
         the default path is bit-for-bit the unweighted Subich sum.
@@ -242,6 +242,10 @@ class AMSELoss(nn.Module):
         Z is detached, so gradients are those of a fixed per-bin reweighting
         (a constant rescale of an ordinary weighted sum), not of a ratio.
 
+        Z is computed separately for each group (leading dimension), so that
+        evaluating several lead times in one call (``per_lead_time_loss``)
+        gives exactly the per-step totals of evaluating them one at a time.
+
         The DC term is deliberately NOT weighted. It is not an annulus (the DC
         mode carries binning weight 0 and never reaches a bin), and the FastNet
         formula itself assigns it gamma_0 = max(0 * 0**sqrt(3), 1) = 1; it is
@@ -254,8 +258,8 @@ class AMSELoss(nn.Module):
         # Both sums are non-negative (every per-bin term is clamped at 0), so
         # the ratio is a weighted mean of gamma >= 1: bounded and well posed.
         # The eps pair makes Z = 1 for the exact-match case (0 / 0).
-        scale = (weighted.detach().sum() + self.eps) / (
-            contributions.detach().sum() + self.eps
+        scale = (weighted.detach().sum(dim=(1, 2), keepdim=True) + self.eps) / (
+            contributions.detach().sum(dim=(1, 2), keepdim=True) + self.eps
         )
         return weighted / scale
 
@@ -341,13 +345,16 @@ class AMSELoss(nn.Module):
         return power_p, power_t, cross, dc
 
     def spectral_excess(
-        self, prediction: torch.Tensor, target: torch.Tensor
+        self, prediction: torch.Tensor, target: torch.Tensor, n_groups: int = 1
     ) -> torch.Tensor:
         """Per-field AMSE excess ``AMSE - MSE`` (the pure anti-blur surcharge).
 
         Non-negative; zero iff, in every |k|-bin, the two power spectra match
         or the coherence is perfect. Shrinking predicted amplitude below the
         target's cannot reduce this term.
+
+        ``n_groups`` splits the fields (in their flattened order) into equal
+        groups that are normalised independently by ``_weight_bins``.
         """
         power_p, power_t, cross, _ = self.binned_spectra(prediction, target)
         geo_mean = torch.sqrt(self.eps + power_p * power_t)
@@ -355,18 +362,26 @@ class AMSELoss(nn.Module):
         excess_weight = (torch.maximum(power_p, power_t) - geo_mean).clamp_min(0.0)
         contributions = 2.0 * excess_weight * (1.0 - coherence)
         height, width = prediction.shape[-2], prediction.shape[-1]
-        return self._weight_bins(contributions, height, width).sum(dim=1)
+        grouped = contributions.reshape(n_groups, -1, contributions.shape[-1])
+        return self._weight_bins(grouped, height, width).sum(dim=-1).reshape(-1)
 
-    def pure_amse(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        """Per-field AMSE (amplitude + adjusted decorrelation terms + DC term)."""
+    def pure_amse(
+        self, prediction: torch.Tensor, target: torch.Tensor, n_groups: int = 1
+    ) -> torch.Tensor:
+        """Per-field AMSE (amplitude + adjusted decorrelation terms + DC term).
+
+        ``n_groups`` is as for ``spectral_excess``.
+        """
         power_p, power_t, cross, dc = self.binned_spectra(prediction, target)
         geo_mean = torch.sqrt(self.eps + power_p * power_t)
         coherence = torch.clamp(cross / geo_mean, max=1.0)
         amplitude = (power_p + power_t - 2.0 * geo_mean).clamp_min(0.0)
         decorrelation = 2.0 * torch.maximum(power_p, power_t) * (1.0 - coherence)
         height, width = prediction.shape[-2], prediction.shape[-1]
-        contributions = self._weight_bins(amplitude + decorrelation, height, width)
-        return contributions.sum(dim=1) + dc
+        terms = amplitude + decorrelation
+        grouped = terms.reshape(n_groups, -1, terms.shape[-1])
+        contributions = self._weight_bins(grouped, height, width)
+        return contributions.sum(dim=-1).reshape(-1) + dc
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Return the scalar loss for prediction/target of shape [..., H, W]."""
@@ -378,4 +393,40 @@ class AMSELoss(nn.Module):
         return (
             base
             + self.spectral_weight * self.spectral_excess(prediction, target).mean()
+        )
+
+    def per_lead_time_loss(
+        self, prediction: torch.Tensor, target: torch.Tensor
+    ) -> torch.Tensor:
+        """Return the loss at each lead time for NTCHW prediction/target, shape [T].
+
+        Equal to ``stack([self(prediction[:, t], target[:, t]) for t in ...])``
+        but computed with a single FFT pass over every lead time at once.
+        """
+        if prediction.ndim != NDIM_NTCHW or prediction.shape != target.shape:
+            msg = (
+                "per_lead_time_loss expects NTCHW prediction and target of the same "
+                f"shape, got {tuple(prediction.shape)} and {tuple(target.shape)}"
+            )
+            raise ValueError(msg)
+        n_steps = prediction.shape[1]
+        # Move lead time to the front so the flattened fields are grouped by step
+        prediction_by_step = prediction.movedim(1, 0)
+        target_by_step = target.movedim(1, 0)
+        if self.mode == "pure":
+            per_field = self.pure_amse(
+                prediction_by_step, target_by_step, n_groups=n_steps
+            )
+            return per_field.reshape(n_steps, -1).mean(dim=1)
+        base = functional.huber_loss(
+            prediction_by_step.float(),
+            target_by_step.float(),
+            delta=self.delta,
+            reduction="none",
+        )
+        excess = self.spectral_excess(
+            prediction_by_step, target_by_step, n_groups=n_steps
+        )
+        return base.reshape(n_steps, -1).mean(dim=1) + (
+            self.spectral_weight * excess.reshape(n_steps, -1).mean(dim=1)
         )

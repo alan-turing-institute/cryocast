@@ -3,6 +3,7 @@ import torch
 
 from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.losses.amse_loss import AMSELoss
+from icenet_mp.losses.lead_time_weighted_loss import SupportsPerLeadTimeLoss
 from icenet_mp.losses.rmse_loss import RMSELoss
 
 
@@ -66,6 +67,16 @@ class TestLeadTimeWeightedLoss:
         assert torch.isfinite(loss)
         loss.backward()
         assert prediction.grad is not None
+
+    def test_uses_per_lead_time_loss_when_available(self) -> None:
+        prediction, target = make_fields()
+        base = AMSELoss()
+        assert isinstance(base, SupportsPerLeadTimeLoss)
+        assert not isinstance(torch.nn.MSELoss(), SupportsPerLeadTimeLoss)
+        per_step = torch.stack([base(prediction[:, t], target[:, t]) for t in range(4)])
+        expected = (torch.tensor([0.4, 0.8, 1.2, 1.6]) * per_step).mean()
+        loss = LeadTimeWeightedLoss(base, exponent=1.0)(prediction, target)
+        assert loss.item() == pytest.approx(expected.item())
 
     def test_rejects_inputs_without_lead_time(self) -> None:
         prediction, target = make_fields(shape=(2, 1, 16, 16))

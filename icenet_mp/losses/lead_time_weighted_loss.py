@@ -8,12 +8,29 @@ and the per-step values are combined with weights that grow with lead time:
 rescaled to have mean 1. The rescaling keeps the overall loss magnitude (and
 hence the learning rate) comparable with the unwrapped loss: weighting only
 redistributes emphasis between lead times.
+
+Wrapped losses that implement ``per_lead_time_loss`` (see
+``SupportsPerLeadTimeLoss``) are evaluated for every lead time in one call;
+any other loss is called once per lead time.
 """
+
+from typing import Protocol, runtime_checkable
 
 import torch
 from torch import nn
 
 from icenet_mp.types import NDIM_NTCHW
+
+
+@runtime_checkable
+class SupportsPerLeadTimeLoss(Protocol):
+    """A loss that can evaluate every lead time of an NTCHW input in one call."""
+
+    def per_lead_time_loss(
+        self, prediction: torch.Tensor, target: torch.Tensor
+    ) -> torch.Tensor:
+        """Return the [T] per-lead-time losses for NTCHW prediction/target."""
+        ...
 
 
 class LeadTimeWeightedLoss(nn.Module):
@@ -57,7 +74,13 @@ class LeadTimeWeightedLoss(nn.Module):
             raise ValueError(msg)
         # Derive the number of steps from the input for increased flexibility
         n_steps = prediction.shape[1]
-        per_step = torch.stack(
-            [self.wrapped_loss(prediction[:, t], target[:, t]) for t in range(n_steps)]
-        )
+        if isinstance(self.wrapped_loss, SupportsPerLeadTimeLoss):
+            per_step = self.wrapped_loss.per_lead_time_loss(prediction, target)
+        else:
+            per_step = torch.stack(
+                [
+                    self.wrapped_loss(prediction[:, t], target[:, t])
+                    for t in range(n_steps)
+                ]
+            )
         return (self.weights(n_steps, per_step.device) * per_step).mean()
