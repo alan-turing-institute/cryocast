@@ -42,7 +42,7 @@ import torch
 from torch import nn
 from torch.nn import functional
 
-from icenet_mp.types import NDIM_CHW
+from icenet_mp.types import NDIM_NHW
 
 logger = logging.getLogger(__name__)
 
@@ -280,8 +280,8 @@ class AMSELoss(nn.Module):
             )
             raise ValueError(msg)
         # Fields must carry at least (batch-like, H, W) dimensions.
-        if prediction.ndim < NDIM_CHW:
-            msg = f"expected at least {NDIM_CHW} dimensions, got {prediction.ndim}"
+        if prediction.ndim < NDIM_NHW:
+            msg = f"expected at least {NDIM_NHW} dimensions, got {prediction.ndim}"
             raise ValueError(msg)
         height, width = prediction.shape[-2], prediction.shape[-1]
         fields_p = prediction.reshape(-1, height, width).float()
