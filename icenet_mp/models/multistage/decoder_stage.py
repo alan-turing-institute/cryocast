@@ -7,6 +7,7 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models import BaseModel
 from icenet_mp.types import DataSpace, TensorNTCHW
 
@@ -33,6 +34,15 @@ class DecoderStage(BaseModel):
     ) -> None:
         """Initialise a DecoderStage with multiple frozen encoders and a trainable decoder."""
         super().__init__(mask_dir=mask_dir, **kwargs)
+
+        # This stage trains on a single time step so lead-time weighting is a no-op
+        if isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            logger.warning(
+                "lead_time_exponent=%s has no effect on %s, which trains on a single "
+                "time step. It is still applied in the processor stage.",
+                self.loss_fn.exponent,
+                type(self).__name__,
+            )
 
         # We require at least two history steps to train the decoder
         if self.n_history_steps < 2:  # noqa: PLR2004

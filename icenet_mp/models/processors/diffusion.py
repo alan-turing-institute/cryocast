@@ -41,17 +41,20 @@ Non-target channels are not predicted; they are copied from the last history
 frame and carried forward unchanged.
 """
 
+import logging
 from typing import Any
 
-import hydra
 import torch
 from omegaconf import DictConfig
 from torch import nn
 
+from icenet_mp.losses import LeadTimeWeightedLoss, build_loss
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
 from icenet_mp.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 from .base_processor import BaseProcessor
+
+log = logging.getLogger(__name__)
 
 
 class DiffusionProcessor(BaseProcessor):
@@ -117,7 +120,7 @@ class DiffusionProcessor(BaseProcessor):
 
         # Instantiate the configured loss function.
         self.loss_fn: nn.Module = (
-            loss if isinstance(loss, nn.Module) else hydra.utils.instantiate(loss)
+            loss if isinstance(loss, nn.Module) else build_loss(loss)
         )
 
         # c_combined: total channels across all encoder latents concatenated.
@@ -147,6 +150,15 @@ class DiffusionProcessor(BaseProcessor):
 
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+
+        # Autoregressive training only optimises one forecast step at a time
+        if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            log.warning(
+                "lead_time_exponent=%s has no effect on the autoregressive DDPM "
+                "training loss, which is computed on a single forecast step. "
+                "Validation and test losses are still lead-time weighted.",
+                self.loss_fn.exponent,
+            )
 
         # Configure the reverse-diffusion sampler (validates ddim_steps and eta).
         self.set_sampler(ddim_steps=ddim_steps, eta=eta)
@@ -329,39 +341,49 @@ class DiffusionProcessor(BaseProcessor):
 
         # Last observed frame; its non-target channels are copied into the metrics prediction
         # (the model only predicts the target slice, so the rest is persistence).
-        last_frame = x[:, -1]  # (B, C_combined, H, W)
+        last_frame: TensorNCHW = x[:, -1]  # (B, C_combined, H, W)
 
         # History frames folded into channels for the 2D UNet.
-        cond = x.flatten(start_dim=1, end_dim=2)  # (B, T_hist * C_combined, H, W)
+        cond: TensorNCHW = x.flatten(
+            start_dim=1, end_dim=2
+        )  # (B, T_hist * C_combined, H, W)
 
-        # Clean target to denoise: AR uses step 0 only; parallel folds all steps into channels.
-        if self.use_autoregressive:
-            # AR trains on forecast step 0 (T=0) only.
-            y_flat = y[:, 0]  # (B, C_target, H, W)
-        else:
-            y_flat = y.reshape(b, self.n_forecast_steps * self.c_target, *y.shape[-2:])
+        # Either take the first step (AR0) or fold all steps into channels (parallel)
+        y_flat: TensorNCHW = (
+            y[:, 0]  # (B, C_target, H, W)
+            if self.use_autoregressive
+            else y.reshape(b, self.n_forecast_steps * self.c_target, *y.shape[-2:])
+        )
 
         # Random diffusion timestep per sample.
         t = torch.randint(0, self.timesteps, (b,), device=device).long()
 
         # Add noise to the clean target at diffusion step t.
-        noise = torch.randn_like(y_flat)
-        noisy_y = self.diffusion.q_sample(y_flat, t, noise)
+        noise: TensorNCHW = torch.randn_like(y_flat)
+        noisy_y: TensorNCHW = self.diffusion.q_sample(y_flat, t, noise)
 
         # Predict the velocity conditioned on the noisy target and history.
-        pred_v = self.model(noisy_y, t, cond)
+        pred_v: TensorNCHW = self.model(noisy_y, t, cond)
 
         # Compute the target velocity for the sampled noise and timestep.
-        target_v = self.diffusion.calculate_v(y_flat, noise, t)
+        target_v: TensorNCHW = self.diffusion.calculate_v(y_flat, noise, t)
 
-        # Compute the v-prediction training loss.
-        loss = self.loss_fn(pred_v, target_v)
+        # Compute the v-prediction training loss
+        # We unfold to NTCHW in case the loss requires a time dimension
+        # AR only predicts a single step so T=1; parallel predicts all steps
+        n_steps = 1 if self.use_autoregressive else self.n_forecast_steps
+        loss = self.loss_fn(
+            pred_v.unflatten(1, (n_steps, self.c_target)),
+            target_v.unflatten(1, (n_steps, self.c_target)),
+        )
 
         # Reconstruct x0 for metrics only; this is not used for training.
         with torch.no_grad():
             # calculate_v() has the same formula as the x_0 reconstruction,
             # so we reuse it by passing pred_v as x_start.
-            pred_x0 = self.diffusion.calculate_v(x_start=pred_v, noise=noisy_y, t=t)
+            pred_x0: TensorNCHW = self.diffusion.calculate_v(
+                x_start=pred_v, noise=noisy_y, t=t
+            )
             prediction = self._build_metrics_prediction(pred_x0, last_frame)
 
         return ProcessorOutput(prediction=prediction, loss=loss)

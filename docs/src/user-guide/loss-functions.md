@@ -2,30 +2,28 @@
 
 ## Selecting a loss
 
-The training loss is a Hydra config group. The default is set in
-`icenet_mp/config/base.yaml` (`loss: huber`) and can be overridden on any command
-line:
+The training loss is a Hydra config group. The default is set in `icenet_mp/config/base.yaml`
+(`loss: amse`) and can be overridden on any command line:
 
 ```bash
 imp train --config-name <config> loss=mse
-imp train --config-name <config> loss=amse loss.mode=hybrid loss.spectral_weight=0.1
+imp train --config-name <config> loss=huber loss.delta=0.1
+imp train --config-name <config> loss.mode=hybrid loss.spectral_weight=0.1 loss.lead_time_exponent=2
 ```
 
-Each option corresponds to a file in `icenet_mp/config/loss/`, whose header comments
-carry the full parameter documentation; this page summarises how to choose between
-them.
+Each option corresponds to a file in `icenet_mp/config/loss/`, whose header comments carry the full
+parameter documentation; this page summarises how to choose between them.
 
 ## Supported losses
 
 | `loss=` | what it is | pros | cons |
 |---|---|---|---|
-| `huber` (default) | quadratic below `delta`, linear above | smooth near zero, robust to outliers, loss stays in target units above `delta` | needs `delta` chosen; below `delta` it inherits MSE's blur incentive (see AMSE) |
+| `huber` | quadratic below `delta`, linear above | smooth near zero, robust to outliers, loss stays in target units above `delta` | needs `delta` chosen; below `delta` it inherits MSE's blur incentive (see AMSE) |
 | `mse` | squared residual | smooth everywhere; strong gradient on large errors | outlier-sensitive; strongest amplitude-damping (blur) incentive |
 | `mae` | absolute residual | fully outlier-robust; constant gradient | non-smooth at zero; weak signal on small errors |
 | `rmse` | `sqrt(MSE + eps)` | interpretable in target units | same optimum as MSE; gradient rescaled by the running loss value |
 | `smooth_l1` | Huber variant with `beta` transition | as Huber; PyTorch-native parameterisation | as Huber |
-| `weighted_mse` / `weighted_l1` / `weighted_bce` | elementwise `sample_weights` × MSE / L1 / BCE-with-logits | spatial weighting (e.g. emphasise the ice edge or active cells) | weights must be supplied and justified; BCE assumes a [0, 1] classification framing |
-| `amse` | spectral anti-blur loss (Subich et al. 2025, arXiv:2501.19374, flat-grid adaptation) | removes the "double penalty": matching the target's power spectrum per scale band is optimal at any coherence, so partially-predictable fine scales are no longer rewarded for being damped | more expensive than pointwise losses (FFT per step); `hybrid` mode introduces `spectral_weight` to calibrate |
+| `amse` (default) | spectral anti-blur loss (Subich et al. 2025, arXiv:2501.19374, flat-grid adaptation) | removes the "double penalty": matching the target's power spectrum per scale band is optimal at any coherence, so partially-predictable fine scales are no longer rewarded for being damped | more expensive than pointwise losses (FFT per step); `hybrid` mode introduces `spectral_weight` to calibrate |
 
 ## Why an anti-blur loss exists (the double penalty, in two sentences)
 
@@ -51,3 +49,26 @@ per-scale decomposition so that preserving the target's spectrum is optimal inst
   climatological structure does not dilute the anti-blur signal.
 
 Both optional flags are bit-for-bit inert when off.
+
+## Weighting by lead time
+
+Every loss YAML has a `lead_time_exponent` key, which defaults to `null` (no lead-time weighting).
+Setting `loss.lead_time_exponent=X` makes forecast days further into the future contribute more.
+The loss is evaluated separately at each lead time and the per-day values are combined with weights `w_t = (t + 1) ** lead_time_exponent`.
+These are rescaled to have mean 1 so the overall magnitude of the loss is comparable to unweighted runs.
+
+```bash
+imp train --config-name <config> loss.lead_time_exponent=1             # default loss, linear scaling
+imp train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, quadratic scaling
+```
+
+For models like multistage-encoder, multistage-decoder and autoregressive DDPM, training is
+optimised one step at a time, so lead-time weighting has no effect.
+
+!!! note
+    `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
+    most losses. For losses that perform non-linear operations on the whole tensor (e.g. `rmse`, or `amse` with `wavenumber_weight=fastnet`), the mean of the per-day values will be close but not identical to the unweighted loss.
+
+!!! warning
+    The wrapped loss must return a scalar or the weighting will cause a confusing error. This is
+    caught at build time.

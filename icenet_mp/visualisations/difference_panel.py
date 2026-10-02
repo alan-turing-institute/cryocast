@@ -3,14 +3,12 @@ from functools import cached_property
 import numpy as np
 
 from icenet_mp.exceptions import InvalidArrayError
-from icenet_mp.types import ArrayHW, ArrayTHW, ColourScale, DiffMode
+from icenet_mp.types import NDIM_HW, NDIM_THW, ArrayHW, ArrayTHW, ColourScale, DiffMode
 from icenet_mp.utils import safe_nanmax, safe_nanmin
 
 
 class DifferencePanel:
     """Compute and style the difference between a ground-truth/prediction pair."""
-
-    VALID_NDIMS = (2, 3)
 
     def __init__(
         self,
@@ -44,7 +42,7 @@ class DifferencePanel:
 
         if uncertainty is not None:
             arrays = (ground_truth, prediction, uncertainty)
-            if any(array.ndim not in DifferencePanel.VALID_NDIMS for array in arrays):
+            if any(array.ndim not in (NDIM_HW, NDIM_THW) for array in arrays):
                 shapes = tuple(array.shape for array in arrays)
                 msg = (
                     "Expected 2D [H, W] or 3D [T, H, W] ground truth, prediction and "

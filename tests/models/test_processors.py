@@ -1,9 +1,14 @@
+import logging
 import re
 from pathlib import Path
 
 import pytest
 import torch
+from omegaconf import DictConfig, OmegaConf
+from torch import nn
 
+from icenet_mp.losses import LeadTimeWeightedLoss
+from icenet_mp.models.common.normalisations import ChannelNorm2D
 from icenet_mp.models.processors import (
     BaseProcessor,
     DiffusionProcessor,
@@ -177,6 +182,43 @@ class TestUNetProcessor:
             )
 
     @pytest.mark.parametrize(
+        ("test_norm_type", "expected_norm"),
+        [
+            ("batchnorm", nn.BatchNorm2d),
+            ("channelnorm", ChannelNorm2D),
+            ("groupnorm", nn.GroupNorm),
+        ],
+        ids=["batchnorm", "channelnorm", "groupnorm"],
+    )
+    def test_norm_type_used_throughout(
+        self, test_norm_type: str, expected_norm: type[nn.Module]
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=(32, 32))
+        processor = UNetProcessor(
+            data_space=latent_space,
+            kernel_size=1,
+            n_forecast_steps=1,
+            n_history_steps=1,
+            norm_type=test_norm_type,
+            start_out_channels=8,
+        )
+        norm_classes = (nn.BatchNorm2d, ChannelNorm2D, nn.GroupNorm)
+        norms = [m for m in processor.modules() if isinstance(m, norm_classes)]
+        assert norms
+        assert all(isinstance(m, expected_norm) for m in norms)
+
+    def test_rejects_unknown_norm_type(self) -> None:
+        latent_space = DataSpace(name="latent", channels=3, shape=(32, 32))
+        with pytest.raises(ValueError, match=r"Unknown norm_type: unknown"):
+            UNetProcessor(
+                data_space=latent_space,
+                n_forecast_steps=1,
+                n_history_steps=1,
+                norm_type="unknown",
+                start_out_channels=8,
+            )
+
+    @pytest.mark.parametrize(
         "test_latent_hw",
         [(100, 200), (32, 40), (16, 16), (16, 32)],
         ids=["100x200", "32x40", "16x16", "16x32"],
@@ -320,6 +362,7 @@ class TestDDPMProcessor:
         n_history_steps: int,
         use_autoregressive: bool,
         target_channel_offset: int = 0,
+        loss: DictConfig | torch.nn.Module | None = None,
     ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
@@ -338,7 +381,7 @@ class TestDDPMProcessor:
             dropout_rate=0.0,
             use_autoregressive=use_autoregressive,
             target_channel_offset=target_channel_offset,
-            loss=torch.nn.MSELoss(),
+            loss=torch.nn.MSELoss() if loss is None else loss,
         )
 
     @pytest.mark.parametrize(
@@ -444,6 +487,92 @@ class TestDDPMProcessor:
             p.grad is not None and p.grad.abs().sum() > 0
             for p in processor.model.parameters()
         )
+
+    # n_forecast_steps=3 differs from C_TARGET=2 so a swapped (C, T) unflatten
+    # changes the number of lead times seen by the wrapped loss
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 3], ids=lambda n: f"forecast{n}"
+    )
+    @pytest.mark.parametrize(
+        "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
+    )
+    def test_training_supports_lead_time_weighted_loss(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        test_n_forecast_steps: int,
+        test_use_autoregressive: bool,
+    ) -> None:
+        """Restore forecast time for lead-time weighted latent diffusion loss."""
+        batch_size, n_history_steps = 2, 1
+        processor = self._make_processor(
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=n_history_steps,
+            use_autoregressive=test_use_autoregressive,
+            loss=OmegaConf.create(
+                {"_target_": "torch.nn.MSELoss", "lead_time_exponent": 2.0}
+            ),
+        )
+        assert isinstance(processor.loss_fn, LeadTimeWeightedLoss)
+        assert isinstance(processor.loss_fn._wrapped_loss, torch.nn.MSELoss)
+        assert processor.loss_fn.exponent == pytest.approx(2.0)
+        # Record the per-step NCHW slices that the wrapped loss receives
+        wrapped_loss = processor.loss_fn._wrapped_loss
+        original_forward = wrapped_loss.forward
+        calls: list[tuple[torch.Size, torch.Size]] = []
+
+        def recording_forward(
+            prediction: torch.Tensor, target: torch.Tensor
+        ) -> torch.Tensor:
+            calls.append((prediction.shape, target.shape))
+            return original_forward(prediction, target)
+
+        monkeypatch.setattr(wrapped_loss, "forward", recording_forward)
+        x = torch.randn(batch_size, n_history_steps, *self.LATENT_CHW)
+        y = torch.randn(
+            batch_size,
+            test_n_forecast_steps,
+            self.C_TARGET,
+            *self.LATENT_CHW[1:],
+        )
+
+        result = processor.rollout(x, y)
+
+        expected_steps = 1 if test_use_autoregressive else test_n_forecast_steps
+        assert len(calls) == expected_steps
+        expected_shape = (batch_size, self.C_TARGET, *self.LATENT_CHW[1:])
+        assert all(shapes == (expected_shape,) * 2 for shapes in calls)
+        assert result.loss is not None
+        assert result.loss.ndim == 0
+        assert torch.isfinite(result.loss)
+
+    @pytest.mark.parametrize(
+        ("test_use_autoregressive", "test_lead_time_exponent", "expect_warning"),
+        [(True, 2.0, True), (False, 2.0, False), (True, None, False)],
+        ids=["autoregressive-weighted", "direct-weighted", "autoregressive-unweighted"],
+    )
+    def test_warns_when_lead_time_weighting_ignored(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        *,
+        test_use_autoregressive: bool,
+        test_lead_time_exponent: float | None,
+        expect_warning: bool,
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="icenet_mp.models.processors"):
+            self._make_processor(
+                n_forecast_steps=2,
+                n_history_steps=1,
+                use_autoregressive=test_use_autoregressive,
+                loss=OmegaConf.create(
+                    {
+                        "_target_": "torch.nn.MSELoss",
+                        "lead_time_exponent": test_lead_time_exponent,
+                    }
+                ),
+            )
+        warned = any("has no effect" in r.getMessage() for r in caplog.records)
+        assert warned is expect_warning
 
     @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
     @pytest.mark.parametrize(

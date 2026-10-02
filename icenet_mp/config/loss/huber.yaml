@@ -28,3 +28,4 @@
 
 _target_: torch.nn.HuberLoss
 delta: 0.5 # Controls the quadratic→linear transition; smaller positive values are more MAE-like, larger values are more MSE-like (delta must be > 0)
+lead_time_exponent: null # Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.

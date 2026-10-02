@@ -19,6 +19,7 @@ from omegaconf import DictConfig
 from torchmetrics import Metric, MetricCollection
 from typing_extensions import override
 
+from icenet_mp.losses import build_loss
 from icenet_mp.metrics import LandMaskMixin, SingleChannelMetricMixin
 from icenet_mp.models.common import Mask
 from icenet_mp.types import (
@@ -287,15 +288,13 @@ class BaseModel(LightningModule, ABC):
 
     @loss_cfg.setter
     def loss_cfg(self, cfg: DictConfig) -> None:
-        """Set the loss configuration and instantiate the loss function."""
-        self.loss_fn = hydra.utils.instantiate(cfg)
-        if not isinstance(self.loss_fn, torch.nn.Module):
-            msg = (
-                f"Loss `_target_` {cfg.get('_target_', '(missing)')!r} created a "
-                f"{type(self.loss_fn).__name__}, expected a torch.nn.Module."
-            )
-            raise TypeError(msg)
+        """Set the loss configuration and instantiate the loss function.
+
+        If a `lead_time_exponent` key is present, then the loss function will be wrapped
+        in a LeadTimeWeightedLoss with that exponent.
+        """
         self._loss_cfg = cfg
+        self.loss_fn: torch.nn.Module = build_loss(cfg)
 
     def process_batch(self, batch: dict[str, TensorNTCHW]) -> dict[str, TensorNTCHW]:
         """Process a batch before the forward pass and loss computation.

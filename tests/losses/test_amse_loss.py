@@ -9,15 +9,7 @@ from torch.nn import functional
 
 from icenet_mp.losses.amse_loss import AMSELoss, AMSEMode
 
-
-def make_fields(
-    seed: int = 0, shape: tuple[int, ...] = (2, 2, 1, 32, 32)
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return a seeded (prediction, target) pair of random fields."""
-    generator = torch.Generator().manual_seed(seed)
-    prediction = torch.rand(*shape, generator=generator)
-    target = torch.rand(*shape, generator=generator)
-    return prediction, target
+from .conftest import make_fields
 
 
 def blur(field: torch.Tensor, kernel_size: int) -> torch.Tensor:
@@ -29,17 +21,26 @@ def blur(field: torch.Tensor, kernel_size: int) -> torch.Tensor:
     return blurred.reshape(n, t, c, h, w)
 
 
+# Every behaviour that must hold with and without the FastNet upweighting.
+parametrize_weight = pytest.mark.parametrize(
+    "wavenumber_weight", [None, "fastnet"], ids=["unweighted", "fastnet"]
+)
+
+
 class TestAMSELoss:
-    def test_config_instantiation(self) -> None:
+    @parametrize_weight
+    def test_config_instantiation(self, wavenumber_weight: str | None) -> None:
         config = OmegaConf.create(
             {
                 "_target_": "icenet_mp.losses.amse_loss.AMSELoss",
                 "mode": "hybrid",
                 "spectral_weight": 0.1,
+                "wavenumber_weight": wavenumber_weight,
             }
         )
         loss_fn = hydra.utils.instantiate(config)
         assert isinstance(loss_fn, AMSELoss)
+        assert loss_fn.wavenumber_weight == (wavenumber_weight or "none")
 
     def test_unknown_mode_raises(self) -> None:
         with pytest.raises(ValueError, match="mode"):
@@ -47,11 +48,17 @@ class TestAMSELoss:
         with pytest.raises(ValueError, match="merge_bins_below"):
             AMSELoss(merge_bins_below=0)
 
+    @parametrize_weight
     @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
-    def test_identity_is_zero(self, mode: AMSEMode) -> None:
+    def test_identity_is_zero(
+        self, mode: AMSEMode, wavenumber_weight: str | None
+    ) -> None:
+        """A perfect match is zero (and the 0/0 in the gamma normaliser is not NaN)."""
         prediction, _ = make_fields()
-        loss_fn = AMSELoss(mode=mode)
-        assert loss_fn(prediction, prediction).item() == pytest.approx(0.0, abs=1e-6)
+        loss_fn = AMSELoss(mode=mode, wavenumber_weight=wavenumber_weight)
+        loss = loss_fn(prediction, prediction)
+        assert torch.isfinite(loss)
+        assert loss.item() == pytest.approx(0.0, abs=1e-6)
 
     def test_scalar_output(self) -> None:
         prediction, target = make_fields()
@@ -59,9 +66,17 @@ class TestAMSELoss:
         assert loss.shape == ()
         assert torch.isfinite(loss)
 
-    def test_parseval_identity(self) -> None:
-        """Binned spectra must reconstruct the spatial MSE exactly (Parseval)."""
-        prediction, target = make_fields(seed=1)
+    @pytest.mark.parametrize(
+        ("seed", "shape"),
+        [(1, (2, 2, 1, 32, 32)), (2, (2, 1, 1, 31, 33))],
+        ids=["even-grid", "odd-grid"],
+    )
+    def test_parseval_identity(self, seed: int, shape: tuple[int, ...]) -> None:
+        """Binned spectra must reconstruct the spatial MSE exactly (Parseval).
+
+        The odd grid checks the rfft factor-2 bookkeeping for odd widths.
+        """
+        prediction, target = make_fields(seed=seed, shape=shape)
         loss_fn = AMSELoss()
         power_p, power_t, cross, dc = loss_fn.binned_spectra(prediction, target)
         spectral_mse = (power_p + power_t - 2.0 * cross).sum(dim=1) + dc
@@ -70,21 +85,13 @@ class TestAMSELoss:
         )
         assert torch.allclose(spectral_mse, spatial_mse, rtol=1e-4, atol=1e-7)
 
-    def test_parseval_identity_odd_grid(self) -> None:
-        """The rfft factor-2 bookkeeping must also hold for odd widths."""
-        prediction, target = make_fields(seed=2, shape=(2, 1, 1, 31, 33))
-        loss_fn = AMSELoss()
-        power_p, power_t, cross, dc = loss_fn.binned_spectra(prediction, target)
-        spectral_mse = (power_p + power_t - 2.0 * cross).sum(dim=1) + dc
-        spatial_mse = (
-            ((prediction - target) ** 2).reshape(spectral_mse.shape[0], -1).mean(dim=1)
-        )
-        assert torch.allclose(spectral_mse, spatial_mse, rtol=1e-4, atol=1e-7)
-
-    def test_blur_is_penalized_and_monotone(self) -> None:
+    @parametrize_weight
+    def test_blur_is_penalized_and_monotone(
+        self, wavenumber_weight: str | None
+    ) -> None:
         """The spectral excess is positive for blurred predictions and grows with blur width."""
         _, target = make_fields(seed=3)
-        loss_fn = AMSELoss()
+        loss_fn = AMSELoss(wavenumber_weight=wavenumber_weight)
         excess_light = loss_fn.spectral_excess(blur(target, 3), target).mean()
         excess_heavy = loss_fn.spectral_excess(blur(target, 7), target).mean()
         assert excess_light.item() > 0.0
@@ -98,43 +105,58 @@ class TestAMSELoss:
         (gradient,) = torch.autograd.grad(excess, scale)
         assert gradient.item() < 0.0
 
+    @parametrize_weight
     @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
-    def test_zero_field_gradients_finite(self, mode: AMSEMode) -> None:
-        _, target = make_fields(seed=5)
-        prediction = torch.zeros_like(target, requires_grad=True)
-        loss = AMSELoss(mode=mode)(prediction, target)
-        loss.backward()
-        assert prediction.grad is not None
-        assert torch.isfinite(prediction.grad).all()
-
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
-    def test_masked_fields(self, mode: AMSEMode) -> None:
-        """Fields zeroed outside an active region give finite loss and gradients."""
-        prediction, target = make_fields(seed=6)
-        mask = torch.zeros(32, 32)
-        mask[8:24, 8:24] = 1.0
-        prediction = (prediction * mask).detach().requires_grad_()
-        target = target * mask
-        loss = AMSELoss(mode=mode)(prediction, target)
+    @pytest.mark.parametrize(
+        "case",
+        ["random", "zero", "masked", "identical"],
+        ids=["random", "zero", "masked", "identical"],
+    )
+    def test_loss_and_gradients_stay_finite(
+        self, mode: AMSEMode, case: str, wavenumber_weight: str | None
+    ) -> None:
+        """Degenerate fields (all-zero, masked to an active region, identical) stay finite."""
+        prediction, target = make_fields(seed=16)
+        if case == "zero":
+            prediction = torch.zeros_like(target)
+        elif case == "identical":
+            prediction = target.clone()
+        elif case == "masked":
+            mask = torch.zeros(32, 32)
+            mask[8:24, 8:24] = 1.0
+            prediction, target = prediction * mask, target * mask
+        prediction = prediction.detach().requires_grad_()
+        loss = AMSELoss(mode=mode, wavenumber_weight=wavenumber_weight)(
+            prediction, target
+        )
         loss.backward()
         assert torch.isfinite(loss)
         assert prediction.grad is not None
         assert torch.isfinite(prediction.grad).all()
 
-    def test_spectral_part_is_symmetric(self) -> None:
+    @parametrize_weight
+    def test_spectral_part_is_symmetric(self, wavenumber_weight: str | None) -> None:
         prediction, target = make_fields(seed=7)
-        loss_fn = AMSELoss(mode="pure")
+        loss_fn = AMSELoss(mode="pure", wavenumber_weight=wavenumber_weight)
         assert torch.allclose(loss_fn(prediction, target), loss_fn(target, prediction))
 
-    def test_hybrid_reduces_to_huber_at_zero_weight(self) -> None:
+    @parametrize_weight
+    def test_hybrid_reduces_to_huber_at_zero_weight(
+        self, wavenumber_weight: str | None
+    ) -> None:
         prediction, target = make_fields(seed=8)
-        hybrid = AMSELoss(mode="hybrid", spectral_weight=0.0)(prediction, target)
+        hybrid = AMSELoss(
+            mode="hybrid", spectral_weight=0.0, wavenumber_weight=wavenumber_weight
+        )(prediction, target)
         huber = functional.huber_loss(prediction, target, delta=0.5)
         assert torch.allclose(hybrid, huber)
 
-    def test_low_precision_input(self) -> None:
+    @parametrize_weight
+    def test_low_precision_input(self, wavenumber_weight: str | None) -> None:
         prediction, target = make_fields(seed=9)
-        loss = AMSELoss()(prediction.to(torch.bfloat16), target.to(torch.bfloat16))
+        loss = AMSELoss(wavenumber_weight=wavenumber_weight)(
+            prediction.to(torch.bfloat16), target.to(torch.bfloat16)
+        )
         assert loss.dtype == torch.float32
         assert torch.isfinite(loss)
 
@@ -149,9 +171,9 @@ def penalty_by_bin(
     excess = (torch.maximum(power_p, power_t) - geo_mean).clamp_min(0.0)
     contributions = 2.0 * excess * (1.0 - coherence)
     height, width = prediction.shape[-2], prediction.shape[-1]
-    weighted = loss_fn._weight_bins(contributions, height, width)
+    weighted = loss_fn._weight_bins(contributions.unsqueeze(0), height, width)
     _, _, present, _ = loss_fn._binning(height, width, prediction.device)
-    return present.float(), weighted.sum(dim=0)
+    return present.float(), weighted.sum(dim=(0, 1))
 
 
 def share_above(
@@ -313,48 +335,6 @@ class TestAMSELossWavenumberWeight:
         ratio = float(grads[1][1].norm() / grads[0][1].norm())
         assert 0.1 < ratio < 10.0
 
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
-    def test_gamma_identity_is_zero(self, mode: AMSEMode) -> None:
-        """The 0/0 in the normaliser must not produce NaN for a perfect match."""
-        prediction, _ = make_fields(seed=15)
-        loss_fn = AMSELoss(mode=mode, wavenumber_weight="fastnet")
-        loss = loss_fn(prediction, prediction)
-        assert torch.isfinite(loss)
-        assert loss.item() == pytest.approx(0.0, abs=1e-6)
-
-    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
-    @pytest.mark.parametrize(
-        "case",
-        ["random", "zero", "masked", "identical"],
-        ids=["random", "zero", "masked", "identical"],
-    )
-    def test_gamma_loss_and_gradients_stay_finite(
-        self, mode: AMSEMode, case: str
-    ) -> None:
-        prediction, target = make_fields(seed=16)
-        if case == "zero":
-            prediction = torch.zeros_like(target)
-        elif case == "identical":
-            prediction = target.clone()
-        elif case == "masked":
-            mask = torch.zeros(32, 32)
-            mask[8:24, 8:24] = 1.0
-            prediction, target = prediction * mask, target * mask
-        prediction = prediction.detach().requires_grad_()
-        loss = AMSELoss(mode=mode, wavenumber_weight="fastnet")(prediction, target)
-        loss.backward()
-        assert torch.isfinite(loss)
-        assert prediction.grad is not None
-        assert torch.isfinite(prediction.grad).all()
-
-    def test_gamma_hybrid_still_reduces_to_huber_at_zero_weight(self) -> None:
-        prediction, target = make_fields(seed=17)
-        hybrid = AMSELoss(
-            mode="hybrid", spectral_weight=0.0, wavenumber_weight="fastnet"
-        )(prediction, target)
-        huber = functional.huber_loss(prediction, target, delta=0.5)
-        assert torch.allclose(hybrid, huber)
-
     def test_gamma_leaves_the_dc_term_unweighted(self) -> None:
         """A pure mean offset has no annular content: pure AMSE == the DC term."""
         _, target = make_fields(seed=18)
@@ -363,33 +343,37 @@ class TestAMSELossWavenumberWeight:
             loss = AMSELoss(mode="pure", wavenumber_weight=weight)(prediction, target)
             assert loss.item() == pytest.approx(0.25**2, rel=1e-5)
 
-    def test_gamma_is_symmetric_and_low_precision_safe(self) -> None:
-        prediction, target = make_fields(seed=19)
-        loss_fn = AMSELoss(mode="pure", wavenumber_weight="fastnet")
-        assert torch.allclose(loss_fn(prediction, target), loss_fn(target, prediction))
-        low = AMSELoss(wavenumber_weight="fastnet")(
-            prediction.to(torch.bfloat16), target.to(torch.bfloat16)
-        )
-        assert low.dtype == torch.float32
-        assert torch.isfinite(low)
 
-    def test_gamma_blur_penalty_is_still_monotone_in_blur_width(self) -> None:
-        _, target = make_fields(seed=20)
+class TestAMSELossPerLeadTime:
+    @parametrize_weight
+    @pytest.mark.parametrize("mode", ["hybrid", "pure"], ids=["hybrid", "pure"])
+    def test_matches_per_step_loop(
+        self, mode: AMSEMode, wavenumber_weight: str | None
+    ) -> None:
+        """One vectorised pass equals calling the loss once per lead time."""
+        prediction, target = make_fields(shape=(2, 5, 2, 32, 32))
+        loss_fn = AMSELoss(mode=mode, wavenumber_weight=wavenumber_weight)
+        expected = torch.stack(
+            [loss_fn(prediction[:, t], target[:, t]) for t in range(5)]
+        )
+        per_step = loss_fn.per_lead_time_loss(prediction, target)
+        assert per_step.shape == (5,)
+        torch.testing.assert_close(per_step, expected)
+
+    def test_gradients_match_per_step_loop(self) -> None:
+        prediction, target = make_fields(shape=(2, 3, 1, 32, 32))
         loss_fn = AMSELoss(wavenumber_weight="fastnet")
-        light = loss_fn.spectral_excess(blur(target, 3), target).mean()
-        heavy = loss_fn.spectral_excess(blur(target, 7), target).mean()
-        assert light.item() > 0.0
-        assert heavy.item() > light.item()
+        looped = prediction.clone().requires_grad_()
+        torch.stack(
+            [loss_fn(looped[:, t], target[:, t]) for t in range(3)]
+        ).sum().backward()
+        vectorised = prediction.clone().requires_grad_()
+        loss_fn.per_lead_time_loss(vectorised, target).sum().backward()
+        assert looped.grad is not None
+        assert vectorised.grad is not None
+        torch.testing.assert_close(vectorised.grad, looped.grad)
 
-    def test_config_instantiation_with_weight(self) -> None:
-        config = OmegaConf.create(
-            {
-                "_target_": "icenet_mp.losses.amse_loss.AMSELoss",
-                "mode": "hybrid",
-                "spectral_weight": 0.1,
-                "wavenumber_weight": "fastnet",
-            }
-        )
-        loss_fn = hydra.utils.instantiate(config)
-        assert isinstance(loss_fn, AMSELoss)
-        assert loss_fn.wavenumber_weight == "fastnet"
+    def test_rejects_inputs_without_lead_time(self) -> None:
+        prediction, target = make_fields(shape=(2, 1, 32, 32))
+        with pytest.raises(ValueError, match="NTCHW"):
+            AMSELoss().per_lead_time_loss(prediction, target)

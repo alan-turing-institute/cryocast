@@ -64,6 +64,13 @@ class TestHydraConfigLoading:
         cfg = compose_config(overrides=["loss=mse"])
         assert cfg.loss._target_ == "torch.nn.MSELoss"
 
+    def test_lead_time_exponent_override_composes(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(overrides=["loss=huber", "loss.lead_time_exponent=2"])
+        assert cfg.loss._target_ == "torch.nn.HuberLoss"
+        assert cfg.loss.lead_time_exponent == pytest.approx(2.0)
+
     def test_climatology_baseline_composes(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:

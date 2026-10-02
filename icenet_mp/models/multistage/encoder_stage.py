@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import hydra
 from omegaconf import DictConfig
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models import BaseModel, EncodeProcessDecode
 from icenet_mp.types import DataSpace, TensorNTCHW
 
@@ -27,6 +28,15 @@ class EncoderStage(BaseModel):
     ) -> None:
         """Initialise an EncoderStage with a trainable encoder and a disposable decoder."""
         super().__init__(**kwargs)
+
+        # This stage trains on a single time step so lead-time weighting is a no-op
+        if isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            logger.warning(
+                "lead_time_exponent=%s has no effect on %s, which trains on a single "
+                "time step. It is still applied in the processor stage.",
+                self.loss_fn.exponent,
+                type(self).__name__,
+            )
 
         # Store channel names
         self.channel_names = channel_names
