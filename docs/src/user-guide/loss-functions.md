@@ -67,8 +67,8 @@ optimised one step at a time, so lead-time weighting has no effect.
 
 !!! note
     `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
-    most losses (e.g. `mse`, `mae`, `huber`, `smooth_l1` and `amse`). For losses that perform non-linear operations on the whole tensor (e.g. `rmse`), the mean of the per-day values will be close but not identical to the unweighted loss.
+    most losses. For losses that perform non-linear operations on the whole tensor (e.g. `rmse`, or `amse` with `wavenumber_weight=fastnet`), the mean of the per-day values will be close but not identical to the unweighted loss.
 
 !!! warning
     The wrapped loss must return a scalar or the weighting will cause a confusing error. This is
-    caught at build type.
+    caught at build time.
