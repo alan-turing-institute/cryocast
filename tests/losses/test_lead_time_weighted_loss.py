@@ -72,3 +72,11 @@ class TestLeadTimeWeightedLoss:
         loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=1.0)
         with pytest.raises(ValueError, match="NTCHW"):
             loss_fn(prediction, target)
+
+    @pytest.mark.parametrize("target_steps", [3, 5], ids=["fewer", "more"])
+    def test_rejects_mismatched_shapes(self, target_steps: int) -> None:
+        prediction, _ = make_fields(shape=(2, 4, 1, 16, 16))
+        _, target = make_fields(shape=(2, target_steps, 1, 16, 16))
+        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=1.0)
+        with pytest.raises(ValueError, match="same shape"):
+            loss_fn(prediction, target)

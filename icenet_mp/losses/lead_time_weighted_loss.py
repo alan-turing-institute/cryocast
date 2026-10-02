@@ -49,6 +49,12 @@ class LeadTimeWeightedLoss(nn.Module):
                 f"but got a tensor of shape {tuple(prediction.shape)}."
             )
             raise ValueError(msg)
+        if prediction.shape != target.shape:
+            msg = (
+                "LeadTimeWeightedLoss expects prediction and target to have the same "
+                f"shape, but got {tuple(prediction.shape)} and {tuple(target.shape)}."
+            )
+            raise ValueError(msg)
         # Derive the number of steps from the input for increased flexibility
         n_steps = prediction.shape[1]
         per_step = torch.stack(
