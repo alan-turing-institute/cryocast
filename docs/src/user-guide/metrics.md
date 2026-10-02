@@ -8,20 +8,49 @@ Here we use six synthetic scenarios to show what each metric actually captures a
 ## Selecting which metrics run
 
 Which metrics are computed during training, validation, and testing is controlled by the `reporting.metrics` Hydra config group.
-
-```bash
-uv run imp train --config-name <config> reporting.metrics="[accuracy,mae,rmse]"
-```
-
-or in a config file:
+Each entry gives the metric's `name`, which is its key in logs and W&B, a Hydra `_target_` and any other constructor arguments:
 
 ```yaml
 reporting:
   metrics:
-    - accuracy
-    - sieerror
-    - fss_neighbourhood_size_5
+    - name: accuracy
+      _target_: icenet_mp.metrics.IceNetAccuracyPerForecastDay
+    - name: sieerror
+      _target_: icenet_mp.metrics.SeaIceExtentErrorPerForecastDay
+    - name: fss_neighbourhood_size_5
+      _target_: icenet_mp.metrics.FractionalSkillScorePerForecastDay
+      neighbourhood_size: 5
 ```
+
+See `icenet_mp/config/reporting/metrics/default.yaml` for the full default list.
+The same form works as a command-line override:
+
+```bash
+uv run imp train --config-name <config> \
+  'reporting.metrics=[{name: mae, _target_: icenet_mp.metrics.MAEPerForecastDay}]'
+```
+
+## Adding your own metrics
+
+Any `torchmetrics.Metric` can be added as a metric, by adding an entry to `reporting.metrics` in the same form as the built-in metrics:
+
+```yaml
+reporting:
+  metrics:
+    - name: mae
+      _target_: icenet_mp.metrics.MAEPerForecastDay
+    - name: my_metric
+      _target_: my_package.metrics.MyMetric
+      threshold: 0.3
+```
+
+The `name` is used as the metric's key in logs and W&B, and must be unique.
+Hydra imports the module itself, so this works through the `imp` CLI and when evaluating a saved checkpoint, without any extra set-up.
+
+Two mixins from `icenet_mp.metrics` change how the model treats a metric:
+
+- `LandMaskMixin`: the model must pass its land mask (or `None`) to the metric as a `land_mask` keyword argument at construction time.
+- `SingleChannelMetricMixin`: the metric only makes sense for a single output channel (e.g. sea ice concentration), so it is skipped automatically for models that predict several channels.
 
 ## The scenarios
 
