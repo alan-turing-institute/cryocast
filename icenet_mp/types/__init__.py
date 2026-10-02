@@ -17,7 +17,6 @@ from .complex_datatypes import (
     Timespan,
 )
 from .constants import (
-    NDIM_CHW,
     NDIM_HW,
     NDIM_NHW,
     NDIM_NTCHW,
@@ -50,7 +49,6 @@ from .simple_datatypes import (
 )
 
 __all__ = [
-    "NDIM_CHW",
     "NDIM_HW",
     "NDIM_NHW",
     "NDIM_NTCHW",
