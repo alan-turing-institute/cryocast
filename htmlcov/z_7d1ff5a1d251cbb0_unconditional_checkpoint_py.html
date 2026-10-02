@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_762428a5d36f1be1___init___py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-02 11:35 +0000
+            created at 2026-10-02 15:34 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -110,7 +110,7 @@
     <p class="run"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t">    <span class="key">def</span> <span class="nam">dirpath</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">value</span><span class="op">:</span> <span class="nam">str</span> <span class="op">|</span> <span class="nam">Path</span> <span class="op">|</span> <span class="key">None</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Set the directory path where checkpoints are saved.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t">        <span class="key">if</span> <span class="nam">value</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">impl</span><span class="op">.</span><span class="nam">dirpath</span> <span class="op">=</span> <span class="nam">Path</span><span class="op">(</span><span class="nam">value</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">impl</span><span class="op">.</span><span class="nam">dirpath</span> <span class="op">=</span> <span class="nam">Path</span><span class="op">(</span><span class="nam">value</span><span class="op">)</span><span class="op">.</span><span class="nam">absolute</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t">    <span class="key">def</span> <span class="nam">on_train_end</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">trainer</span><span class="op">:</span> <span class="nam">Trainer</span><span class="op">,</span> <span class="nam">pl_module</span><span class="op">:</span> <span class="nam">LightningModule</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>  <span class="com"># noqa: ARG002</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Called when training ends.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -141,7 +141,7 @@
             <a class="nav" href="z_762428a5d36f1be1___init___py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-02 11:35 +0000
+            created at 2026-10-02 15:34 +0000
         </p>
     </div>
 </footer>
