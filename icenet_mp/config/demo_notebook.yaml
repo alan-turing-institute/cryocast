@@ -4,7 +4,7 @@ defaults:
 
 train:
   trainer:
-    max_epochs: 10
+    max_epochs: 2
 
 reporting:
   loggers:
