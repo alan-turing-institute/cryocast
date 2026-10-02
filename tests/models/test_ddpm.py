@@ -79,7 +79,7 @@ class TestDDPM:
         assert result.loss.ndim == 0
 
     @pytest.mark.parametrize("use_autoregressive", [True, False])
-    def test_training_supports_time_weighted_loss(
+    def test_training_supports_lead_time_weighted_loss(
         self,
         monkeypatch: pytest.MonkeyPatch,
         *,

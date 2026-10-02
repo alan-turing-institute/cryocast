@@ -1,4 +1,5 @@
 from .amse_loss import AMSELoss
+from .build_loss import build_loss
 from .lead_time_weighted_loss import LeadTimeWeightedLoss
 from .weighted_bce_loss import WeightedBCEWithLogitsLoss
 from .weighted_l1_loss import WeightedL1Loss
@@ -10,4 +11,5 @@ __all__ = [
     "WeightedBCEWithLogitsLoss",
     "WeightedL1Loss",
     "WeightedMSELoss",
+    "build_loss",
 ]

@@ -19,11 +19,11 @@ frame and carried forward unchanged.
 
 from typing import Any
 
-import hydra
 import torch
 from omegaconf import DictConfig
 from torch import nn
 
+from icenet_mp.losses import build_loss
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
 from icenet_mp.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTCHW
 
@@ -84,7 +84,7 @@ class DDPMProcessor(BaseProcessor):
 
         # Instantiate the configured loss function.
         self.loss_fn: nn.Module = (
-            loss if isinstance(loss, nn.Module) else hydra.utils.instantiate(loss)
+            loss if isinstance(loss, nn.Module) else build_loss(loss)
         )
 
         # c_combined: total channels across all encoder latents concatenated.

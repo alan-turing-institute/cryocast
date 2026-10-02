@@ -64,18 +64,6 @@ class TestHydraConfigLoading:
         cfg = compose_config(overrides=["loss=mse"])
         assert cfg.loss._target_ == "torch.nn.MSELoss"
 
-    def test_lead_time_weighted_loss_group_composes(
-        self, compose_config: Callable[..., DictConfig]
-    ) -> None:
-        """Lead-time weighted loss composes with its nested base loss."""
-        cfg = compose_config(overrides=["loss=lead_time_weighted"])
-        assert (
-            cfg.loss._target_
-            == "icenet_mp.losses.lead_time_weighted_loss.LeadTimeWeightedLoss"
-        )
-        assert cfg.loss.wrapped_loss._target_ == "torch.nn.HuberLoss"
-        assert cfg.loss.lead_time_exponent == pytest.approx(2.0)
-
     def test_lead_time_exponent_override_composes(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
