@@ -15,8 +15,9 @@
 | icenet\_mp/cli/\_\_init\_\_.py                                       |        2 |        0 |    100% |           |
 | icenet\_mp/cli/datasets.py                                           |       53 |        1 |     98% |       129 |
 | icenet\_mp/cli/evaluate.py                                           |       26 |        3 |     88% | 37-42, 93 |
+| icenet\_mp/cli/feature\_importance.py                                |       15 |        1 |     93% |        28 |
 | icenet\_mp/cli/hydra.py                                              |       29 |        0 |    100% |           |
-| icenet\_mp/cli/main.py                                               |       26 |        1 |     96% |        59 |
+| icenet\_mp/cli/main.py                                               |       28 |        1 |     96% |        61 |
 | icenet\_mp/cli/sweep.py                                              |       90 |        1 |     99% |       216 |
 | icenet\_mp/cli/train.py                                              |       16 |        1 |     94% |        55 |
 | icenet\_mp/compatibility/\_\_init\_\_.py                             |       17 |        0 |    100% |           |
@@ -33,6 +34,7 @@
 | icenet\_mp/data/common\_data\_module.py                              |      132 |        9 |     93% |161-162, 173, 178, 221, 257-260 |
 | icenet\_mp/data/single\_dataset.py                                   |      145 |        4 |     97% |206, 211, 305-310 |
 | icenet\_mp/exceptions.py                                             |        3 |        0 |    100% |           |
+| icenet\_mp/feature\_importance.py                                    |       26 |        0 |    100% |           |
 | icenet\_mp/geotools/\_\_init\_\_.py                                  |       10 |        0 |    100% |           |
 | icenet\_mp/geotools/geographic\_field.py                             |       37 |        0 |    100% |           |
 | icenet\_mp/geotools/geographic\_grid.py                              |       76 |        0 |    100% |           |
@@ -137,7 +139,7 @@
 | icenet\_mp/models/persistence.py                                     |       17 |        0 |    100% |           |
 | icenet\_mp/models/processors/\_\_init\_\_.py                         |        7 |        0 |    100% |           |
 | icenet\_mp/models/processors/base\_processor.py                      |       30 |        2 |     93% |     39-43 |
-| icenet\_mp/models/processors/ddpm.py                                 |      101 |        0 |    100% |           |
+| icenet\_mp/models/processors/diffusion.py                            |      140 |        0 |    100% |           |
 | icenet\_mp/models/processors/gsta.py                                 |       22 |       12 |     45% |65-73, 99-110 |
 | icenet\_mp/models/processors/null.py                                 |       10 |        0 |    100% |           |
 | icenet\_mp/models/processors/unet.py                                 |       53 |        0 |    100% |           |
@@ -166,7 +168,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       88 |        2 |     98% |     64-65 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6034** |  **398** | **93%** |           |
+| **TOTAL**                                                            | **6116** |  **399** | **93%** |           |
 
 
 ## Setup coverage badge
