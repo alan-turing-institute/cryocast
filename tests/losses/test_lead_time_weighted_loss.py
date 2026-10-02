@@ -6,15 +6,10 @@ import torch
 from icenet_mp.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
 from icenet_mp.types import SupportsPerLeadTimeLoss
 
+from .conftest import make_fields
 
-def make_fields(
-    seed: int = 0, shape: tuple[int, ...] = (2, 4, 1, 16, 16)
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return a seeded (prediction, target) pair of random NTCHW fields."""
-    generator = torch.Generator().manual_seed(seed)
-    prediction = torch.rand(*shape, generator=generator)
-    target = torch.rand(*shape, generator=generator)
-    return prediction, target
+# Four lead times, matching the hand-computed weights in the tests below
+SHAPE = (2, 4, 1, 16, 16)
 
 
 class TestLeadTimeWeightedLoss:
@@ -109,15 +104,6 @@ class TestLeadTimeWeightedLoss:
         with pytest.raises(ValueError, match="mean-reduced"):
             LeadTimeWeightedLoss(torch.nn.MSELoss(reduction=reduction))
 
-    def test_early_errors_cost_more_with_negative_exponent(self) -> None:
-        _, target = make_fields()
-        early_error = target.clone()
-        early_error[:, 0] += 0.5
-        late_error = target.clone()
-        late_error[:, -1] += 0.5
-        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=-1.0)
-        assert loss_fn(early_error, target) > loss_fn(late_error, target)
-
     @pytest.mark.parametrize(
         ("dtype", "rel"),
         [(torch.bfloat16, 1e-2), (torch.float16, 1e-3), (torch.float64, 1e-6)],
@@ -129,7 +115,7 @@ class TestLeadTimeWeightedLoss:
     def test_supports_other_dtypes(
         self, dtype: torch.dtype, rel: float, base: torch.nn.Module
     ) -> None:
-        prediction, target = make_fields()
+        prediction, target = make_fields(shape=SHAPE)
         loss_fn = LeadTimeWeightedLoss(base, exponent=1.0)
         reference = loss_fn(prediction, target)
         prediction = prediction.to(dtype).requires_grad_()
@@ -146,37 +132,69 @@ class TestLeadTimeWeightedLoss:
         [
             torch.nn.MSELoss(),
             torch.nn.L1Loss(),
+            torch.nn.HuberLoss(delta=0.5),
+            torch.nn.SmoothL1Loss(beta=0.5),
             AMSELoss(mode="hybrid"),
             AMSELoss(mode="pure"),
             AMSELoss(wavenumber_weight="fastnet"),
         ],
-        ids=["mse", "mae", "amse-hybrid", "amse-pure", "amse-fastnet"],
+        ids=[
+            "mse",
+            "mae",
+            "huber",
+            "smooth_l1",
+            "amse-hybrid",
+            "amse-pure",
+            "amse-fastnet",
+        ],
     )
     def test_zero_exponent_matches_base(self, base: torch.nn.Module) -> None:
-        prediction, target = make_fields()
+        prediction, target = make_fields(shape=SHAPE)
         loss = LeadTimeWeightedLoss(base, exponent=0.0)(prediction, target)
         assert loss.item() == pytest.approx(base(prediction, target).item())
 
+    def test_zero_exponent_approximates_rmse(self) -> None:
+        # The mean of per-step RMSEs is at most the RMSE over all steps (Jensen),
+        # with equality only when every step has the same MSE
+        prediction, target = make_fields(shape=SHAPE)
+        base = RMSELoss()
+        loss = LeadTimeWeightedLoss(base, exponent=0.0)(prediction, target).item()
+        reference = base(prediction, target).item()
+        assert loss <= reference
+        assert loss == pytest.approx(reference, rel=1e-3)
+
     def test_matches_manual_weighted_sum(self) -> None:
-        prediction, target = make_fields()
+        prediction, target = make_fields(shape=SHAPE)
         base = torch.nn.MSELoss()
         per_step = torch.stack([base(prediction[:, t], target[:, t]) for t in range(4)])
         expected = (torch.tensor([0.4, 0.8, 1.2, 1.6]) * per_step).mean()
         loss = LeadTimeWeightedLoss(base, exponent=1.0)(prediction, target)
         assert loss.item() == pytest.approx(expected.item())
 
-    def test_late_errors_cost_more(self) -> None:
-        _, target = make_fields()
+    @pytest.mark.parametrize(
+        ("exponent", "late_costs_more"),
+        [(1.0, True), (-1.0, False)],
+        ids=["positive", "negative"],
+    )
+    def test_sign_of_exponent_sets_which_errors_cost_more(
+        self, *, exponent: float, late_costs_more: bool
+    ) -> None:
+        _, target = make_fields(shape=SHAPE)
         early_error = target.clone()
         early_error[:, 0] += 0.5
         late_error = target.clone()
         late_error[:, -1] += 0.5
-        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=1.0)
-        assert loss_fn(late_error, target) > loss_fn(early_error, target)
+        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=exponent)
+        late_loss, early_loss = (
+            loss_fn(late_error, target),
+            loss_fn(early_error, target),
+        )
+        assert bool(late_loss > early_loss) is late_costs_more
+        assert bool(early_loss > late_loss) is not late_costs_more
 
     @pytest.mark.parametrize("base", [RMSELoss(), AMSELoss()], ids=["rmse", "amse"])
     def test_wraps_reducing_losses(self, base: torch.nn.Module) -> None:
-        prediction, target = make_fields()
+        prediction, target = make_fields(shape=SHAPE)
         prediction.requires_grad_()
         loss = LeadTimeWeightedLoss(base, exponent=1.0)(prediction, target)
         assert loss.shape == ()
@@ -185,7 +203,7 @@ class TestLeadTimeWeightedLoss:
         assert prediction.grad is not None
 
     def test_uses_per_lead_time_loss_when_available(self) -> None:
-        prediction, target = make_fields()
+        prediction, target = make_fields(shape=SHAPE)
         base = AMSELoss()
         assert isinstance(base, SupportsPerLeadTimeLoss)
         assert not isinstance(torch.nn.MSELoss(), SupportsPerLeadTimeLoss)
@@ -202,7 +220,7 @@ class TestLeadTimeWeightedLoss:
 
     @pytest.mark.parametrize("target_steps", [3, 5], ids=["fewer", "more"])
     def test_rejects_mismatched_shapes(self, target_steps: int) -> None:
-        prediction, _ = make_fields(shape=(2, 4, 1, 16, 16))
+        prediction, _ = make_fields(shape=SHAPE)
         _, target = make_fields(shape=(2, target_steps, 1, 16, 16))
         loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=1.0)
         with pytest.raises(ValueError, match="same shape"):

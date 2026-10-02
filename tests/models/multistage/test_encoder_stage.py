@@ -141,6 +141,11 @@ class TestEncoderStage:
         assert [s.to_dict() for s in encoder_stage.input_spaces] == [cfg_input_space]
         assert encoder_stage.output_space.to_dict() == cfg_input_space
 
+    # Parametrizing `cfg_loss` overrides the shared fixture of that name, which the
+    # `encoder_stage` fixture consumes even though this test does not request it. The
+    # warning is logged while that fixture builds the stage, so it is read from the
+    # "setup" phase records: if the stage is ever built in the test body instead,
+    # switch to `caplog.records`.
     @pytest.mark.usefixtures("encoder_stage")
     @pytest.mark.parametrize(
         ("cfg_loss", "expect_warning"),

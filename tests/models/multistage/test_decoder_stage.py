@@ -170,6 +170,11 @@ class TestDecoderStage:
         }
         assert decoder_stage.name == "target_decoder"
 
+    # Parametrizing `cfg_loss` overrides the shared fixture of that name, which the
+    # `decoder_stage` fixture consumes even though this test does not request it. The
+    # warning is logged while that fixture builds the stage, so it is read from the
+    # "setup" phase records: if the stage is ever built in the test body instead,
+    # switch to `caplog.records`.
     @pytest.mark.usefixtures("decoder_stage")
     @pytest.mark.parametrize(
         ("cfg_loss", "expect_warning"),

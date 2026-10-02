@@ -9,15 +9,7 @@ from torch.nn import functional
 
 from icenet_mp.losses.amse_loss import AMSELoss, AMSEMode
 
-
-def make_fields(
-    seed: int = 0, shape: tuple[int, ...] = (2, 2, 1, 32, 32)
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return a seeded (prediction, target) pair of random fields."""
-    generator = torch.Generator().manual_seed(seed)
-    prediction = torch.rand(*shape, generator=generator)
-    target = torch.rand(*shape, generator=generator)
-    return prediction, target
+from .conftest import make_fields
 
 
 def blur(field: torch.Tensor, kernel_size: int) -> torch.Tensor:
