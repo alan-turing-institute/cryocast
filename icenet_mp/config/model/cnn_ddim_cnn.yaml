@@ -31,7 +31,7 @@ encoders:
     scale_factor: 3
 
 processor:
-  _target_: icenet_mp.models.processors.DDIMProcessor
+  _target_: icenet_mp.models.processors.DiffusionProcessor
   timesteps: 1000
   ddim_steps: 50
   eta: 0.0
