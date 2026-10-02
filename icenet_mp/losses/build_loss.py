@@ -21,9 +21,13 @@ def build_loss(cfg: Mapping[str, Any]) -> nn.Module:
     Returns:
         An instantiated loss function, which is a torch.nn.Module.
 
+    Raises:
+        TypeError: If the `_target_` does not resolve to a torch.nn.Module class
+            or if the `lead_time_exponent` is combined with a LeadTimeWeightedLoss
+            `_target_`, which would wrap the loss twice.
+
     """
     # Instantiate the loss function without the lead_time_exponent
-    lead_time_exponent = cfg.get("lead_time_exponent")
     loss_fn = hydra.utils.instantiate(
         {k: v for k, v in cfg.items() if k != "lead_time_exponent"}
     )
@@ -34,7 +38,7 @@ def build_loss(cfg: Mapping[str, Any]) -> nn.Module:
         )
         raise TypeError(msg)
     # Optionally wrap the loss function in a LeadTimeWeightedLoss
-    if lead_time_exponent is None:
+    if (lead_time_exponent := cfg.get("lead_time_exponent")) is None:
         return loss_fn
     if isinstance(loss_fn, LeadTimeWeightedLoss):
         msg = (

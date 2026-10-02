@@ -48,16 +48,9 @@ class LeadTimeWeightedLoss(nn.Module):
             )
             raise ValueError(msg)
         super().__init__()
-        self.wrapped_loss = wrapped_loss
         self.exponent = exponent
-
-    def weights(self, n_steps: int, device: torch.device) -> torch.Tensor:
-        """Return the per-lead-time weights for `n_steps` forecast steps."""
-        # Numerically stable equivalent to steps**exponent / sum(steps**exponent)
-        log_steps = torch.arange(
-            1, n_steps + 1, device=device, dtype=torch.float32
-        ).log()
-        return torch.softmax(self.exponent * log_steps, dim=0) * n_steps
+        self.weights_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
+        self.wrapped_loss = wrapped_loss
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Return the lead-time weighted scalar loss for NTCHW prediction/target."""
@@ -85,3 +78,18 @@ class LeadTimeWeightedLoss(nn.Module):
                 ]
             )
         return (self.weights(n_steps, per_step.device) * per_step).mean()
+
+    def weights(self, n_steps: int, device: torch.device) -> torch.Tensor:
+        """Return the per-lead-time weights for `n_steps` forecast steps."""
+        cache_key = (n_steps, device)
+        if cache_key not in self.weights_cache:
+            # Disable inference mode so weights can be used in validation and training
+            with torch.inference_mode(mode=False):
+                # Numerically stable equivalent to steps**exponent / sum(steps**exponent)
+                log_steps = torch.arange(
+                    1, n_steps + 1, device=device, dtype=torch.float32
+                ).log()
+                self.weights_cache[cache_key] = (
+                    torch.softmax(self.exponent * log_steps, dim=0) * n_steps
+                )
+        return self.weights_cache[cache_key]

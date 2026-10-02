@@ -81,6 +81,22 @@ class TestLeadTimeWeightedLoss:
         prediction, target = make_fields(shape=(2, n_steps, 1, 4, 4))
         assert torch.isfinite(loss_fn(prediction, target))
 
+    def test_weights_cached_per_n_steps(self) -> None:
+        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), 1.5)
+        cpu = torch.device("cpu")
+        assert loss_fn.weights(7, cpu) is loss_fn.weights(7, cpu)
+        assert loss_fn.weights(7, cpu) is not loss_fn.weights(8, cpu)
+
+    def test_weights_cached_in_inference_mode_support_backward(self) -> None:
+        # Mirrors Lightning's validation sanity check running before training
+        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), 2.5)
+        prediction, target = make_fields(shape=(2, 5, 1, 4, 4))
+        with torch.inference_mode():
+            loss_fn(prediction, target)
+        prediction.requires_grad_()
+        loss_fn(prediction, target).backward()
+        assert prediction.grad is not None
+
     @pytest.mark.parametrize(
         "exponent", [math.nan, math.inf, -math.inf], ids=["nan", "inf", "-inf"]
     )
