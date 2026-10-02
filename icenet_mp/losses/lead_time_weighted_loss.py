@@ -48,9 +48,13 @@ class LeadTimeWeightedLoss(nn.Module):
             )
             raise ValueError(msg)
         super().__init__()
-        self.exponent = exponent
-        self.weights_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
-        self.wrapped_loss = wrapped_loss
+        self._exponent = exponent
+        self._weights_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
+        self._wrapped_loss = wrapped_loss
+
+    @property
+    def exponent(self) -> float:
+        return self._exponent
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Return the lead-time weighted scalar loss for NTCHW prediction/target."""
@@ -68,12 +72,12 @@ class LeadTimeWeightedLoss(nn.Module):
             raise ValueError(msg)
         # Derive the number of steps from the input for increased flexibility
         n_steps = prediction.shape[1]
-        if isinstance(self.wrapped_loss, SupportsPerLeadTimeLoss):
-            per_step = self.wrapped_loss.per_lead_time_loss(prediction, target)
+        if isinstance(self._wrapped_loss, SupportsPerLeadTimeLoss):
+            per_step = self._wrapped_loss.per_lead_time_loss(prediction, target)
         else:
             per_step = torch.stack(
                 [
-                    self.wrapped_loss(prediction[:, t], target[:, t])
+                    self._wrapped_loss(prediction[:, t], target[:, t])
                     for t in range(n_steps)
                 ]
             )
@@ -82,14 +86,14 @@ class LeadTimeWeightedLoss(nn.Module):
     def weights(self, n_steps: int, device: torch.device) -> torch.Tensor:
         """Return the per-lead-time weights for `n_steps` forecast steps."""
         cache_key = (n_steps, device)
-        if cache_key not in self.weights_cache:
+        if cache_key not in self._weights_cache:
             # Disable inference mode so weights can be used in validation and training
             with torch.inference_mode(mode=False):
                 # Numerically stable equivalent to steps**exponent / sum(steps**exponent)
                 log_steps = torch.arange(
                     1, n_steps + 1, device=device, dtype=torch.float32
                 ).log()
-                self.weights_cache[cache_key] = (
+                self._weights_cache[cache_key] = (
                     torch.softmax(self.exponent * log_steps, dim=0) * n_steps
                 )
-        return self.weights_cache[cache_key]
+        return self._weights_cache[cache_key]

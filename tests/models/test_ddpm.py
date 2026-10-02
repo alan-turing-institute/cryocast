@@ -99,7 +99,7 @@ class TestDDPM:
             lambda noisy, _timesteps, _conditioning: torch.zeros_like(noisy),
         )
         # Record the per-step NCHW slices that the wrapped loss receives
-        wrapped_loss = model.loss_fn.wrapped_loss
+        wrapped_loss = model.loss_fn._wrapped_loss
         original_forward = wrapped_loss.forward
         calls: list[tuple[torch.Size, torch.Size]] = []
 

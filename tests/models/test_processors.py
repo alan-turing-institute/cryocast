@@ -474,10 +474,10 @@ class TestDDPMProcessor:
             ),
         )
         assert isinstance(processor.loss_fn, LeadTimeWeightedLoss)
-        assert isinstance(processor.loss_fn.wrapped_loss, torch.nn.MSELoss)
+        assert isinstance(processor.loss_fn._wrapped_loss, torch.nn.MSELoss)
         assert processor.loss_fn.exponent == pytest.approx(2.0)
         # Record the per-step NCHW slices that the wrapped loss receives
-        wrapped_loss = processor.loss_fn.wrapped_loss
+        wrapped_loss = processor.loss_fn._wrapped_loss
         original_forward = wrapped_loss.forward
         calls: list[tuple[torch.Size, torch.Size]] = []
 

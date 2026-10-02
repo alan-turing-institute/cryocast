@@ -45,13 +45,13 @@ class TestBuildLoss:
         )
         assert isinstance(loss_fn, LeadTimeWeightedLoss)
         assert loss_fn.exponent == pytest.approx(exponent)
-        assert isinstance(loss_fn.wrapped_loss, torch.nn.HuberLoss)
-        assert loss_fn.wrapped_loss.delta == pytest.approx(0.5)
+        assert isinstance(loss_fn._wrapped_loss, torch.nn.HuberLoss)
+        assert loss_fn._wrapped_loss.delta == pytest.approx(0.5)
 
     def test_accepts_plain_mapping(self) -> None:
         loss_fn = build_loss({"_target_": "torch.nn.MSELoss", "lead_time_exponent": 1})
         assert isinstance(loss_fn, LeadTimeWeightedLoss)
-        assert isinstance(loss_fn.wrapped_loss, torch.nn.MSELoss)
+        assert isinstance(loss_fn._wrapped_loss, torch.nn.MSELoss)
 
     def test_rejects_non_module_target(self) -> None:
         with pytest.raises(TypeError, match=r"'builtins\.dict' created a dict"):

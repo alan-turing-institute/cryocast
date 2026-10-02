@@ -809,8 +809,8 @@ class TestBaseModelLossConfig:
         )
         assert isinstance(model.loss_fn, LeadTimeWeightedLoss)
         assert model.loss_fn.exponent == pytest.approx(2.0)
-        assert isinstance(model.loss_fn.wrapped_loss, torch.nn.HuberLoss)
-        assert model.loss_fn.wrapped_loss.delta == pytest.approx(0.5)
+        assert isinstance(model.loss_fn._wrapped_loss, torch.nn.HuberLoss)
+        assert model.loss_fn._wrapped_loss.delta == pytest.approx(0.5)
         # The stored config retains the exponent so that checkpoints round-trip
         assert model.loss_cfg.lead_time_exponent == pytest.approx(2.0)
 
