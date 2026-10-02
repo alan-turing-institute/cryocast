@@ -41,8 +41,8 @@ class TestChannelAdapt:
 
     @pytest.mark.parametrize(
         ("in_channels", "out_channels"),
-        [(7, 3), (3, 7)],
-        ids=["shrink-7to3", "grow-3to7"],
+        [(7, 3), (3, 7), (5, 5)],
+        ids=["shrink-7to3", "grow-3to7", "equal-5to5"],
     )
     def test_non_exact_ratio_produces_correct_shape(
         self, in_channels: int, out_channels: int

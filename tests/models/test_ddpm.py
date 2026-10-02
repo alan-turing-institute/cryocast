@@ -98,9 +98,28 @@ class TestDDPM:
             "forward",
             lambda noisy, _timesteps, _conditioning: torch.zeros_like(noisy),
         )
+        # Record the per-step NCHW slices that the wrapped loss receives
+        wrapped_loss = model.loss_fn.wrapped_loss
+        original_forward = wrapped_loss.forward
+        calls: list[tuple[torch.Size, torch.Size]] = []
+
+        def recording_forward(
+            prediction: torch.Tensor, target: torch.Tensor
+        ) -> torch.Tensor:
+            calls.append((prediction.shape, target.shape))
+            return original_forward(prediction, target)
+
+        monkeypatch.setattr(wrapped_loss, "forward", recording_forward)
 
         result = model.training_step(self._make_batch(), 0)
 
+        # The wrapped loss is called once per lead time, so a swapped (C, T)
+        # unflatten would show up as the wrong number of calls
+        expected_steps = 1 if use_autoregressive else model.n_forecast_steps
+        assert len(calls) == expected_steps
+        assert all(
+            shapes == ((2, model.base_output_channels, 16, 16),) * 2 for shapes in calls
+        )
         assert result.loss.ndim == 0
         assert torch.isfinite(result.loss)
 

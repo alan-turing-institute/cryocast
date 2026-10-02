@@ -18,8 +18,10 @@ def make_fields(
 
 
 class TestLeadTimeWeightedLoss:
-    @pytest.mark.parametrize("exponent", [-1.0, 0.0, 1.0, 2.0])
-    @pytest.mark.parametrize("n_steps", [1, 3, 7])
+    @pytest.mark.parametrize(
+        "exponent", [-1.0, 0.0, 1.0, 2.0], ids=lambda e: f"exponent{e:g}"
+    )
+    @pytest.mark.parametrize("n_steps", [1, 3, 7], ids=lambda n: f"steps{n}")
     def test_weights_have_mean_one(self, exponent: float, n_steps: int) -> None:
         weights = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent).weights(
             n_steps, torch.device("cpu")
@@ -27,11 +29,68 @@ class TestLeadTimeWeightedLoss:
         assert weights.shape == (n_steps,)
         assert weights.mean().item() == pytest.approx(1.0)
 
-    def test_weights_increase_with_lead_time(self) -> None:
-        weights = LeadTimeWeightedLoss(torch.nn.MSELoss(), 1.0).weights(
+    @pytest.mark.parametrize(
+        ("exponent", "expected"),
+        [
+            (1.0, [0.4, 0.8, 1.2, 1.6]),
+            (-1.0, [48 / 25, 24 / 25, 16 / 25, 12 / 25]),
+        ],
+        ids=["positive", "negative"],
+    )
+    def test_weights_match_expected_values(
+        self, exponent: float, expected: list[float]
+    ) -> None:
+        weights = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent).weights(
             4, torch.device("cpu")
         )
-        assert torch.allclose(weights, torch.tensor([0.4, 0.8, 1.2, 1.6]))
+        assert torch.allclose(weights, torch.tensor(expected))
+
+    @pytest.mark.parametrize(
+        ("exponent", "increasing"),
+        [(0.5, True), (2.0, True), (-0.5, False), (-2.0, False)],
+        ids=["positive-half", "positive-two", "negative-half", "negative-two"],
+    )
+    def test_weights_monotonic_in_sign_of_exponent(
+        self, *, exponent: float, increasing: bool
+    ) -> None:
+        weights = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent).weights(
+            5, torch.device("cpu")
+        )
+        diffs = weights.diff()
+        assert bool((diffs > 0).all()) is increasing
+        assert bool((diffs < 0).all()) is not increasing
+
+    def test_early_errors_cost_more_with_negative_exponent(self) -> None:
+        _, target = make_fields()
+        early_error = target.clone()
+        early_error[:, 0] += 0.5
+        late_error = target.clone()
+        late_error[:, -1] += 0.5
+        loss_fn = LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent=-1.0)
+        assert loss_fn(early_error, target) > loss_fn(late_error, target)
+
+    @pytest.mark.parametrize(
+        ("dtype", "rel"),
+        [(torch.bfloat16, 1e-2), (torch.float16, 1e-3), (torch.float64, 1e-6)],
+        ids=["bfloat16", "float16", "float64"],
+    )
+    @pytest.mark.parametrize(
+        "base", [torch.nn.MSELoss(), AMSELoss()], ids=["mse", "amse"]
+    )
+    def test_supports_other_dtypes(
+        self, dtype: torch.dtype, rel: float, base: torch.nn.Module
+    ) -> None:
+        prediction, target = make_fields()
+        loss_fn = LeadTimeWeightedLoss(base, exponent=1.0)
+        reference = loss_fn(prediction, target)
+        prediction = prediction.to(dtype).requires_grad_()
+        loss = loss_fn(prediction, target.to(dtype))
+        assert loss.shape == ()
+        assert torch.isfinite(loss)
+        assert loss.item() == pytest.approx(reference.item(), rel=rel)
+        loss.backward()
+        assert prediction.grad is not None
+        assert prediction.grad.dtype == dtype
 
     @pytest.mark.parametrize(
         "base", [torch.nn.MSELoss(), torch.nn.L1Loss()], ids=["mse", "mae"]

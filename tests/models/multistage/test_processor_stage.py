@@ -80,6 +80,36 @@ class TestProcessorStage:
             metrics=cfg_metrics,
         )
 
+    def test_forward_shape(
+        self,
+        processor_stage: ProcessorStage,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+    ) -> None:
+        batch_size = 2
+        result = processor_stage(
+            {
+                "test-input": torch.rand(
+                    batch_size,
+                    2,
+                    cfg_input_space["channels"],
+                    *cfg_input_space["shape"],
+                ),
+                "target": torch.rand(
+                    batch_size,
+                    1,
+                    cfg_output_space["channels"],
+                    *cfg_output_space["shape"],
+                ),
+            }
+        )
+        assert result.shape == (
+            batch_size,
+            1,
+            cfg_output_space["channels"],
+            *cfg_output_space["shape"],
+        )
+
     def test_training_step_returns_prediction_target_and_loss(
         self,
         processor_stage: ProcessorStage,

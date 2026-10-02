@@ -11,15 +11,24 @@ class TestClimatology:
     @pytest.mark.parametrize(
         "test_output_shape", [(16, 16, 1), (10, 20, 19)], ids=["16x16x1", "10x20x19"]
     )
+    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=["batch1", "batch2"])
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 2, 5], ids=["history1", "history2", "history5"]
+    )
     def test_forward_returns_climatology(
         self,
+        test_batch_size: int,
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
         test_output_shape: tuple[int, int, int],
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
     ) -> None:
         # Climatology only reads the "climatology" batch entry, so the "input"
-        # space shape, history length and batch size have no effect on the result.
-        batch_size, n_forecast_steps, n_history_steps = 2, 3, 2
+        # space shape has no effect on the result.
         input_space = {
             "channels": 1,
             "name": "input",
@@ -36,8 +45,8 @@ class TestClimatology:
             input_spaces=[input_space],
             loss=cfg_loss,
             metrics=cfg_metrics,
-            n_forecast_steps=n_forecast_steps,
-            n_history_steps=n_history_steps,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
             output_space=output_space,
             optimizer={},
             scheduler={},
@@ -45,16 +54,24 @@ class TestClimatology:
             target_variable_indices=list(range(test_output_shape[2])),
         )
         batch = {
-            "input": torch.randn(batch_size, n_history_steps, 1, 16, 16),
+            "input": torch.randn(test_batch_size, test_n_history_steps, 1, 16, 16),
+            "target": torch.randn(
+                test_batch_size,
+                test_n_forecast_steps,
+                test_output_shape[2],
+                test_output_shape[0],
+                test_output_shape[1],
+            ),
             "climatology": torch.randn(
-                batch_size,
-                n_forecast_steps,
+                test_batch_size,
+                test_n_forecast_steps,
                 test_output_shape[2],
                 test_output_shape[0],
                 test_output_shape[1],
             ),
         }
         result: torch.Tensor = model(batch)
+        assert result.shape == batch["target"].shape
         assert torch.equal(result, batch["climatology"])
 
     def test_optimizer(

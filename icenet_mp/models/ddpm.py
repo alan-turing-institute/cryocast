@@ -487,27 +487,21 @@ class DDPM(BaseModel):
         t = torch.randint(0, self.timesteps, (x.shape[0],), device=self.device).long()
 
         # Create noisy version
-        # AR has shape [B, C, H, W]. Parallel has shape [B, T*C, H, W].
         noise: TensorNCHW = torch.randn_like(y)
-        # AR has shape [B, C, H, W]. Parallel has shape [B, T*C, H, W].
         noisy_y: TensorNCHW = self.diffusion.q_sample(y, t, noise)
 
         # Predict v
-        # AR has shape [B, C, H, W]. Parallel has shape [B, T*C, H, W].
         pred_v: TensorNCHW = self.model(noisy_y, t, x)
 
         # Compute target v
-        # AR has shape [B, C, H, W]. Parallel has shape [B, T*C, H, W].
         target_v: TensorNCHW = self.diffusion.calculate_v(y, noise, t)
 
-        # Expand to NTCHW. AR has shape [B, 1, C, H, W]. Parallel has shape [B, T, C, H, W].
+        # Expand to NTCHW. AR shape [B, 1, C, H, W], parallel shape [B, T, C, H, W].
         prediction: TensorNTCHW = (
             pred_v.unsqueeze(1)
             if self.use_autoregressive
             else pred_v.unflatten(1, (self.n_forecast_steps, self.base_output_channels))
         )
-
-        # Expand to NTCHW. AR has shape [B, 1, C, H, W]. Parallel has shape [B, T, C, H, W].
         target: TensorNTCHW = (
             target_v.unsqueeze(1)
             if self.use_autoregressive

@@ -448,27 +448,26 @@ class TestDDPMProcessor:
             for p in processor.model.parameters()
         )
 
-    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
+    # n_forecast_steps=3 differs from C_TARGET=2 so a swapped (C, T) unflatten
+    # changes the number of lead times seen by the wrapped loss
     @pytest.mark.parametrize(
-        "test_n_forecast_steps", [1, 2], ids=lambda n: f"forecast{n}"
-    )
-    @pytest.mark.parametrize(
-        "test_n_history_steps", [1, 2], ids=lambda n: f"history{n}"
+        "test_n_forecast_steps", [1, 3], ids=lambda n: f"forecast{n}"
     )
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
     def test_training_supports_lead_time_weighted_loss(
         self,
-        test_batch_size: int,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
         test_n_forecast_steps: int,
-        test_n_history_steps: int,
-        test_use_autoregressive: bool,  # noqa: FBT001
+        test_use_autoregressive: bool,
     ) -> None:
         """Restore forecast time for lead-time weighted latent diffusion loss."""
+        batch_size, n_history_steps = 2, 1
         processor = self._make_processor(
             n_forecast_steps=test_n_forecast_steps,
-            n_history_steps=test_n_history_steps,
+            n_history_steps=n_history_steps,
             use_autoregressive=test_use_autoregressive,
             loss=OmegaConf.create(
                 {"_target_": "torch.nn.MSELoss", "lead_time_exponent": 2.0}
@@ -477,13 +476,21 @@ class TestDDPMProcessor:
         assert isinstance(processor.loss_fn, LeadTimeWeightedLoss)
         assert isinstance(processor.loss_fn.wrapped_loss, torch.nn.MSELoss)
         assert processor.loss_fn.exponent == pytest.approx(2.0)
-        x = torch.randn(
-            test_batch_size,
-            test_n_history_steps,
-            *self.LATENT_CHW,
-        )
+        # Record the per-step NCHW slices that the wrapped loss receives
+        wrapped_loss = processor.loss_fn.wrapped_loss
+        original_forward = wrapped_loss.forward
+        calls: list[tuple[torch.Size, torch.Size]] = []
+
+        def recording_forward(
+            prediction: torch.Tensor, target: torch.Tensor
+        ) -> torch.Tensor:
+            calls.append((prediction.shape, target.shape))
+            return original_forward(prediction, target)
+
+        monkeypatch.setattr(wrapped_loss, "forward", recording_forward)
+        x = torch.randn(batch_size, n_history_steps, *self.LATENT_CHW)
         y = torch.randn(
-            test_batch_size,
+            batch_size,
             test_n_forecast_steps,
             self.C_TARGET,
             *self.LATENT_CHW[1:],
@@ -491,6 +498,10 @@ class TestDDPMProcessor:
 
         result = processor.rollout(x, y)
 
+        expected_steps = 1 if test_use_autoregressive else test_n_forecast_steps
+        assert len(calls) == expected_steps
+        expected_shape = (batch_size, self.C_TARGET, *self.LATENT_CHW[1:])
+        assert all(shapes == (expected_shape,) * 2 for shapes in calls)
         assert result.loss is not None
         assert result.loss.ndim == 0
         assert torch.isfinite(result.loss)
