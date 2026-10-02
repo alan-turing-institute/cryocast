@@ -15,12 +15,15 @@ Wrapped losses that implement ``SupportsPerLeadTimeLoss`` are evaluated for ever
 time in one call; any other loss is called once per lead time.
 """
 
+import logging
 import math
 
 import torch
 from torch import nn
 
 from icenet_mp.types import NDIM_NTCHW, SupportsPerLeadTimeLoss
+
+log = logging.getLogger(__name__)
 
 
 class LeadTimeWeightedLoss(nn.Module):
@@ -41,12 +44,19 @@ class LeadTimeWeightedLoss(nn.Module):
             raise ValueError(msg)
         # Weights have mean 1, so only a mean-reduced loss keeps the unweighted scale
         reduction = getattr(wrapped_loss, "reduction", "mean")
-        if reduction != "mean":
+        if reduction == "none":
             msg = (
-                "LeadTimeWeightedLoss requires a mean-reduced wrapped loss, but "
-                f"{type(wrapped_loss).__name__} has reduction={reduction!r}."
+                "LeadTimeWeightedLoss requires a wrapped loss that returns a scalar, "
+                f"but {type(wrapped_loss).__name__} has reduction='none'."
             )
             raise ValueError(msg)
+        if reduction != "mean":
+            msg = (
+                "LeadTimeWeightedLoss works best with a mean-reduced wrapped loss, but "
+                f"{type(wrapped_loss).__name__} has reduction={reduction!r}. This may "
+                "cause the overall scale to change with the number of forecast steps."
+            )
+            log.warning(msg)
         super().__init__()
         self._exponent = exponent
         self._weights_cache: dict[tuple[int, torch.device], torch.Tensor] = {}

@@ -62,18 +62,13 @@ imp train --config-name <config> loss.lead_time_exponent=1             # default
 imp train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, quadratic scaling
 ```
 
-- `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
-  `mse`, `mae`, `huber`, `smooth_l1` and `amse` (every day has the same number of fields, so the
-  mean of the per-day losses equals the overall mean). `rmse` is the exception: it takes a square
-  root over the whole tensor, so the mean of the per-day values is close to, but not exactly, the
-  unweighted loss.
-- The wrapped loss must be mean-reduced. A loss with `reduction="sum"` or `reduction="none"` is
-  rejected when the model is built, because the mean-1 weights would otherwise shrink a summed
-  loss to 1/T of its unweighted value.
-- For autoregressive DDPM, training optimises one forecast step at a time, so lead-time weighting
-  has no effect on the training loss (a warning is logged when the model is built); validation and
-  test losses are computed over the full rollout and are weighted. For parallel DDPM, the weights
-  apply per lead time to the v-prediction loss rather than to SIC error.
-- In multistage training, the encoder and decoder stages train on a single time step, so
-  lead-time weighting has no effect on them (a warning is logged). It applies in the processor
-  stage, which forecasts the full set of lead times.
+For models like multistage-encoder, multistage-decoder and autoregressive DDPM, training is
+optimised one step at a time, so lead-time weighting has no effect.
+
+!!! note
+    `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
+    most losses (e.g. `mse`, `mae`, `huber`, `smooth_l1` and `amse`). For losses that perform non-linear operations on the whole tensor (e.g. `rmse`), the mean of the per-day values will be close but not identical to the unweighted loss.
+
+!!! warning
+    The wrapped loss must return a scalar or the weighting will cause a confusing error. This is
+    caught at build type.

@@ -1,3 +1,4 @@
+import logging
 import math
 
 import pytest
@@ -99,10 +100,21 @@ class TestLeadTimeWeightedLoss:
         with pytest.raises(ValueError, match="finite"):
             LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent)
 
-    @pytest.mark.parametrize("reduction", ["sum", "none"])
-    def test_rejects_non_mean_reduction(self, reduction: str) -> None:
-        with pytest.raises(ValueError, match="mean-reduced"):
-            LeadTimeWeightedLoss(torch.nn.MSELoss(reduction=reduction))
+    def test_rejects_unreduced_loss(self) -> None:
+        with pytest.raises(ValueError, match="returns a scalar"):
+            LeadTimeWeightedLoss(torch.nn.MSELoss(reduction="none"))
+
+    def test_warns_on_sum_reduction(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING):
+            LeadTimeWeightedLoss(torch.nn.MSELoss(reduction="sum"))
+        assert "mean-reduced" in caplog.text
+
+    def test_no_warning_on_mean_reduction(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING):
+            LeadTimeWeightedLoss(torch.nn.MSELoss())
+        assert not caplog.records
 
     @pytest.mark.parametrize(
         ("dtype", "rel"),
