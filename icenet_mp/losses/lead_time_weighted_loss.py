@@ -39,6 +39,14 @@ class LeadTimeWeightedLoss(nn.Module):
         if not math.isfinite(exponent):
             msg = f"LeadTimeWeightedLoss exponent must be finite, but got {exponent}."
             raise ValueError(msg)
+        # Weights have mean 1, so only a mean-reduced loss keeps the unweighted scale
+        reduction = getattr(wrapped_loss, "reduction", "mean")
+        if reduction != "mean":
+            msg = (
+                "LeadTimeWeightedLoss requires a mean-reduced wrapped loss, but "
+                f"{type(wrapped_loss).__name__} has reduction={reduction!r}."
+            )
+            raise ValueError(msg)
         super().__init__()
         self.wrapped_loss = wrapped_loss
         self.exponent = exponent

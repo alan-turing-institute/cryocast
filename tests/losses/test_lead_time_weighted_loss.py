@@ -88,6 +88,11 @@ class TestLeadTimeWeightedLoss:
         with pytest.raises(ValueError, match="finite"):
             LeadTimeWeightedLoss(torch.nn.MSELoss(), exponent)
 
+    @pytest.mark.parametrize("reduction", ["sum", "none"])
+    def test_rejects_non_mean_reduction(self, reduction: str) -> None:
+        with pytest.raises(ValueError, match="mean-reduced"):
+            LeadTimeWeightedLoss(torch.nn.MSELoss(reduction=reduction))
+
     def test_early_errors_cost_more_with_negative_exponent(self) -> None:
         _, target = make_fields()
         early_error = target.clone()
@@ -121,7 +126,15 @@ class TestLeadTimeWeightedLoss:
         assert prediction.grad.dtype == dtype
 
     @pytest.mark.parametrize(
-        "base", [torch.nn.MSELoss(), torch.nn.L1Loss()], ids=["mse", "mae"]
+        "base",
+        [
+            torch.nn.MSELoss(),
+            torch.nn.L1Loss(),
+            AMSELoss(mode="hybrid"),
+            AMSELoss(mode="pure"),
+            AMSELoss(wavenumber_weight="fastnet"),
+        ],
+        ids=["mse", "mae", "amse-hybrid", "amse-pure", "amse-fastnet"],
     )
     def test_zero_exponent_matches_base(self, base: torch.nn.Module) -> None:
         prediction, target = make_fields()

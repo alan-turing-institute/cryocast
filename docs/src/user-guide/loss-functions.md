@@ -63,9 +63,13 @@ imp train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, 
 ```
 
 - `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
-  mean-reduced pointwise losses (`mse`, `mae`, `huber`, `smooth_l1`). For losses that reduce
-  non-linearly over the whole tensor (`rmse`, `amse`) it is a per-day average instead, so it is
-  close to, but not exactly, the unweighted loss.
+  `mse`, `mae`, `huber`, `smooth_l1` and `amse` (every day has the same number of fields, so the
+  mean of the per-day losses equals the overall mean). `rmse` is the exception: it takes a square
+  root over the whole tensor, so the mean of the per-day values is close to, but not exactly, the
+  unweighted loss.
+- The wrapped loss must be mean-reduced. A loss with `reduction="sum"` or `reduction="none"` is
+  rejected when the model is built, because the mean-1 weights would otherwise shrink a summed
+  loss to 1/T of its unweighted value.
 - For autoregressive DDPM, training optimises one forecast step at a time, so lead-time weighting
   has no effect on the training loss (a warning is logged when the model is built); validation and
   test losses are computed over the full rollout and are weighted. For parallel DDPM, the weights
