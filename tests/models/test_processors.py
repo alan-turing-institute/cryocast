@@ -2,8 +2,9 @@ import re
 
 import pytest
 import torch
+from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.losses import TimeWeightedLoss
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models.processors import (
     BaseProcessor,
     DDPMProcessor,
@@ -320,6 +321,7 @@ class TestDDPMProcessor:
         n_history_steps: int,
         use_autoregressive: bool,
         target_channel_offset: int = 0,
+        loss: DictConfig | torch.nn.Module | None = None,
     ) -> DDPMProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
@@ -338,7 +340,7 @@ class TestDDPMProcessor:
             dropout_rate=0.0,
             use_autoregressive=use_autoregressive,
             target_channel_offset=target_channel_offset,
-            loss=torch.nn.MSELoss(),
+            loss=torch.nn.MSELoss() if loss is None else loss,
         )
 
     @pytest.mark.parametrize(
@@ -455,20 +457,25 @@ class TestDDPMProcessor:
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    def test_training_supports_time_weighted_loss(
+    def test_training_supports_lead_time_weighted_loss(
         self,
         test_batch_size: int,
         test_n_forecast_steps: int,
         test_n_history_steps: int,
         test_use_autoregressive: bool,  # noqa: FBT001
     ) -> None:
-        """Restore forecast time for time-weighted latent diffusion loss."""
+        """Restore forecast time for lead-time weighted latent diffusion loss."""
         processor = self._make_processor(
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             use_autoregressive=test_use_autoregressive,
+            loss=OmegaConf.create(
+                {"_target_": "torch.nn.MSELoss", "lead_time_exponent": 2.0}
+            ),
         )
-        processor.loss_fn = TimeWeightedLoss(torch.nn.MSELoss())
+        assert isinstance(processor.loss_fn, LeadTimeWeightedLoss)
+        assert isinstance(processor.loss_fn.wrapped_loss, torch.nn.MSELoss)
+        assert processor.loss_fn.exponent == pytest.approx(2.0)
         x = torch.randn(
             test_batch_size,
             test_n_history_steps,

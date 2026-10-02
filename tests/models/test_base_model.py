@@ -14,7 +14,6 @@ import icenet_mp
 from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.losses.amse_loss import AMSELoss
 from icenet_mp.losses.rmse_loss import RMSELoss
-from icenet_mp.losses.time_weighted_loss import TimeWeightedLoss
 from icenet_mp.losses.weighted_bce_loss import WeightedBCEWithLogitsLoss
 from icenet_mp.losses.weighted_l1_loss import WeightedL1Loss
 from icenet_mp.losses.weighted_mse_loss import WeightedMSELoss
@@ -764,12 +763,16 @@ class TestBaseModelLossConfig:
             pytest.param(
                 OmegaConf.create(
                     {
-                        "_target_": "icenet_mp.losses.time_weighted_loss.TimeWeightedLoss",
-                        "base_loss": {"_target_": "torch.nn.HuberLoss", "delta": 0.5},
+                        "_target_": "icenet_mp.losses.lead_time_weighted_loss.LeadTimeWeightedLoss",
+                        "wrapped_loss": {
+                            "_target_": "torch.nn.HuberLoss",
+                            "delta": 0.5,
+                        },
+                        "lead_time_exponent": 2.0,
                     }
                 ),
-                TimeWeightedLoss,
-                id="time_weighted",
+                LeadTimeWeightedLoss,
+                id="lead_time_weighted",
             ),
             pytest.param(
                 OmegaConf.create(

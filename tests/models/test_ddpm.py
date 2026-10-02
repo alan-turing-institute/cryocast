@@ -2,6 +2,7 @@ import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models import DDPM
 
 
@@ -84,14 +85,12 @@ class TestDDPM:
         *,
         use_autoregressive: bool,
     ) -> None:
-        """DDPM restores forecast time before a time-weighted loss call."""
+        """DDPM restores forecast time before a lead-time weighted loss call."""
         loss_cfg = OmegaConf.create(
-            {
-                "_target_": "icenet_mp.losses.time_weighted_loss.TimeWeightedLoss",
-                "base_loss": {"_target_": "torch.nn.MSELoss"},
-            }
+            {"_target_": "torch.nn.MSELoss", "lead_time_exponent": 1.0}
         )
         model = self._make_model(loss_cfg, use_autoregressive=use_autoregressive)
+        assert isinstance(model.loss_fn, LeadTimeWeightedLoss)
         monkeypatch.setattr(
             model.model,
             "forward",
