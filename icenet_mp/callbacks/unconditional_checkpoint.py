@@ -28,7 +28,7 @@ class UnconditionalCheckpoint(Callback):
     def dirpath(self, value: str | Path | None) -> None:
         """Set the directory path where checkpoints are saved."""
         if value:
-            self.impl.dirpath = Path(value)
+            self.impl.dirpath = Path(value).absolute()
 
     def on_train_end(self, trainer: Trainer, pl_module: LightningModule) -> None:  # noqa: ARG002
         """Called when training ends."""
