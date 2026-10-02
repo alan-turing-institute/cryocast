@@ -11,29 +11,16 @@ or underflow to a NaN loss. The rescaling keeps the overall loss magnitude (and 
 the learning rate) comparable with the unwrapped loss: weighting only redistributes
 emphasis between lead times.
 
-Wrapped losses that implement ``per_lead_time_loss`` (see ``SupportsPerLeadTimeLoss``)
-are evaluated for every lead time in one call; any other loss is called once per lead
-time.
+Wrapped losses that implement ``SupportsPerLeadTimeLoss`` are evaluated for every lead
+time in one call; any other loss is called once per lead time.
 """
 
 import math
-from typing import Protocol, runtime_checkable
 
 import torch
 from torch import nn
 
-from icenet_mp.types import NDIM_NTCHW
-
-
-@runtime_checkable
-class SupportsPerLeadTimeLoss(Protocol):
-    """A loss that can evaluate every lead time of an NTCHW input in one call."""
-
-    def per_lead_time_loss(
-        self, prediction: torch.Tensor, target: torch.Tensor
-    ) -> torch.Tensor:
-        """Return the [T] per-lead-time losses for NTCHW prediction/target."""
-        ...
+from icenet_mp.types import NDIM_NTCHW, SupportsPerLeadTimeLoss
 
 
 class LeadTimeWeightedLoss(nn.Module):

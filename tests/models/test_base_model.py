@@ -11,9 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from torchmetrics import MeanSquaredError, Metric
 
 import icenet_mp
-from icenet_mp.losses import LeadTimeWeightedLoss
-from icenet_mp.losses.amse_loss import AMSELoss
-from icenet_mp.losses.rmse_loss import RMSELoss
+from icenet_mp.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
 from icenet_mp.metrics import (
     CentroidErrorPerForecastDay,
     DistanceAveragedIceEdgeErrorPerForecastDay,

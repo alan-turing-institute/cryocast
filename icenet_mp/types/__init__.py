@@ -35,6 +35,7 @@ from .enums import (
 from .protocols import (
     SupportsImageLogging,
     SupportsMetadataFromDataset,
+    SupportsPerLeadTimeLoss,
     SupportsVideoLogging,
 )
 from .simple_datatypes import (
@@ -82,6 +83,7 @@ __all__ = [
     "SkipConnectionType",
     "SupportsImageLogging",
     "SupportsMetadataFromDataset",
+    "SupportsPerLeadTimeLoss",
     "SupportsVideoLogging",
     "TensorNCHW",
     "TensorNTCHW",
