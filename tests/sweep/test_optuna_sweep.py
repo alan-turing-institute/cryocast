@@ -105,6 +105,7 @@ class TestUnsetProperties:
             ("study_name", "Study name has not been set"),
             ("study_path", "Study path has not been set"),
         ],
+        ids=["entity", "study_name", "study_path"],
     )
     def test_raises_when_unset(self, attr: str, message: str) -> None:
         with pytest.raises(ValueError, match=message):

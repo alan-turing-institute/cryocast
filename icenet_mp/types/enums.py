@@ -8,6 +8,26 @@ class BetaSchedule(StrEnum):
     COSINE = "cosine"
 
 
+class DiffMode(StrEnum):
+    """Enum for difference-panel computation modes.
+
+    - SIGNED: target - prediction (can be +/-, so symmetric colour scale around 0)
+    - ABSOLUTE: |target - prediction| (>= 0, sequential scale)
+    - SMAPE: |pred - target| / ((|pred|+|target|)/2) (>= 0, sequential scale)
+    """
+
+    SIGNED = "signed"
+    ABSOLUTE = "absolute"
+    SMAPE = "smape"
+
+
+class Hemisphere(StrEnum):
+    """Enum for hemispheres."""
+
+    NORTH = "north"
+    SOUTH = "south"
+
+
 class MaskType(StrEnum):
     """Enum for types of masking."""
 
@@ -23,6 +43,13 @@ class RangeRestriction(StrEnum):
     NONE = "none"
     SIGMOID = "sigmoid"
     TANH = "tanh"
+
+
+class RolloutSpace(StrEnum):
+    """Enum for where EncodeProcessDecode performs its forecast loop."""
+
+    LATENT = "latent"
+    PHYSICAL = "physical"
 
 
 class SkipConnectionType(StrEnum):

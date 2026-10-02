@@ -1,3 +1,4 @@
+import copy
 import datetime
 from pathlib import Path
 from typing import Any
@@ -141,56 +142,6 @@ def make_climatology_data_dict(
 
 
 @pytest.fixture
-def cfg_common_data_module() -> DictConfig:
-    """Test configuration for a CommonDataModule."""
-    return DictConfig(
-        {
-            "base_path": "/mock/base/path",
-            "data": {
-                "datasets": {"ds1": {"name": "mock", "group_as": "group1"}},
-                "split": {
-                    "batch_size": 2,
-                    "predict": [{"start": None, "end": None}],
-                    "test": [{"start": "2020-01-01", "end": "2020-12-31"}],
-                    "train": [
-                        {"start": None, "end": "2019-12-31"},
-                        {"start": "2018-01-01", "end": None},
-                    ],
-                    "validate": [{"start": "2020-01-01", "end": "2020-03-31"}],
-                },
-            },
-            "predict": {
-                "target": {"group_name": "group1"},
-                "n_forecast_steps": 1,
-                "n_history_steps": 1,
-            },
-        }
-    )
-
-
-@pytest.fixture
-def cfg_decoder() -> DictConfig:
-    """Test configuration for a decoder."""
-    return DictConfig({"_target_": "icenet_mp.models.decoders.NaiveLinearDecoder"})
-
-
-@pytest.fixture
-def cfg_encoders() -> DictConfig:
-    """Test configuration for an encoder."""
-    return DictConfig(
-        {
-            "latent_space": (64, 64),
-            "test-input": {
-                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
-            },
-            "target": {
-                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
-            },
-        }
-    )
-
-
-@pytest.fixture
 def cfg_input_space() -> DictConfig:
     """Test configuration for an input space."""
     return DictConfig(
@@ -243,7 +194,13 @@ def cfg_model_service() -> DictConfig:
             },
             "reporting": {
                 "loggers": {},
-                "metrics": ["accuracy", "mae"],
+                "metrics": [
+                    {
+                        "name": "accuracy",
+                        "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+                    },
+                    {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+                ],
             },
             "train": {
                 "callbacks": {},
@@ -275,12 +232,6 @@ def cfg_output_space() -> DictConfig:
 
 
 @pytest.fixture
-def cfg_processor() -> DictConfig:
-    """Test configuration for a processor."""
-    return DictConfig({"_target_": "icenet_mp.models.processors.NullProcessor"})
-
-
-@pytest.fixture
 def cfg_scheduler() -> DictConfig:
     """Test configuration for a scheduler."""
     return DictConfig(
@@ -299,20 +250,47 @@ def cfg_lr_scheduler() -> DictConfig:
 
 
 @pytest.fixture
-def cfg_metrics() -> list[str]:
+def cfg_metrics() -> list[dict[str, Any]]:
     """Test configuration for a model's `metrics` list."""
     return [
-        "accuracy",
-        "mae",
-        "rmse",
-        "sieerror",
-        "iiee",
-        "diiee",
-        "centroid_error",
-        "fss_neighbourhood_size_1",
-        "fss_neighbourhood_size_5",
-        "fss_neighbourhood_size_15",
-        "ssim",
+        {
+            "name": "accuracy",
+            "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+        },
+        {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+        {"name": "rmse", "_target_": "icenet_mp.metrics.RMSEPerForecastDay"},
+        {
+            "name": "sieerror",
+            "_target_": "icenet_mp.metrics.SeaIceExtentErrorPerForecastDay",
+        },
+        {
+            "name": "iiee",
+            "_target_": "icenet_mp.metrics.IntegratedIceEdgeErrorPerForecastDay",
+        },
+        {
+            "name": "diiee",
+            "_target_": "icenet_mp.metrics.DistanceAveragedIceEdgeErrorPerForecastDay",
+        },
+        {
+            "name": "centroid_error",
+            "_target_": "icenet_mp.metrics.CentroidErrorPerForecastDay",
+        },
+        {
+            "name": "fss_neighbourhood_size_1",
+            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "neighbourhood_size": 1,
+        },
+        {
+            "name": "fss_neighbourhood_size_5",
+            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "neighbourhood_size": 5,
+        },
+        {
+            "name": "fss_neighbourhood_size_15",
+            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "neighbourhood_size": 15,
+        },
+        {"name": "ssim", "_target_": "icenet_mp.metrics.SSIMPerForecastDay"},
     ]
 
 
@@ -326,20 +304,6 @@ def dates_as_dt() -> tuple[datetime.datetime, ...]:
         datetime.datetime(2020, 1, 4, 0, 0, 0),
         datetime.datetime(2020, 1, 5, 0, 0, 0),
     )
-
-
-@pytest.fixture(scope="session")
-def dates_as_np(
-    dates_as_dt: tuple[datetime.datetime, ...],
-) -> tuple[np.datetime64, ...]:
-    """Fixture to provide a tuple of numpy datetime64 objects for testing."""
-    return tuple(np.datetime64(f"{dt.date()}T12:00:00", "s") for dt in dates_as_dt)
-
-
-@pytest.fixture(scope="session")
-def dates_as_str(dates_as_dt: tuple[datetime.datetime, ...]) -> tuple[str, ...]:
-    """Fixture to provide a tuple of date strings for testing."""
-    return tuple(dt.strftime(r"%Y-%m-%d") for dt in dates_as_dt)
 
 
 @pytest.fixture(scope="session")
@@ -482,7 +446,7 @@ def mock_data_non_normalized_times(
     mock_data: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     """Fixture to create a mock dataset for testing."""
-    output = dict(**mock_data)
+    output = copy.deepcopy(mock_data)
     output["coords"]["time"]["data"] = [
         datetime.datetime(2020, 1, 1, 3, 47, 42),
         datetime.datetime(2020, 1, 2, 3, 47, 42),
@@ -491,40 +455,6 @@ def mock_data_non_normalized_times(
         datetime.datetime(2020, 1, 5, 3, 47, 42),
     ]
     return output
-
-
-@pytest.fixture(scope="session")
-def mock_data_status_flag() -> dict[str, dict[str, Any]]:
-    """Fixture to create a mock status_flag dataset with a known land/inactive pattern.
-
-    Cell (0,0): status_flag=1 (land bit set every timestep) -> land.
-    Cell (0,1): status_flag=0 -> sea, active.
-    Cell (1,0): status_flag=128 (inactive bit set every timestep) -> inactive.
-    Cell (1,1): status_flag=0 -> sea, active.
-    """
-    dates = [
-        datetime.datetime(2020, 1, 1) + datetime.timedelta(days=i) for i in range(3)
-    ]
-    return {
-        "coords": {
-            "lat": {"dims": "lat", "attrs": {}, "data": [80.0, 85.0]},
-            "lon": {"dims": "lon", "attrs": {}, "data": [0.0, 90.0]},
-            "time": {"dims": ("time",), "attrs": {}, "data": dates},
-        },
-        "attrs": {},
-        "dims": {"lat": 2, "lon": 2, "time": 3},
-        "data_vars": {
-            "status_flag": {
-                "dims": ("time", "lat", "lon"),
-                "attrs": {},
-                "data": [
-                    [[1, 0], [128, 0]],
-                    [[1, 0], [128, 0]],
-                    [[1, 0], [128, 0]],
-                ],
-            }
-        },
-    }
 
 
 @pytest.fixture(scope="session")
@@ -561,7 +491,7 @@ def mock_dataset_missing_dates(
     return build_zarr(
         mock_data_path / "anemoi" / "mock_dataset_missing_dates.zarr",
         mock_data_missing_dates,
-        full_dates=mock_data_missing_dates["coords"]["time"]["data"],
+        full_dates=list(dates_as_dt),
         missing_dates=[dates_as_dt[1], dates_as_dt[3]],
     )
 
