@@ -4,6 +4,7 @@ from typing import Any, ClassVar, NoReturn
 import torch
 import torch.nn.functional as F
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models.common import Mask, RestrictRange
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
 from icenet_mp.types import ModelStepOutput, RangeRestriction, TensorNCHW, TensorNTCHW
@@ -100,6 +101,15 @@ class DDPM(BaseModel):
 
         self.use_autoregressive = use_autoregressive
         self.osisaf_key = self.output_space.name
+
+        # Autoregressive training only optimises one forecast step at a time
+        if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            log.warning(
+                "lead_time_exponent=%s has no effect on the autoregressive DDPM "
+                "training loss, which is computed on a single forecast step. "
+                "Validation and test losses are still lead-time weighted.",
+                self.loss_fn.exponent,
+            )
 
         # Bound sampled output into [0, 1] before masking.
         self.restrict = RestrictRange(

@@ -67,6 +67,9 @@ imp train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, 
   non-linearly over the whole tensor (`rmse`, `amse`) it is a per-day average instead, so it is
   close to, but not exactly, the unweighted loss.
 - For autoregressive DDPM, training optimises one forecast step at a time, so lead-time weighting
-  has no effect on the training loss; validation and test losses are computed over the full rollout
-  and are weighted. For parallel DDPM, the weights apply per lead time to the v-prediction loss
-  rather than to SIC error.
+  has no effect on the training loss (a warning is logged when the model is built); validation and
+  test losses are computed over the full rollout and are weighted. For parallel DDPM, the weights
+  apply per lead time to the v-prediction loss rather than to SIC error.
+- In multistage training, the encoder and decoder stages train on a single time step, so
+  lead-time weighting has no effect on them (a warning is logged). It applies in the processor
+  stage, which forecasts the full set of lead times.

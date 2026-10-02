@@ -17,17 +17,20 @@ Non-target channels are not predicted; they are copied from the last history
 frame and carried forward unchanged.
 """
 
+import logging
 from typing import Any
 
 import torch
 from omegaconf import DictConfig
 from torch import nn
 
-from icenet_mp.losses import build_loss
+from icenet_mp.losses import LeadTimeWeightedLoss, build_loss
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
 from icenet_mp.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 from .base_processor import BaseProcessor
+
+log = logging.getLogger(__name__)
 
 
 class DDPMProcessor(BaseProcessor):
@@ -114,6 +117,15 @@ class DDPMProcessor(BaseProcessor):
 
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+
+        # Autoregressive training only optimises one forecast step at a time
+        if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            log.warning(
+                "lead_time_exponent=%s has no effect on the autoregressive DDPM "
+                "training loss, which is computed on a single forecast step. "
+                "Validation and test losses are still lead-time weighted.",
+                self.loss_fn.exponent,
+            )
 
         # UNet conditioning channels: history folded NTCHW -> NCHW.
         cond_channels = c_combined * self.n_history_steps

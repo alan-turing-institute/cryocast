@@ -1,8 +1,9 @@
+import logging
 from typing import Any
 
 import pytest
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from icenet_mp.models.multistage import DecoderStage, EncoderStage
 from icenet_mp.types import DataSpace
@@ -168,3 +169,31 @@ class TestDecoderStage:
             spec["name"] for spec in cfg_metrics
         }
         assert decoder_stage.name == "target_decoder"
+
+    @pytest.mark.usefixtures("decoder_stage")
+    @pytest.mark.parametrize(
+        ("cfg_loss", "expect_warning"),
+        [
+            (
+                OmegaConf.create(
+                    {"_target_": "torch.nn.HuberLoss", "lead_time_exponent": 2.0}
+                ),
+                True,
+            ),
+            (OmegaConf.create({"_target_": "torch.nn.HuberLoss"}), False),
+        ],
+        ids=["weighted", "unweighted"],
+    )
+    def test_warns_when_lead_time_weighting_ignored(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        *,
+        expect_warning: bool,
+    ) -> None:
+        records = [
+            r
+            for r in caplog.get_records("setup")
+            if r.levelno == logging.WARNING
+            and "has no effect on DecoderStage" in r.getMessage()
+        ]
+        assert bool(records) is expect_warning

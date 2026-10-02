@@ -1,8 +1,10 @@
+import logging
+
 import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.losses.lead_time_weighted_loss import LeadTimeWeightedLoss
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models import DDPM
 
 
@@ -101,6 +103,32 @@ class TestDDPM:
 
         assert result.loss.ndim == 0
         assert torch.isfinite(result.loss)
+
+    @pytest.mark.parametrize(
+        ("test_use_autoregressive", "test_lead_time_exponent", "expect_warning"),
+        [(True, 2.0, True), (False, 2.0, False), (True, None, False)],
+        ids=["autoregressive-weighted", "direct-weighted", "autoregressive-unweighted"],
+    )
+    def test_warns_when_lead_time_weighting_ignored(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        *,
+        test_use_autoregressive: bool,
+        test_lead_time_exponent: float | None,
+        expect_warning: bool,
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="icenet_mp.models.ddpm"):
+            self._make_model(
+                OmegaConf.create(
+                    {
+                        "_target_": "torch.nn.MSELoss",
+                        "lead_time_exponent": test_lead_time_exponent,
+                    }
+                ),
+                use_autoregressive=test_use_autoregressive,
+            )
+        warned = any("has no effect" in r.getMessage() for r in caplog.records)
+        assert warned is expect_warning
 
     def test_parallel_sample_runs_reverse_diffusion_loop(
         self,
