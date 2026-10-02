@@ -763,20 +763,6 @@ class TestBaseModelLossConfig:
             pytest.param(
                 OmegaConf.create(
                     {
-                        "_target_": "icenet_mp.losses.lead_time_weighted_loss.LeadTimeWeightedLoss",
-                        "wrapped_loss": {
-                            "_target_": "torch.nn.HuberLoss",
-                            "delta": 0.5,
-                        },
-                        "lead_time_exponent": 2.0,
-                    }
-                ),
-                LeadTimeWeightedLoss,
-                id="lead_time_weighted",
-            ),
-            pytest.param(
-                OmegaConf.create(
-                    {
                         "_target_": (
                             "icenet_mp.losses.weighted_bce_loss.WeightedBCEWithLogitsLoss"
                         )
@@ -857,6 +843,32 @@ class TestBaseModelLossConfig:
         assert model.loss_fn.wrapped_loss.delta == pytest.approx(0.5)
         # The stored config retains the exponent so that checkpoints round-trip
         assert model.loss_cfg.lead_time_exponent == pytest.approx(2.0)
+
+    def test_lead_time_exponent_on_lead_time_weighted_loss_raises(
+        self, cfg_input_space: DictConfig, cfg_output_space: DictConfig
+    ) -> None:
+        loss_cfg = OmegaConf.create(
+            {
+                "_target_": "icenet_mp.losses.lead_time_weighted_loss.LeadTimeWeightedLoss",
+                "wrapped_loss": {"_target_": "torch.nn.HuberLoss", "delta": 0.5},
+                "lead_time_exponent": 2.0,
+            }
+        )
+        with pytest.raises(TypeError, match="would wrap the loss twice"):
+            Persistence(
+                target_variable_indices=[0],
+                hemisphere=Hemisphere.NORTH,
+                name="persistence",
+                input_spaces=[cfg_input_space],
+                n_forecast_steps=1,
+                n_history_steps=1,
+                output_space=cfg_output_space,
+                optimizer=DictConfig({}),
+                scheduler=DictConfig({}),
+                lr_scheduler=DictConfig({}),
+                loss=loss_cfg,
+                metrics=[],
+            )
 
     def test_nonexistent_loss_raises(
         self, cfg_input_space: DictConfig, cfg_output_space: DictConfig

@@ -36,4 +36,10 @@ def build_loss(cfg: Mapping[str, Any]) -> nn.Module:
     # Optionally wrap the loss function in a LeadTimeWeightedLoss
     if lead_time_exponent is None:
         return loss_fn
+    if isinstance(loss_fn, LeadTimeWeightedLoss):
+        msg = (
+            "`lead_time_exponent` cannot be combined with a LeadTimeWeightedLoss "
+            "`_target_`, as this would wrap the loss twice."
+        )
+        raise TypeError(msg)
     return LeadTimeWeightedLoss(loss_fn, lead_time_exponent)
