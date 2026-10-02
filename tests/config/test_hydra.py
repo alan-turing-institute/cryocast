@@ -67,7 +67,7 @@ class TestHydraConfigLoading:
     def test_lead_time_exponent_override_composes(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
-        cfg = compose_config(overrides=["loss=huber", "+loss.lead_time_exponent=2"])
+        cfg = compose_config(overrides=["loss=huber", "loss.lead_time_exponent=2"])
         assert cfg.loss._target_ == "torch.nn.HuberLoss"
         assert cfg.loss.lead_time_exponent == pytest.approx(2.0)
 

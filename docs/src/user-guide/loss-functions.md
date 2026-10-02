@@ -7,8 +7,8 @@ The training loss is a Hydra config group. The default is set in `icenet_mp/conf
 
 ```bash
 imp train --config-name <config> loss=mse
-imp train --config-name <config> loss=huber delta=0.1
-imp train --config-name <config> loss.mode=hybrid loss.spectral_weight=0.1 +loss.lead_time_exponent=2
+imp train --config-name <config> loss=huber loss.delta=0.1
+imp train --config-name <config> loss.mode=hybrid loss.spectral_weight=0.1 loss.lead_time_exponent=2
 ```
 
 Each option corresponds to a file in `icenet_mp/config/loss/`, whose header comments carry the full
@@ -52,17 +52,15 @@ Both optional flags are bit-for-bit inert when off.
 
 ## Weighting by lead time
 
-Adding `lead_time_exponent=X` to any loss function makes forecast days further into the future contribute more.
+Every loss YAML has a `lead_time_exponent` key, which defaults to `null` (no lead-time weighting).
+Setting `loss.lead_time_exponent=X` makes forecast days further into the future contribute more.
 The loss is evaluated separately at each lead time and the per-day values are combined with weights `w_t = (t + 1) ** lead_time_exponent`.
 These are rescaled to have mean 1 so the overall magnitude of the loss is comparable to unweighted runs.
 
 ```bash
-imp train --config-name <config> +loss.lead_time_exponent=1             # default loss, linear scaling
-imp train --config-name <config> loss=huber +loss.lead_time_exponent=2  # Huber, quadratic scaling
+imp train --config-name <config> loss.lead_time_exponent=1             # default loss, linear scaling
+imp train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, quadratic scaling
 ```
-
-!!! note
-    The `+` is needed because the key is not in the default loss YAML files.
 
 - `lead_time_exponent=0` gives uniform weighting, which is identical to the unweighted loss for
   mean-reduced pointwise losses (`mse`, `mae`, `huber`, `smooth_l1`). For losses that reduce
