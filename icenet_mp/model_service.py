@@ -131,8 +131,7 @@ class ModelService:
                 combined_cfg[key] = OmegaConf.merge(
                     combined_cfg.get(key, {}), ckpt_config.get(key, {})
                 )
-            # Variables are replaced rather than merged, since the the checkpoint
-            # defines which variables were used to train the model.
+            # We must use the same variables that the checkpoint was trained with
             if "variables" in ckpt_config:
                 combined_cfg["variables"] = ckpt_config["variables"]
             # Batch size does not affect the trained model, so this can be overridden
