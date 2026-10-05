@@ -125,7 +125,7 @@ class ModelService:
                     "key, which has been replaced by 'variables' and 'window'. Please "
                     "retrain the model or manually update the config file."
                 )
-                raise ValueError(msg)
+                log.warning(msg)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
             for key in ("model", "train", "window"):
                 combined_cfg[key] = OmegaConf.merge(

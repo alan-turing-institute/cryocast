@@ -282,10 +282,13 @@ class TestModelService:
             "n_history_steps": 3,
         }
 
-    def test_from_checkpoint_raises_on_legacy_predict_config(
-        self, cfg_model_service: DictConfig, tmp_path: Path
+    def test_from_checkpoint_warns_on_legacy_predict_config(
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Refuse checkpoints whose config predates the 'variables'/'window' split."""
+        """Warn on checkpoints whose config predates the 'variables'/'window' split."""
         checkpoints_dir = tmp_path / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
         checkpoint_path = checkpoints_dir / "model.ckpt"
@@ -301,8 +304,21 @@ class TestModelService:
         files_dir.mkdir(parents=True)
         OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
 
-        with pytest.raises(ValueError, match="legacy 'predict' key"):
+        with (
+            pytest.MonkeyPatch.context() as mp,
+            caplog.at_level(logging.WARNING, logger="icenet_mp.model_service"),
+        ):
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
             ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+
+        assert "predict' key, which has been replaced by 'variables'" in caplog.text
 
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
