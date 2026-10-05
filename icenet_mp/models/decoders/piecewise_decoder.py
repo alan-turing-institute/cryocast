@@ -70,49 +70,6 @@ class PiecewiseDecoder(BaseDecoder):
 
         # Construct the list of layers
         layers: list[nn.Module] = []
-        self.input_channel_indices: tuple[int, ...] | None = None
-
-        if (self.data_space_in.channels != input_channels_required) and (
-            conv_subblocks_initial < 1
-        ):
-            # With no learned channel-reduction convolution, select the requested target
-            # variable from each target-group patch explicitly.
-            if (
-                self.target_channel_offset is None
-                or self.target_group_channels is None
-                or not self.target_variable_indices
-            ):
-                msg = (
-                    "A convolution-free PiecewiseDecoder needs target latent-channel "
-                    "metadata when the combined latent contains additional channels."
-                )
-                raise ValueError(msg)
-            if len(self.target_variable_indices) != self.data_space_out.channels:
-                msg = (
-                    f"Expected {self.data_space_out.channels} target variable indices, "
-                    f"got {len(self.target_variable_indices)}."
-                )
-                raise ValueError(msg)
-            if any(
-                index < 0 or index >= self.target_group_channels
-                for index in self.target_variable_indices
-            ):
-                msg = (
-                    "target_variable_indices must refer to channels in the target "
-                    f"input group with {self.target_group_channels} channel(s)."
-                )
-                raise ValueError(msg)
-
-            self.input_channel_indices = tuple(
-                self.target_channel_offset
-                + patch_idx * self.target_group_channels
-                + variable_idx
-                for patch_idx in range(n_patches)
-                for variable_idx in self.target_variable_indices
-            )
-            if max(self.input_channel_indices) >= self.data_space_in.channels:
-                msg = "Target piecewise channel selection exceeds combined latent channels."
-                raise ValueError(msg)
 
         # Optionally add an initial convolutional block at input resolution.
         # This will also set the correct number of channels if needed.
@@ -125,6 +82,13 @@ class PiecewiseDecoder(BaseDecoder):
                     activation=conv_activation,
                     n_subblocks=conv_subblocks_initial,
                 ),
+            )
+        # Otherwise, if needed, set the number of channels with a 1x1 linear projection
+        elif self.data_space_in.channels != input_channels_required:
+            layers.append(
+                nn.Conv2d(
+                    self.data_space_in.channels, input_channels_required, kernel_size=1
+                )
             )
 
         # Unflatten the channel dimension to extract the patches: [N, n_patches, C, patch_h, patch_w]
@@ -177,6 +141,4 @@ class PiecewiseDecoder(BaseDecoder):
             TensorNCHW with (batch_size, output_channels, output_height, output_width)
 
         """
-        if self.input_channel_indices is not None:
-            x = x[:, self.input_channel_indices, :, :]
         return self.model(x)

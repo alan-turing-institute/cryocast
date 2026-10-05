@@ -1,3 +1,4 @@
+# Piecewise encoder/decoder with spatial convolutions
 _target_: icenet_mp.models.EncodeProcessDecode
 
 name: piecewise-unet-piecewise

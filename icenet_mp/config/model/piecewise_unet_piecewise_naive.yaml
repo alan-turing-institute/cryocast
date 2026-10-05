@@ -1,10 +1,8 @@
+# Piecewise encoder/decoder without spatial convolutions
 _target_: icenet_mp.models.EncodeProcessDecode
 
 name: piecewise-unet-piecewise-naive
 
-# This variant isolates the patching behaviour of the piecewise encoder/decoder.
-# No learned convolution is used in either encode or decode; the UNet processor is
-# unchanged so this can be compared directly with piecewise_unet_piecewise.
 encoders:
   latent_space: [144, 144]
   era5:

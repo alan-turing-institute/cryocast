@@ -117,7 +117,15 @@ class TestHydraConfigLoading:
         assert naive.model.name == "piecewise-unet-piecewise-naive"
         assert baseline.random.seed == 123
         assert baseline.random.fully_deterministic is True
-        for key in ("data", "loss", "predict", "train", "evaluate", "random"):
+        for key in (
+            "data",
+            "loss",
+            "train",
+            "evaluate",
+            "random",
+            "variables",
+            "window",
+        ):
             assert OmegaConf.to_container(
                 baseline[key], resolve=False
             ) == OmegaConf.to_container(naive[key], resolve=False)

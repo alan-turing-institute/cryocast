@@ -154,19 +154,6 @@ class EncodeProcessDecode(BaseModel):
             channels=sum(encoder.data_space_out.channels for encoder in self.encoders),
             shape=latent_shapes.pop(),
         )
-        target_channel_offset = self._find_target_channel_offset()
-        target_input_space = next(
-            (
-                input_space
-                for input_space in self.input_spaces
-                if input_space.name == self.output_space.name
-            ),
-            None,
-        )
-        target_group_channels = (
-            target_input_space.channels if target_input_space is not None else None
-        )
-
         self.processor: BaseProcessor = (
             processor
             if isinstance(processor, BaseProcessor)
@@ -176,7 +163,7 @@ class EncodeProcessDecode(BaseModel):
                 data_space_target=self.target_encoder.data_space_out,
                 n_forecast_steps=self.n_forecast_steps,
                 n_history_steps=self.n_history_steps,
-                target_channel_offset=target_channel_offset,
+                target_channel_offset=self._find_target_channel_offset(),
             )
         )
 
@@ -189,9 +176,6 @@ class EncodeProcessDecode(BaseModel):
                 data_space_in=combined_latent_space,
                 data_space_out=self.output_space,
                 mask_dir=mask_dir,
-                target_channel_offset=target_channel_offset,
-                target_group_channels=target_group_channels,
-                target_variable_indices=self.target_variable_indices,
             )
         )
 
