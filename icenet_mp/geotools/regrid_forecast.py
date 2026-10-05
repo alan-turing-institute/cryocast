@@ -145,13 +145,14 @@ def regrid_forecast_run(  # noqa: PLR0913
         method="linear",
     )
 
-    # Keep the source variable's metadata, adding the CF attributes for known
-    # variables. These take precedence, as older prediction files lack valid ranges.
-    attributes = {
+    # Keep the source variable's metadata (e.g. its "predicted ..." long_name),
+    # filling any gaps from the CF attributes for known variables, such as the valid
+    # range missing from older prediction files
+    attributes = CF_VARIABLE_ATTRIBUTES.get(variable, {}) | {
         key: value
         for key, value in run[variable].attrs.items()
         if key not in SOURCE_ONLY_ATTRIBUTES
-    } | CF_VARIABLE_ATTRIBUTES.get(variable, {})
+    }
 
     # Bilinear interpolation does not guarantee values stay within the valid range,
     # so clip to it wherever one is defined (NaNs outside the source grid are kept)

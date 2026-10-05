@@ -9,7 +9,7 @@ from netCDF4 import Dataset as NetCDFDataset
 from torch import Tensor
 
 from icenet_mp.data import CombinedDataset
-from icenet_mp.types import NDIM_NTCHW, MaskType
+from icenet_mp.types import CF_VARIABLE_ATTRIBUTES, NDIM_NTCHW, MaskType
 
 if TYPE_CHECKING:  # per rule TC003
     from pathlib import Path
@@ -267,19 +267,20 @@ class PredictionWriter(Callback):
         )
         if mask_names:
             variable.ancillary_variables = " ".join(mask_names)
-        if variable_name == "ice_conc":
-            variable.standard_name = "sea_ice_area_fraction"
-            variable.long_name = (
-                "observed sea ice concentration"
-                if observed
-                else "predicted sea ice concentration"
-            )
-            variable.units = "1"
+        if variable_name in CF_VARIABLE_ATTRIBUTES:
+            # CF requires valid_min/valid_max to match the variable's type (f4)
+            attributes = {
+                key: np.float32(value) if key in ("valid_min", "valid_max") else value
+                for key, value in CF_VARIABLE_ATTRIBUTES[variable_name].items()
+            }
+            prefix = "observed" if observed else "predicted"
+            attributes["long_name"] = f"{prefix} {attributes['long_name']}"
+            variable.setncatts(attributes)
         elif not observed:
             logger.warning(
-                "No CF standard_name/units mapping for prediction variable '%s'; "
-                "it will be written without them, despite this file's Conventions "
-                "attribute declaring CF-1.10.",
+                "No CF attributes defined in CF_VARIABLE_ATTRIBUTES for prediction "
+                "variable '%s'; it will be written without them, despite this "
+                "file's Conventions attribute declaring CF-1.10.",
                 variable_name,
             )
 

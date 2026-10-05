@@ -6,6 +6,7 @@ SEA_ICE_THRESHOLD = 0.15
 # CF attributes for known prediction variables, keyed by variable name
 CF_VARIABLE_ATTRIBUTES: dict[str, dict[str, str | float]] = {
     "ice_conc": {
+        "long_name": "sea ice concentration",
         "standard_name": "sea_ice_area_fraction",
         "units": "1",
         "valid_min": 0.0,

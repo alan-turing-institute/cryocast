@@ -120,6 +120,17 @@ class TestPredictionWriter:
             assert np.allclose(prediction[:2], 0.5)
             assert np.allclose(prediction[2:], 0.8)
             assert netcdf.variables["ice_conc"].standard_name == "sea_ice_area_fraction"
+            assert (
+                netcdf.variables["ice_conc"].long_name
+                == "predicted sea ice concentration"
+            )
+            assert netcdf.variables["ice_conc"].units == "1"
+            for name in ("ice_conc", "ice_conc_observed"):
+                valid_min = netcdf.variables[name].valid_min
+                valid_max = netcdf.variables[name].valid_max
+                assert valid_min.dtype == np.float32
+                assert valid_max.dtype == np.float32
+                assert (valid_min, valid_max) == (0.0, 1.0)
 
             observed = np.asarray(netcdf.variables["ice_conc_observed"][:])
             assert observed.shape == (3, 2, 2, 2)
