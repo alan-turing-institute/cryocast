@@ -2,7 +2,7 @@ import inspect
 from collections.abc import Callable
 
 import pytest
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from icenet_mp.cli.hydra import hydra_adaptor
 
@@ -82,7 +82,7 @@ class TestHydraConfigLoading:
     def test_climatology_baseline_composes(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
-        cfg = compose_config(config_name="baseline/00_climatology")
+        cfg = compose_config(config_name="baseline/climatology")
         assert cfg.model._target_ == "icenet_mp.models.Climatology"
         assert cfg.model.name == "climatology"
         assert cfg.train.trainer.max_epochs == 1
@@ -100,6 +100,35 @@ class TestHydraConfigLoading:
         )
         assert "metric_summary" not in cfg.train.callbacks
         assert "metric_summary" not in cfg.evaluate.callbacks
+
+    def test_piecewise_baselines_are_matched_except_for_model_variant(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        overrides = ["random=deterministic"]
+        baseline_conv = compose_config(
+            config_name="baseline/piecewise_unet_piecewise_conv", overrides=overrides
+        )
+        baseline_linear = compose_config(
+            config_name="baseline/piecewise_unet_piecewise_linear",
+            overrides=overrides,
+        )
+
+        assert baseline_conv.model.name == "piecewise-unet-piecewise-conv"
+        assert baseline_linear.model.name == "piecewise-unet-piecewise-linear"
+        assert baseline_conv.random.seed == 123
+        assert baseline_conv.random.fully_deterministic is True
+        for key in (
+            "data",
+            "loss",
+            "train",
+            "evaluate",
+            "random",
+            "variables",
+            "window",
+        ):
+            key_conv = OmegaConf.to_container(baseline_conv[key], resolve=False)
+            key_linear = OmegaConf.to_container(baseline_linear[key], resolve=False)
+            assert key_conv == key_linear, f"Mismatch in config section '{key}'"
 
 
 class TestHydraAdaptor:

@@ -2,5 +2,5 @@
 defaults:
   - /base
   - override /loss: huber
-  - override /model: piecewise_unet_piecewise
+  - override /model: piecewise_unet_piecewise_conv
   - _self_

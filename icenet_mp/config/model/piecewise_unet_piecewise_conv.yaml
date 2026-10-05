@@ -1,6 +1,7 @@
+# Piecewise encoder/decoder with spatial convolutions
 _target_: icenet_mp.models.EncodeProcessDecode
 
-name: piecewise-unet-piecewise
+name: piecewise-unet-piecewise-conv
 
 encoders:
   latent_space: [144, 144]
