@@ -47,8 +47,8 @@ def compute_feature_importance(
     data_module = CommonDataModule(config)
     feature_names = [
         f"{group}/{variable}"
-        for group, variables in data_module.variable_names.items()
-        for variable in variables
+        for group, dataset in data_module.datasets.items()
+        for variable in dataset.variable_names
     ]
 
     rows: list[np.ndarray] = []
@@ -64,7 +64,7 @@ def compute_feature_importance(
                     batch[group]
                     .numpy()
                     .mean(axis=(1, 3, 4))  # (B, T, C, H, W) -> (B, C)
-                    for group in data_module.variable_names
+                    for group in data_module.datasets
                 ],
                 axis=1,
             )

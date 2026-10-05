@@ -72,18 +72,15 @@ def dataset_with_uncertainty() -> tuple[MagicMock, MagicMock]:
     target = MagicMock()
     target.name = "target"
     target.variable_names = ["ice_conc"]
+    target.variable_names_on_disk = ["ice_conc", "total_standard_uncertainty"]
     target.statistics = {"minimum": [0.0], "maximum": [2.0]}
-    dataset.target = target
-
-    source = MagicMock()
-    source.name = "target"
-    source.variable_names = ["ice_conc", "total_standard_uncertainty"]
     uncertainty_ds = MagicMock()
     uncertainty_ds.get_tchw.return_value = np.array(
         [[[[0.1, 0.2], [0.3, 1.1]]]], dtype=np.float32
     )
-    source.subset.return_value = uncertainty_ds
-    dataset.inputs = [source]
+    target.subset.return_value = uncertainty_ds
+    dataset.target = target
+    dataset.inputs = []
     return dataset, uncertainty_ds
 
 
@@ -104,23 +101,43 @@ class TestLoadTargetUncertainties:
             np.array([[[0.05, 0.1], [0.15, np.nan]]]),
             equal_nan=True,
         )
-        dataset.inputs[0].subset.assert_called_once_with(
+        dataset.target.subset.assert_called_once_with(
             variables=["total_standard_uncertainty"], normalise=False
         )
 
-    def test_skips_missing_source(
+    def test_loads_uncertainty_not_selected_as_input(
         self, dataset_with_uncertainty: tuple[MagicMock, MagicMock]
     ) -> None:
-        """Return no uncertainty when the matching target input is unavailable."""
+        """Load uncertainty from disk even when it is not a selected input variable."""
         dataset, _ = dataset_with_uncertainty
-        dataset.inputs[0].name = "other"
+        source = MagicMock()
+        source.name = "target"
+        source.variable_names = ["ice_conc"]
+        dataset.inputs = [source]
 
         result = MediaLoggingCallback().load_target_uncertainties(
             dataset, [datetime(2026, 8, 21, tzinfo=UTC)]
         )
 
+        assert set(result) == {0}
+
+    def test_warns_when_uncertainty_not_on_disk(
+        self,
+        dataset_with_uncertainty: tuple[MagicMock, MagicMock],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Warn and return no uncertainty when the variable does not exist on disk."""
+        dataset, _ = dataset_with_uncertainty
+        dataset.target.variable_names_on_disk = ["ice_conc"]
+
+        with caplog.at_level(logging.WARNING):
+            result = MediaLoggingCallback().load_target_uncertainties(
+                dataset, [datetime(2026, 8, 21, tzinfo=UTC)]
+            )
+
         assert result == {}
-        dataset.inputs[0].subset.assert_not_called()
+        dataset.target.subset.assert_not_called()
+        assert "'total_standard_uncertainty' was not found" in caplog.text
 
     def test_skips_when_target_variable_not_present(
         self, dataset_with_uncertainty: tuple[MagicMock, MagicMock]
@@ -134,7 +151,7 @@ class TestLoadTargetUncertainties:
         )
 
         assert result == {}
-        dataset.inputs[0].subset.assert_not_called()
+        dataset.target.subset.assert_not_called()
 
     def test_handles_data_error(
         self,

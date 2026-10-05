@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from lightning import LightningDataModule
@@ -14,6 +15,7 @@ from icenet_mp.utils import mask_dir
 from .calendar_day_climatology import CalendarDayClimatology
 from .combined_dataset import CombinedDataset
 from .single_dataset import SingleDataset
+from .variable_selection import VariableSelection
 
 log = logging.getLogger(__name__)
 
@@ -44,43 +46,23 @@ class CommonDataModule(LightningDataModule):
             for path in paths:
                 log.info("%s - %s", " " * (len(str(idx)) + 1), path)
 
-        # Check prediction target
-        self.target_group_name = config["predict"]["target"]["group_name"]
-        if self.target_group_name not in self.dataset_groups:
-            available_groups = ", ".join(sorted(self.dataset_groups)) or "<none>"
-            msg = (
-                f"Prediction target group {self.target_group_name!r} was not found in "
-                f"the configured datasets. Available groups: {available_groups}. "
-                "When evaluating a checkpoint, ensure the dataset `group_as` matches "
-                "the checkpoint's `predict.target.group_name`."
-            )
-            raise ValueError(msg)
-        self._target_variables: list[str] = config["predict"]["target"].get(
-            "variables", []
+        # Resolve and validate the requested input/target variable selection
+        self._variable_selection = VariableSelection(
+            dataset_group_names=self.dataset_groups.keys(),
+            input_variables=config["variables"]["input"],
+            target_variables=config["variables"]["target"],
         )
 
-        # Set periods for train, validation, and test
-        self.batch_size = int(config["data"]["split"]["batch_size"])
-        self.predict_periods = [
-            {str(k): None if v is None else str(v) for k, v in period.items()}
-            for period in config["data"]["split"]["predict"]
-        ]
-        self.test_periods = [
-            {str(k): None if v is None else str(v) for k, v in period.items()}
-            for period in config["data"]["split"]["test"]
-        ]
-        self.train_periods = [
-            {str(k): None if v is None else str(v) for k, v in period.items()}
-            for period in config["data"]["split"]["train"]
-        ]
-        self.val_periods = [
-            {str(k): None if v is None else str(v) for k, v in period.items()}
-            for period in config["data"]["split"]["validate"]
-        ]
+        # Set periods for prediction, testing, training and validation
+        self.batch_size = int(config["window"]["batch_size"])
+        self.predict_periods = self._normalise(config["data"]["split"]["predict"])
+        self.test_periods = self._normalise(config["data"]["split"]["test"])
+        self.train_periods = self._normalise(config["data"]["split"]["train"])
+        self.val_periods = self._normalise(config["data"]["split"]["validate"])
 
         # Set history and forecast steps
-        self.n_forecast_steps = int(config["predict"].get("n_forecast_steps", 1))
-        self.n_history_steps = int(config["predict"].get("n_history_steps", 1))
+        self.n_forecast_steps = int(config["window"].get("n_forecast_steps", 1))
+        self.n_history_steps = int(config["window"].get("n_history_steps", 1))
 
         # Set common arguments for the dataloader
         self._common_dataloader_kwargs = DataloaderArgs(
@@ -147,7 +129,23 @@ class CommonDataModule(LightningDataModule):
 
     @cached_property
     def datasets(self) -> dict[str, SingleDataset]:
-        """Return a dictionary of dataset group names to SingleDataset objects."""
+        """Return a filtered dictionary of dataset group names to SingleDataset objects.
+
+        Only include requested variables for each dataset group. If no variables are
+        requested for a dataset group, ignore it.
+        """
+        requested_variables = self._variable_selection.filter_requested(
+            {name: ds.variable_names for name, ds in self.datasets_unfiltered.items()}
+        )
+        return {
+            ds_name: self.datasets_unfiltered[ds_name].subset(variables=variable_names)
+            for ds_name, variable_names in requested_variables.items()
+            if variable_names
+        }
+
+    @cached_property
+    def datasets_unfiltered(self) -> dict[str, SingleDataset]:
+        """Return an unfiltered dictionary of dataset group names to SingleDataset objects."""
         return {
             name: SingleDataset(name, paths)
             for name, paths in self.dataset_groups.items()
@@ -214,19 +212,74 @@ class CommonDataModule(LightningDataModule):
         )
 
     @cached_property
+    def target_group_name(self) -> str:
+        """Return the name of the target variable group."""
+        return self._variable_selection.target_group_name
+
+    @cached_property
     def target_variables(self) -> list[str]:
-        """Return the names of the variables to predict."""
-        if self._target_variables:
-            return self._target_variables
-        return self.variable_names[self.target_group_name]
+        """Return the names of the variables to predict, in on-disk order."""
+        try:
+            on_disk_variables = next(
+                ds.variable_names
+                for ds in self.datasets.values()
+                if ds.name == self.target_group_name and ds.variable_names
+            )
+        except StopIteration as exc:
+            msg = f"Dataset group {self.target_group_name} has no available variables."
+            raise ValueError(msg) from exc
+        return self._variable_selection.target_variables(on_disk_variables)
 
     @cached_property
     def target_variable_indices(self) -> list[int]:
-        """Return the indices of the variables to predict."""
-        return [
-            self.variable_names[self.target_group_name].index(variable)
-            for variable in self.target_variables
-        ]
+        """Return the indices of the target variables within their dataset group.
+
+        These indices are used to select target channels from the target
+        `SingleDataset`, so they must be resolved against the actual variable order in
+        that dataset. This is determined by the underlying data's storage order rather
+        than the arbitrary order the variables are listed in `variables.input`.
+        """
+        available_variables = self.datasets[self.target_group_name].variable_names
+        try:
+            return [
+                available_variables.index(variable)
+                for variable in self.target_variables
+            ]
+        except ValueError as exc:
+            msg = (
+                f"Not all target variable {self.target_variables} were found in the "
+                f"dataset group {self.target_group_name!r}. Available variables: "
+                f"{available_variables!r}."
+            )
+            raise ValueError(msg) from exc
+
+    def _build_dataset(
+        self,
+        periods: list[dict[str, str | None]],
+        *,
+        stage: str,
+    ) -> CombinedDataset:
+        """Construct a dataset covering the given periods."""
+        dataset = CombinedDataset(
+            [ds.subset(date_ranges=periods) for ds in self.datasets.values()],
+            n_forecast_steps=self.n_forecast_steps,
+            n_history_steps=self.n_history_steps,
+            target_group_name=self.target_group_name,
+            target_variables=self.target_variables,
+            climatology=self.climatology.mean if self.climatology else None,
+        )
+        # The variables used for validation have already been logged for training
+        if stage != "validation":
+            for line in dataset.variable_list():
+                log.info(line)
+        log.info(
+            "Loaded %s dataset with %d dates between %s and %s.",
+            stage,
+            len(dataset),
+            dataset.start_date.astype("datetime64[m]"),
+            dataset.end_date.astype("datetime64[m]"),
+        )
+        return dataset
 
     def _in_train_periods(self, day: np.datetime64) -> bool:
         """Return whether the date falls within any of the training period ranges.
@@ -247,10 +300,13 @@ class CommonDataModule(LightningDataModule):
             return True
         return False
 
-    @cached_property
-    def variable_names(self) -> dict[str, list[str]]:
-        """Return the variable names for each input."""
-        return {ds.name: ds.variable_names for ds in self.datasets.values()}
+    @staticmethod
+    def _normalise(periods: list[dict[Any, Any]]) -> list[dict[str, str | None]]:
+        """Normalise periods to a list of dictionaries with string keys and values."""
+        return [
+            {str(k): None if v is None else str(v) for k, v in period.items()}
+            for period in periods
+        ]
 
     def assign_workers(self, n_workers: int) -> None:
         """Assign number of workers for data loading."""
@@ -259,63 +315,20 @@ class CommonDataModule(LightningDataModule):
         self._common_dataloader_kwargs["persistent_workers"] = n_workers > 0
         self._common_dataloader_kwargs["prefetch_factor"] = 1 if n_workers > 0 else None
 
-    def predict_dataloader(
-        self,
-    ) -> DataLoader[dict[str, ArrayTCHW]]:
+    def predict_dataloader(self) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct predict dataloader."""
-        dataset = CombinedDataset(
-            [
-                ds.subset(date_ranges=self.predict_periods)
-                for ds in self.datasets.values()
-            ],
-            n_forecast_steps=self.n_forecast_steps,
-            n_history_steps=self.n_history_steps,
-            target_group_name=self.target_group_name,
-            target_variables=self.target_variables,
-            climatology=self.climatology.mean if self.climatology else None,
-        )
-        log.info(
-            "Loaded predict dataset with %d dates between %s and %s.",
-            len(dataset),
-            dataset.start_date,
-            dataset.end_date,
-        )
+        dataset = self._build_dataset(self.predict_periods, stage="predict")
         return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)
 
-    def test_dataloader(
-        self,
-    ) -> DataLoader[dict[str, ArrayTCHW]]:
+    def test_dataloader(self) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct test dataloader."""
-        dataset = CombinedDataset(
-            [ds.subset(date_ranges=self.test_periods) for ds in self.datasets.values()],
-            n_forecast_steps=self.n_forecast_steps,
-            n_history_steps=self.n_history_steps,
-            target_group_name=self.target_group_name,
-            target_variables=self.target_variables,
-            climatology=self.climatology.mean if self.climatology else None,
-        )
-        log.info(
-            "Loaded test dataset with %d dates between %s and %s.",
-            len(dataset),
-            dataset.start_date,
-            dataset.end_date,
-        )
+        dataset = self._build_dataset(self.test_periods, stage="test")
         return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)
 
     @cached_property
     def training_dataset(self) -> CombinedDataset:
         """Return the dataset used for training."""
-        return CombinedDataset(
-            [
-                ds.subset(date_ranges=self.train_periods)
-                for ds in self.datasets.values()
-            ],
-            n_forecast_steps=self.n_forecast_steps,
-            n_history_steps=self.n_history_steps,
-            target_group_name=self.target_group_name,
-            target_variables=self.target_variables,
-            climatology=self.climatology.mean if self.climatology else None,
-        )
+        return self._build_dataset(self.train_periods, stage="training")
 
     def train_dataloader(
         self,
@@ -332,22 +345,7 @@ class CommonDataModule(LightningDataModule):
         )
         return DataLoader(dataset, shuffle=shuffle, **self._common_dataloader_kwargs)
 
-    def val_dataloader(
-        self,
-    ) -> DataLoader[dict[str, ArrayTCHW]]:
+    def val_dataloader(self) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct validation dataloader."""
-        dataset = CombinedDataset(
-            [ds.subset(date_ranges=self.val_periods) for ds in self.datasets.values()],
-            n_forecast_steps=self.n_forecast_steps,
-            n_history_steps=self.n_history_steps,
-            target_group_name=self.target_group_name,
-            target_variables=self.target_variables,
-            climatology=self.climatology.mean if self.climatology else None,
-        )
-        log.info(
-            "Loaded validation dataset with %d dates between %s and %s.",
-            len(dataset),
-            dataset.start_date,
-            dataset.end_date,
-        )
+        dataset = self._build_dataset(self.val_periods, stage="validation")
         return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)

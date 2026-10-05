@@ -1,8 +1,5 @@
-# Name of the dataset group containing our prediction target
-target:
-  group_name: sic-ssmis
-  variables:
-    - ice_conc
+# How many samples to process in a single batch
+batch_size: 2
 
 # Number of future steps to predict
 n_forecast_steps: 14

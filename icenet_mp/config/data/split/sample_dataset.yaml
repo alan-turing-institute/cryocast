@@ -1,5 +1,3 @@
-batch_size: 2
-
 # Holdout set is not applicable for sample data
 predict:
   - start: null

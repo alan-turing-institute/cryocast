@@ -73,9 +73,9 @@ docs = [
     "zensical>=0.0.53",
 ]
 notebooks = [
+    "cartopy>=0.26.0",
     "cmocean>=4.0.3",
-    "download-toolbox>=0.0.6",
-    "gdal>=3.10.0", # PyPI only ships an sdist; requires a matching system GDAL install and build toolchain
+    "h5py>=3.16.0",
     "jupyter>=1.1.1",
     "s2sphere>=0.2.5",
 ]

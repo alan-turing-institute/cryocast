@@ -64,6 +64,9 @@ class SingleDataset(Dataset):
         self._normalise = normalise
         self._norm_offset: np.ndarray | None = None
         self._norm_scale: np.ndarray | None = None
+        # Using a set here means that the anemoi `select` call will keep the underlying
+        # on-disk variable order. This means that `variable_names` will reflect the
+        # on-disk layout, regardless of the order variables were requested in.
         self._variables = set(variables)
 
     @classmethod
@@ -228,6 +231,11 @@ class SingleDataset(Dataset):
     def variable_names(self) -> list[str]:
         """Return the variable names for this dataset."""
         return self.dataslices[0].variables
+
+    @cached_property
+    def variable_names_on_disk(self) -> list[str]:
+        """Return all variable names stored on disk, ignoring any variable selection."""
+        return list(self.load_dataset(self._input_files).variables)
 
     @cached_property
     def statistics(self) -> dict[str, np.ndarray]:

@@ -87,6 +87,31 @@ And run with:
 uv run imp train --config-name my_local_config
 ```
 
+### Selecting input and target variables
+
+The set of variables used as input and target are controlled by the `variables` config key.
+For each input dataset group (as defined by the `group_as` key in `datasets`) you should define the set of variables from that dataset that you want to use.
+The same logic applies to the target variables, as shown in this example
+
+```yaml
+variables:
+  input:
+    era5:
+      - 2t
+      - msl
+    sic-osisaf:
+      - ice_conc
+  target:
+    sic-osisaf:
+      - ice_conc
+```
+
+!!! note
+    We currently enforce that the target variables must also be input variables.
+    This requirement may be relaxed in future.
+
+An empty list of target variables (e.g. `sic-osisaf: []`) selects every input variable in that dataset group.
+
 ### Generating Argo float missing dates
 
 Some dates have no Argo float data. When specifying a new Argo float dataset for the first time it is necessary to generate a list of missing dates for a dataset. This can be done as follows:

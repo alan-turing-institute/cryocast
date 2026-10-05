@@ -14,7 +14,6 @@ def cfg_common_data_module() -> DictConfig:
             "data": {
                 "datasets": {"ds1": {"name": "mock", "group_as": "group1"}},
                 "split": {
-                    "batch_size": 2,
                     "predict": [{"start": None, "end": None}],
                     "test": [{"start": "2020-01-01", "end": "2020-12-31"}],
                     "train": [
@@ -24,8 +23,12 @@ def cfg_common_data_module() -> DictConfig:
                     "validate": [{"start": "2020-01-01", "end": "2020-03-31"}],
                 },
             },
-            "predict": {
-                "target": {"group_name": "group1"},
+            "variables": {
+                "input": {"group1": ["mock_var"]},
+                "target": {"group1": ["mock_var"]},
+            },
+            "window": {
+                "batch_size": 2,
                 "n_forecast_steps": 1,
                 "n_history_steps": 1,
             },
