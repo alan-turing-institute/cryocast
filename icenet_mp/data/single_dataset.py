@@ -233,6 +233,11 @@ class SingleDataset(Dataset):
         return self.dataslices[0].variables
 
     @cached_property
+    def variable_names_on_disk(self) -> list[str]:
+        """Return all variable names stored on disk, ignoring any variable selection."""
+        return list(self.load_dataset(self._input_files).variables)
+
+    @cached_property
     def statistics(self) -> dict[str, np.ndarray]:
         """Return per-channel statistics from the underlying dataset.
 

@@ -161,19 +161,18 @@ class MediaLoggingCallback(Callback):
                     continue
                 target_idx = dataset.target.variable_names.index(target_variable)
 
-                # Attempt to load uncertainty from the dataset
-                source = next(
-                    (
-                        input_ds
-                        for input_ds in dataset.inputs
-                        if input_ds.name == dataset.target.name
-                        and uncertainty_variable in input_ds.variable_names
-                    ),
-                    None,
-                )
-                if source is None:
+                # Load uncertainty from the on-disk metadata rather than requiring it is
+                # used as an input variable.
+                if uncertainty_variable not in dataset.target.variable_names_on_disk:
+                    log.warning(
+                        "Not plotting uncertainty for %r: variable %r was not found "
+                        "in dataset group %r.",
+                        target_variable,
+                        uncertainty_variable,
+                        dataset.target.name,
+                    )
                     continue
-                uncertainty_ds = source.subset(
+                uncertainty_ds = dataset.target.subset(
                     variables=[uncertainty_variable], normalise=False
                 )
 

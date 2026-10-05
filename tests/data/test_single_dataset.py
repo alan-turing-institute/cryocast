@@ -286,6 +286,20 @@ class TestSingleDataset:
         subset_dataset = original_dataset.subset(variables=["temperature", "ice_conc"])
         assert subset_dataset.variable_names == ["ice_conc", "temperature"]
 
+    def test_variable_names_on_disk_ignores_variable_selection(
+        self, mock_dataset: Path
+    ) -> None:
+        """`variable_names_on_disk` lists every stored variable, even after `subset`."""
+        subset_dataset = SingleDataset(
+            name="mock_dataset", input_files=[mock_dataset]
+        ).subset(variables=["ice_conc"])
+        assert subset_dataset.variable_names == ["ice_conc"]
+        assert subset_dataset.variable_names_on_disk == [
+            "ice_conc",
+            "ice_thickness",
+            "temperature",
+        ]
+
     def test_subset_preserves_date_ranges(
         self,
         mock_dataset: Path,
