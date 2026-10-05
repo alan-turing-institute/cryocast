@@ -14,7 +14,9 @@ _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
 def datetime_from_npdatetime(dt: np.datetime64) -> datetime:
     """Convert numpy datetime64 to aware datetime in UTC."""
-    return dt.astype("datetime64[ms]").astype(datetime).astimezone(UTC)
+    # NumPy datetimes are timezone-naive UTC, so attach UTC rather than converting
+    # (astimezone would treat the naive value as local time)
+    return dt.astype("datetime64[ms]").astype(datetime).replace(tzinfo=UTC)
 
 
 def get_device_name(accelerator_name: str) -> str:
