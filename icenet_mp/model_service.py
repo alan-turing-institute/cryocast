@@ -110,7 +110,8 @@ class ModelService:
 
         # Build a combined model configuration where the command line config takes
         # precedence except for the "model", "train", "variables" and "window" keys
-        # which are related to training the model.
+        # which are related to training the model. The exception to this is
+        # "window.batch_size", which is also taken from the command line config.
         config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
         try:
             # Load the model configuration from the checkpoint directory
@@ -120,7 +121,7 @@ class ModelService:
             # cannot be loaded, since the current defaults would silently be used.
             if "predict" in ckpt_config:
                 msg = (
-                    f"Checkpoint configuration {config_path} uses the legacy 'predict' "
+                    f"Checkpoint configuration {config_path} uses the 'predict' "
                     "key, which has been replaced by 'variables' and 'window'. Please "
                     "retrain the model or manually update the config file."
                 )
@@ -134,6 +135,9 @@ class ModelService:
             # defines which variables were used to train the model.
             if "variables" in ckpt_config:
                 combined_cfg["variables"] = ckpt_config["variables"]
+            # Batch size does not affect the trained model, so this can be overridden
+            if "batch_size" in config.get("window", {}):
+                combined_cfg["window"]["batch_size"] = config["window"]["batch_size"]
         except (NotADirectoryError, FileNotFoundError):
             combined_cfg = config
             log.debug("Could not load checkpoint configuration from %s.", config_path)

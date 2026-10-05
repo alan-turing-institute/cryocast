@@ -245,6 +245,43 @@ class TestModelService:
 
         assert OmegaConf.to_container(service.config["variables"]) == ckpt_variables
 
+    def test_from_checkpoint_batch_size_from_current_config(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Batch size comes from the current config; other window keys do not."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
+
+        cli_config = cfg_model_service.copy()
+        cli_config["window"] = {
+            "batch_size": 1,
+            "n_forecast_steps": 7,
+            "n_history_steps": 1,
+        }
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(cli_config, checkpoint_path)
+
+        assert OmegaConf.to_container(service.config["window"]) == {
+            "batch_size": 1,
+            "n_forecast_steps": 2,
+            "n_history_steps": 3,
+        }
+
     def test_from_checkpoint_raises_on_legacy_predict_config(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
