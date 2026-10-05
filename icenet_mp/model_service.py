@@ -115,17 +115,8 @@ class ModelService:
         config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
         try:
             # Load the model configuration from the checkpoint directory
-            ckpt_config = DictConfig(OmegaConf.load(config_path))
+            ckpt_config = cls._migrate_legacy_config(config_path)
             log.debug("Loaded checkpoint configuration from %s.", config_path)
-            # Checkpoints from before 'predict' was split into 'variables' and 'window'
-            # cannot be loaded, since the current defaults would silently be used.
-            if "predict" in ckpt_config:
-                msg = (
-                    f"Checkpoint configuration {config_path} uses the 'predict' "
-                    "key, which has been replaced by 'variables' and 'window'. Please "
-                    "retrain the model or manually update the config file."
-                )
-                log.warning(msg)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
             for key in ("model", "train", "window"):
                 combined_cfg[key] = OmegaConf.merge(
@@ -170,6 +161,33 @@ class ModelService:
         ).get("epoch")
 
         return builder
+
+    @staticmethod
+    def _migrate_legacy_config(ckpt_config_path: Path) -> DictConfig:
+        """Load a YAML config file, migrating legacy settings to the current format."""
+        ckpt_config = DictConfig(OmegaConf.load(ckpt_config_path))
+
+        # Checkpoints from before 'predict' was split into 'variables' and 'window'
+        # are translated, since the current defaults would otherwise be used.
+        if (predict := ckpt_config.pop("predict", None)) is not None:
+            log.warning(
+                "Checkpoint configuration %s uses the legacy 'predict' key. This "
+                "has been translated into 'variables' and 'window' settings.",
+                ckpt_config_path,
+            )
+            # Legacy checkpoints used every variable from every dataset group as input
+            target = predict["target"]
+            if "variables" not in ckpt_config:
+                ckpt_config["variables"] = {
+                    "input": {},
+                    "target": {target["group_name"]: target.get("variables", [])},
+                }
+            if "window" not in ckpt_config:
+                ckpt_config["window"] = {
+                    "n_forecast_steps": predict.get("n_forecast_steps", 1),
+                    "n_history_steps": predict.get("n_history_steps", 1),
+                }
+        return ckpt_config
 
     @property
     def config(self) -> DictConfig:

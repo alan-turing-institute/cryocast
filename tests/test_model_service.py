@@ -282,23 +282,25 @@ class TestModelService:
             "n_history_steps": 3,
         }
 
-    def test_from_checkpoint_warns_on_legacy_predict_config(
+    def test_from_checkpoint_translates_legacy_predict_config(
         self,
         cfg_model_service: DictConfig,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Warn on checkpoints whose config predates the 'variables'/'window' split."""
+        """Translate checkpoints whose config predates the 'variables'/'window' split."""
         checkpoints_dir = tmp_path / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
         checkpoint_path = checkpoints_dir / "model.ckpt"
         checkpoint_path.write_text("checkpoint")
 
         ckpt_config = cfg_model_service.copy()
+        del ckpt_config["variables"]
+        del ckpt_config["window"]
         ckpt_config["predict"] = {
             "target": {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
             "n_forecast_steps": 7,
-            "n_history_steps": 3,
+            "n_history_steps": 4,
         }
         files_dir = tmp_path / "files"
         files_dir.mkdir(parents=True)
@@ -316,9 +318,20 @@ class TestModelService:
             mp.setattr(
                 "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
-            ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+            service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
 
-        assert "predict' key, which has been replaced by 'variables'" in caplog.text
+        assert "uses the legacy 'predict' key" in caplog.text
+        assert "predict" not in service.config
+        assert OmegaConf.to_container(service.config["variables"]) == {
+            "input": {},
+            "target": {"sic-ssmis": ["ice_conc"]},
+        }
+        assert service.config["window"]["n_forecast_steps"] == 7
+        assert service.config["window"]["n_history_steps"] == 4
+        assert (
+            service.config["window"]["batch_size"]
+            == cfg_model_service["window"]["batch_size"]
+        )
 
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
