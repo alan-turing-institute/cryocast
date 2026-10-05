@@ -94,15 +94,16 @@ For each input dataset group (as defined by the `group_as` key in `datasets`) yo
 The same logic applies to the target variables, as shown in this example
 
 ```yaml
-input:
-  era5:
-    - 2t
-    - msl
-  sic-osisaf:
-    - ice_conc
-target:
-  sic-osisaf:
-    - ice_conc
+variables:
+  input:
+    era5:
+      - 2t
+      - msl
+    sic-osisaf:
+      - ice_conc
+  target:
+    sic-osisaf:
+      - ice_conc
 ```
 
 !!! note
