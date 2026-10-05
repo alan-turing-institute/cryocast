@@ -71,7 +71,7 @@ class TestRequestedVariableNames:
         selection = VariableSelection(
             dataset_group_names=["group1", "group2"],
             input_variables={"group2": ["b"]},
-            target_variables={"group1": ["a"]},
+            target_variables={"group2": ["b"]},
         )
         result = selection.filter_requested({"group1": ["a"], "group2": ["b"]})
         assert result == {"group2": ["b"]}
@@ -95,6 +95,27 @@ class TestRequestedVariableNames:
         with pytest.raises(ValueError, match="not-a-variable") as exc_info:
             selection.filter_requested({"group1": ["a"]})
         assert "a" in str(exc_info.value)
+
+    def test_target_group_missing_from_inputs_raises(self) -> None:
+        """The target group must appear in an explicit `variables.input` selection."""
+        selection = VariableSelection(
+            dataset_group_names=["group1", "group2"],
+            input_variables={"group2": ["b"]},
+            target_variables={"group1": ["a"]},
+        )
+        with pytest.raises(ValueError, match="must also be listed under") as exc_info:
+            selection.filter_requested({"group1": ["a"], "group2": ["b"]})
+        assert "variables.input.group1" in str(exc_info.value)
+
+    def test_target_variable_missing_from_inputs_raises(self) -> None:
+        """Each target variable must be in its group's `variables.input` list."""
+        selection = VariableSelection(
+            dataset_group_names=["group1"],
+            input_variables={"group1": ["a"]},
+            target_variables={"group1": ["b"]},
+        )
+        with pytest.raises(ValueError, match=r"'b'.*must also be listed under"):
+            selection.filter_requested({"group1": ["a", "b"]})
 
 
 class TestTargetVariables:

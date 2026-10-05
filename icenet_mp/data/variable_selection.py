@@ -96,6 +96,18 @@ class VariableSelection:
             verified[group_name] = [
                 v for v in available_variables if v in variable_names
             ]
+        # Verify that every target variable is also requested as an input variable
+        requested_inputs = self._requested_input_variables.get(
+            self.target_group_name, []
+        )
+        for variable in self._requested_target_variables[self.target_group_name]:
+            if variable not in requested_inputs:
+                msg = (
+                    f"Target variable {variable!r} in dataset group "
+                    f"{self.target_group_name!r} must also be listed under "
+                    f"variables.input.{self.target_group_name}."
+                )
+                raise ValueError(msg)
         return verified
 
     def target_variables(

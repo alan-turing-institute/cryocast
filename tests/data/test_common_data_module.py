@@ -381,8 +381,7 @@ class TestTargetGroupValidation:
         with pytest.raises(ValueError, match="ice_thickness") as exc_info:
             _ = dm.target_variable_indices
 
-        message = str(exc_info.value)
-        assert "ice_conc" in message
+        assert "variables.input.group1" in str(exc_info.value)
 
     def test_omitted_input_selection_raises(self, mock_dataset: Path) -> None:
         """Omitting the target's own group from `variables.input` raises a clear error."""
@@ -397,7 +396,7 @@ class TestTargetGroupValidation:
         )
         dm = CommonDataModule(cfg)
 
-        with pytest.raises(ValueError, match=r"group1.*no available variables"):
+        with pytest.raises(ValueError, match=r"'ice_conc'.*variables\.input\.group1"):
             _ = dm.target_variables
 
     def test_empty_input_selection_for_target_group_raises(
@@ -406,9 +405,7 @@ class TestTargetGroupValidation:
         """Requesting zero input variables for the target's own group also raises.
 
         Unlike omitting the key entirely, `group1` is present in `variables.input`
-        but maps to an empty list, so it is filtered out of `datasets` the same way
-        as an omitted group, hitting the same "no available variables" check in
-        `target_variables`.
+        but maps to an empty list, so its target variables are not input variables.
         """
         cfg = _build_config(
             str(mock_dataset.parent.parent.parent),
@@ -421,7 +418,7 @@ class TestTargetGroupValidation:
         )
         dm = CommonDataModule(cfg)
 
-        with pytest.raises(ValueError, match=r"group1.*no available variables"):
+        with pytest.raises(ValueError, match=r"'ice_conc'.*variables\.input\.group1"):
             _ = dm.target_variables
 
 
