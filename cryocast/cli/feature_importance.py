@@ -1,5 +1,3 @@
-"""``imp feature-importance`` - Random Forest feature importance for input variables."""
-
 import typer
 from omegaconf import DictConfig
 

@@ -21,7 +21,7 @@ PERSISTENCE_CALLBACK_TARGETS = {
 
 
 class TestTrainCallbacks:
-    """Regression tests for cryocast's train.callbacks composition."""
+    """Regression tests for train.callbacks composition."""
 
     def test_default_train_callbacks(
         self, compose_config: Callable[..., DictConfig]
@@ -44,7 +44,7 @@ class TestTrainCallbacks:
 
 
 class TestTrainMultistage:
-    """Regression tests for cryocast's train.multistage composition."""
+    """Regression tests for train.multistage composition."""
 
     def test_multistage_default_present(
         self, compose_config: Callable[..., DictConfig]

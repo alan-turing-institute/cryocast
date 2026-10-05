@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "cryocast"
 version = "2026-07"
-description = "IceNet Multimodal Pipeline for predicting sea ice."
+description = "CryoCast multimodal pipeline for predicting sea ice."
 readme = "README.md"
 authors = [
     { name = "Sophie Arana", email = "arana.sophie@gmail.com" },

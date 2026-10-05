@@ -132,7 +132,7 @@ class TestHydraConfigLoading:
 
 
 class TestHydraAdaptor:
-    """Regression tests for cryocast's hydra_adaptor signature rewriter."""
+    """Regression tests for the hydra_adaptor signature rewriter."""
 
     def test_signature_rewriting(self) -> None:
         def fn(config: DictConfig) -> None:

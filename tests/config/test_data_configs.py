@@ -12,7 +12,7 @@ DATA_GROUP_CONFIGS = sorted(
 
 
 class TestDataConfigs:
-    """Regression tests for cryocast's top-level data= config groups."""
+    """Regression tests for the top-level CryoCast 'data=' config groups."""
 
     @pytest.mark.parametrize("config_name", DATA_GROUP_CONFIGS, ids=DATA_GROUP_CONFIGS)
     def test_data_groups_compose(
