@@ -117,3 +117,62 @@ class TestPiecewiseEncodeDecode:
                 assert gradient is not None
                 assert torch.isfinite(gradient).all()
                 assert torch.count_nonzero(gradient) > 0
+
+    @pytest.mark.parametrize(
+        "test_use_hann_window", [False, True], ids=["flat", "hann"]
+    )
+    def test_multigroup_round_trip_selects_target_variable(
+        self,
+        test_use_hann_window: bool,  # noqa: FBT001
+    ) -> None:
+        n_patches = 25
+        n_prefix_channels = n_patches  # a preceding one-channel piecewise encoder
+        n_target_channels = 3
+        selected_variable = 1
+
+        # Encode a multi-variable target group and place it after the prefix group
+        encoder = PiecewiseEncoder(
+            conv_subblocks_initial=0,
+            conv_subblocks_final=0,
+            data_space_in=DataSpace(
+                name="input", channels=n_target_channels, shape=(8, 8)
+            ),
+            latent_space=(4, 4),
+        )
+        source = torch.arange(n_target_channels * 8 * 8, dtype=torch.float32).reshape(
+            1, n_target_channels, 8, 8
+        )
+        combined_latent = torch.cat(
+            (torch.zeros(1, n_prefix_channels, 4, 4), encoder(source)), dim=1
+        )
+        decoder = PiecewiseDecoder(
+            conv_subblocks_initial=0,
+            conv_subblocks_final=0,
+            data_space_in=DataSpace(
+                name="latent", channels=combined_latent.shape[1], shape=(4, 4)
+            ),
+            data_space_out=DataSpace(name="output", channels=1, shape=(8, 8)),
+            use_final_normalisation=False,
+            use_hann_window=test_use_hann_window,
+        )
+
+        # Set the 1x1 projection to select one target variable from each patch
+        projection = decoder.model[0]
+        assert isinstance(projection, torch.nn.Conv2d)
+        assert projection.bias is not None
+        with torch.no_grad():
+            projection.weight.zero_()
+            projection.bias.zero_()
+            for patch_idx in range(n_patches):
+                channel_idx = (
+                    n_prefix_channels
+                    + patch_idx * n_target_channels
+                    + selected_variable
+                )
+                projection.weight[patch_idx, channel_idx] = 1.0
+
+        output = decoder(combined_latent)
+
+        torch.testing.assert_close(
+            output, source[:, selected_variable : selected_variable + 1]
+        )

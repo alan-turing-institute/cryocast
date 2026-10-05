@@ -554,3 +554,31 @@ class TestPiecewiseDecoder:
         assert latent_ntchw.shape == (1, 1, *output_space.chw)
         assert torch.all(input_min_val < latent_ntchw)
         assert torch.all(latent_ntchw < input_max_val)
+
+    def test_projects_channels_without_spatial_convolution(self) -> None:
+        decoder = PiecewiseDecoder(
+            conv_subblocks_initial=0,
+            conv_subblocks_final=0,
+            data_space_in=DataSpace(name="input", channels=90, shape=(4, 4)),
+            data_space_out=DataSpace(name="output", channels=1, shape=(8, 8)),
+            use_final_normalisation=False,
+        )
+
+        output = decoder(torch.randn(2, 90, 4, 4))
+
+        assert output.shape == (2, 1, 8, 8)
+        convolutions = [m for m in decoder.modules() if isinstance(m, nn.Conv2d)]
+        assert len(convolutions) == 1
+        assert convolutions[0].kernel_size == (1, 1)
+
+    def test_no_projection_when_channels_match(self) -> None:
+        # An (8, 8) output from (4, 4) patches at stride 2 needs 25 patches
+        decoder = PiecewiseDecoder(
+            conv_subblocks_initial=0,
+            conv_subblocks_final=0,
+            data_space_in=DataSpace(name="input", channels=25, shape=(4, 4)),
+            data_space_out=DataSpace(name="output", channels=1, shape=(8, 8)),
+            use_final_normalisation=False,
+        )
+
+        assert not any(isinstance(m, nn.Conv2d) for m in decoder.modules())
