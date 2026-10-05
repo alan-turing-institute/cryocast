@@ -120,7 +120,7 @@
 | icenet\_mp/models/decoders/cnn\_decoder.py                           |       44 |        4 |     91% |91-92, 152-153 |
 | icenet\_mp/models/decoders/deep\_compression\_decoder.py             |       42 |        6 |     86% |60-61, 63-64, 66-67 |
 | icenet\_mp/models/decoders/naive\_linear\_decoder.py                 |       15 |        0 |    100% |           |
-| icenet\_mp/models/decoders/piecewise\_decoder.py                     |       28 |        2 |     93% |     77-82 |
+| icenet\_mp/models/decoders/piecewise\_decoder.py                     |       27 |        0 |    100% |           |
 | icenet\_mp/models/diffusion/\_\_init\_\_.py                          |        3 |        0 |    100% |           |
 | icenet\_mp/models/diffusion/gaussian\_diffusion.py                   |       54 |        4 |     93% |42, 46-50, 200 |
 | icenet\_mp/models/diffusion/unet\_diffusion.py                       |       78 |        1 |     99% |       269 |
@@ -168,7 +168,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6239** |  **363** | **94%** |           |
+| **TOTAL**                                                            | **6238** |  **361** | **94%** |           |
 
 
 ## Setup coverage badge
