@@ -1,8 +1,8 @@
 [project]
 site_name = "CryoCast"
 docs_dir = "docs/src"
-repo_name = "alan-turing-institute/cryocast"
-repo_url = "https://github.com/alan-turing-institute/cryocast"
+repo_name = "alan-turing-institute/icenet-mp"
+repo_url = "https://github.com/alan-turing-institute/icenet-mp"
 site_dir = "docs/_build"
 
 # Structure
