@@ -117,10 +117,14 @@ class ModelService:
             ckpt_config = DictConfig(OmegaConf.load(config_path))
             log.debug("Loaded checkpoint configuration from %s.", config_path)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
-            for key in ("model", "train", "variables", "window"):
+            for key in ("model", "train", "window"):
                 combined_cfg[key] = OmegaConf.merge(
                     combined_cfg.get(key, {}), ckpt_config.get(key, {})
                 )
+            # Variables are replaced rather than merged, since the the checkpoint
+            # defines which variables were used to train the model.
+            if "variables" in ckpt_config:
+                combined_cfg["variables"] = ckpt_config["variables"]
         except (NotADirectoryError, FileNotFoundError):
             combined_cfg = config
             log.debug("Could not load checkpoint configuration from %s.", config_path)

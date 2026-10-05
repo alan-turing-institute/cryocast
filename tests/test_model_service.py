@@ -199,6 +199,52 @@ class TestModelService:
             assert service.config == expected_config
             assert service.config["model"]["name"] != "will_not_overwrite"
 
+    def test_from_checkpoint_variables_replaced_not_merged(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Checkpoint variables win outright rather than being unioned with the CLI."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        ckpt_variables = {
+            "input": {"sic-ssmis": ["ice_conc"]},
+            "target": {"sic-ssmis": ["ice_conc"]},
+        }
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["variables"] = ckpt_variables
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(
+                DictConfig(
+                    {
+                        "variables": {
+                            "input": {
+                                "era5": ["2t"],
+                                "float-argo": ["TEMP"],
+                                "sic-osisaf": ["ice_conc"],
+                            },
+                            "target": {"sic-osisaf": ["ice_conc"]},
+                        }
+                    }
+                ),
+                checkpoint_path,
+            )
+
+        assert OmegaConf.to_container(service.config["variables"]) == ckpt_variables
+
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
     ) -> None:
