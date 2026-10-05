@@ -30,9 +30,10 @@
 | icenet\_mp/config/\_\_init\_\_.py                                    |        0 |        0 |    100% |           |
 | icenet\_mp/data/\_\_init\_\_.py                                      |        5 |        0 |    100% |           |
 | icenet\_mp/data/calendar\_day\_climatology.py                        |       40 |        0 |    100% |           |
-| icenet\_mp/data/combined\_dataset.py                                 |       53 |        0 |    100% |           |
-| icenet\_mp/data/common\_data\_module.py                              |      132 |        9 |     93% |161-162, 173, 178, 221, 257-260 |
-| icenet\_mp/data/single\_dataset.py                                   |      145 |        4 |     97% |206, 211, 305-310 |
+| icenet\_mp/data/combined\_dataset.py                                 |       56 |        0 |    100% |           |
+| icenet\_mp/data/common\_data\_module.py                              |      148 |        5 |     97% |229-230, 248-254 |
+| icenet\_mp/data/single\_dataset.py                                   |      148 |        2 |     99% |   313-318 |
+| icenet\_mp/data/variable\_selection.py                               |       50 |        0 |    100% |           |
 | icenet\_mp/exceptions.py                                             |        3 |        0 |    100% |           |
 | icenet\_mp/feature\_importance.py                                    |       26 |        0 |    100% |           |
 | icenet\_mp/geotools/\_\_init\_\_.py                                  |       10 |        0 |    100% |           |
@@ -82,9 +83,9 @@
 | icenet\_mp/metrics/sie.py                                            |       14 |        2 |     86% |     21-22 |
 | icenet\_mp/metrics/spatial\_mean\_trace.py                           |        8 |        0 |    100% |           |
 | icenet\_mp/metrics/ssim.py                                           |       43 |        2 |     95% |     55-56 |
-| icenet\_mp/model\_service.py                                         |      270 |        4 |     99% |57-58, 176-177 |
+| icenet\_mp/model\_service.py                                         |      285 |        4 |     99% |57-58, 213-214 |
 | icenet\_mp/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
-| icenet\_mp/models/base\_model.py                                     |      129 |        3 |     98% |164, 168, 172 |
+| icenet\_mp/models/base\_model.py                                     |      130 |        3 |     98% |166, 170, 174 |
 | icenet\_mp/models/climatology.py                                     |       15 |        0 |    100% |           |
 | icenet\_mp/models/common/\_\_init\_\_.py                             |       23 |        0 |    100% |           |
 | icenet\_mp/models/common/activations.py                              |        2 |        0 |    100% |           |
@@ -133,7 +134,7 @@
 | icenet\_mp/models/encoders/reprojection\_encoder.py                  |       36 |        0 |    100% |           |
 | icenet\_mp/models/multistage/\_\_init\_\_.py                         |        4 |        0 |    100% |           |
 | icenet\_mp/models/multistage/decoder\_stage.py                       |       51 |        0 |    100% |           |
-| icenet\_mp/models/multistage/encoder\_stage.py                       |       29 |        0 |    100% |           |
+| icenet\_mp/models/multistage/encoder\_stage.py                       |       28 |        0 |    100% |           |
 | icenet\_mp/models/multistage/processor\_stage.py                     |       26 |        0 |    100% |           |
 | icenet\_mp/models/persistence.py                                     |       17 |        0 |    100% |           |
 | icenet\_mp/models/processors/\_\_init\_\_.py                         |        7 |        0 |    100% |           |
@@ -167,7 +168,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6152** |  **369** | **94%** |           |
+| **TOTAL**                                                            | **6239** |  **363** | **94%** |           |
 
 
 ## Setup coverage badge
