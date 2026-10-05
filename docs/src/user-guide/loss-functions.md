@@ -6,9 +6,9 @@ The training loss is a Hydra config group. The default is set in `cryocast/confi
 (`loss: amse`) and can be overridden on any command line:
 
 ```bash
-imp train --config-name <config> loss=mse
-imp train --config-name <config> loss=huber loss.delta=0.1
-imp train --config-name <config> loss.mode=hybrid loss.spectral_weight=0.1 loss.lead_time_exponent=2
+uv run cryocast train --config-name <config> loss=mse
+uv run cryocast train --config-name <config> loss=huber loss.delta=0.1
+uv run cryocast train --config-name <config> loss.mode=hybrid loss.spectral_weight=0.1 loss.lead_time_exponent=2
 ```
 
 Each option corresponds to a file in `cryocast/config/loss/`, whose header comments carry the full
@@ -58,8 +58,8 @@ The loss is evaluated separately at each lead time and the per-day values are co
 These are rescaled to have mean 1 so the overall magnitude of the loss is comparable to unweighted runs.
 
 ```bash
-imp train --config-name <config> loss.lead_time_exponent=1             # default loss, linear scaling
-imp train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, quadratic scaling
+uv run cryocast train --config-name <config> loss.lead_time_exponent=1             # default loss, linear scaling
+uv run cryocast train --config-name <config> loss=huber loss.lead_time_exponent=2  # Huber, quadratic scaling
 ```
 
 For models like multistage-encoder, multistage-decoder and autoregressive DDPM, training is

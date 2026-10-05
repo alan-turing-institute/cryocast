@@ -105,5 +105,5 @@ decoder:
 Then run training with:
 
 ```bash
-uv run imp train model=cnn_mydiffusion_cnn
+uv run cryocast train model=cnn_mydiffusion_cnn
 ```

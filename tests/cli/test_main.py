@@ -9,8 +9,8 @@ from .conftest import CustomCliRunner
 
 class TestBaseCLI:
     expected_patterns_help = (
-        r"Usage: imp \[OPTIONS\] COMMAND \[ARGS\]...",
-        r"Entrypoint for imp CLI application.",
+        r"Usage: cryocast \[OPTIONS\] COMMAND \[ARGS\]...",
+        r"Entrypoint for CryoCast CLI application.",
         r"--install-completion\s+Install completion for the current shell.",
         r"--show-completion\s+Show completion for the current shell",
         r"--help\s+-h\s+Show this message and exit.",

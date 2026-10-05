@@ -14,7 +14,7 @@ class TestDatasetsCLI:
         runner.check_output(
             ["datasets", "--help"],
             expected_patterns=[
-                r"Usage: imp datasets \[OPTIONS\] COMMAND \[ARGS\]...",
+                r"Usage: cryocast datasets \[OPTIONS\] COMMAND \[ARGS\]...",
                 r"Manage datasets",
                 r"--help\s+-h\s+Show this message and exit.",
                 r"create\s+Create all datasets.",
@@ -45,7 +45,7 @@ class TestDatasetsCreateCLI:
         runner.check_output(
             ["datasets", "create", "--help"],
             expected_patterns=[
-                r"Usage: imp datasets create \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast datasets create \[OPTIONS\] \[overrides\]...",
                 r"Create all datasets.",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
                 r"--config-name\s+<str>\s+Name of a file to load from the",
@@ -130,7 +130,7 @@ class TestDatasetsInspectCLI:
         runner.check_output(
             ["datasets", "inspect", "--help"],
             expected_patterns=[
-                r"Usage: imp datasets inspect \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast datasets inspect \[OPTIONS\] \[overrides\]...",
                 r"Inspect all datasets.",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
                 r"--config-name\s+<str>\s+Name of a file to load from the",
@@ -211,7 +211,7 @@ class TestDatasetsPlotCLI:
         runner.check_output(
             ["datasets", "plot", "--help"],
             expected_patterns=[
-                r"Usage: imp datasets plot \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast datasets plot \[OPTIONS\] \[overrides\]...",
                 r"Plot one timestep of configured datasets.",
                 r"--dataset\s+<str>\s+Only plot the named configured",
                 r"--timestep\s+<int>\s+Dataset timestep index to plot",

@@ -511,7 +511,7 @@ class ModelService:
             msg = (
                 "This model cannot be trained in standard mode. The most likely "
                 "cause is that the decoder must be pretrained before processor "
-                "training. Use `imp train --multistage` instead."
+                "training. Use `cryocast train --multistage` instead."
             )
             raise ValueError(msg)
         ckpt_path = None

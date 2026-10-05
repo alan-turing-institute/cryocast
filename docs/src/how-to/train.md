@@ -23,7 +23,7 @@ wandb login
 If you are working on Baskerville, DAWN, Isambard-AI, or JASMIN, the datasets are already available on shared storage. Add the matching `platform` override and skip ahead to [step 2](#2-create-a-local-config):
 
 ```bash
-uv run imp train --config-name <your-name>.local platform=isambardai  # or baskerville, dawn, or jasmin
+uv run cryocast train --config-name <your-name>.local platform=isambardai  # or baskerville, dawn, or jasmin
 ```
 
 ### Downloading data locally
@@ -68,7 +68,7 @@ The downloaded config is fully resolved, so update its `base_path` key to point 
 ## 3. Run training
 
 ```bash
-uv run imp train --config-name <your-name>.local
+uv run cryocast train --config-name <your-name>.local
 ```
 
 Add `platform=isambardai` (or `baskerville`/`dawn`/`jasmin`) if you are on one of those shared HPC systems.
@@ -125,7 +125,7 @@ As `save_last` is enabled by default in the checkpointing callback, a `last.ckpt
 If a run is killed before completion, it can be resumed with:
 
 ```bash
-uv run imp train --config-name <name> --checkpoint-dir <run-dir>/checkpoints [other overrides...]
+uv run cryocast train --config-name <name> --checkpoint-dir <run-dir>/checkpoints [other overrides...]
 ```
 
 This restores model, optimizer, scheduler and epoch/step state from `last.ckpt` and continues training.

@@ -81,7 +81,7 @@ notebooks = [
 ]
 
 [project.scripts]
-imp = "cryocast.cli:run"
+cryocast = "cryocast.cli:run"
 
 [tool.coverage.paths]
 source = ["cryocast/"]

@@ -28,11 +28,11 @@ This is the configuration used when you run any command without overrides.
 
 ## Named model configs
 
-The `model` section below shows the default (`naive-unet-naive`).
+The `model` section below shows the default (`quick_test`).
 Alternative model configs live in `cryocast/config/model/` and can be selected with:
 
 ```bash
-uv run imp <command> --config-name my_config  # where my_config inherits base and overrides /model
+uv run cryocast <command> --config-name my_config  # where my_config inherits base and overrides /model
 ```
 
 ## Full config

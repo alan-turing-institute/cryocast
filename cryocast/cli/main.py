@@ -14,7 +14,7 @@ from .train import training_cli
 
 # Configure logging
 logging.basicConfig(
-    format="😈 [%(asctime)s] %(message)s",
+    format="🧊 [%(asctime)s] %(message)s",
     datefmt=r"%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
     force=True,
@@ -28,7 +28,7 @@ configure_external_libraries()
 # Create the typer app
 app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
-    help="Entrypoint for imp CLI application.",
+    help="Entrypoint for CryoCast CLI application.",
     no_args_is_help=True,
 )
 app.add_typer(datasets_cli, name="datasets")

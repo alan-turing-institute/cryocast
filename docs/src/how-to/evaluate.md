@@ -27,7 +27,7 @@ See [Train a model — Create a local config](train.md#2-create-a-local-config) 
 See the [`evaluate` command reference](../user-guide/commands.md#evaluate) for full option details, then run:
 
 ```bash
-uv run imp evaluate --config-name <your-name>.local --checkpoint PATH_TO_CHECKPOINT
+uv run cryocast evaluate --config-name <your-name>.local --checkpoint PATH_TO_CHECKPOINT
 ```
 
 ### Enabling visualisations
@@ -56,7 +56,7 @@ evaluate:
 Pass `--save-predictions` to write the model output from the configured test period to a NetCDF file:
 
 ```bash
-uv run imp evaluate \
+uv run cryocast evaluate \
   --config-name <your-name>.local \
   --checkpoint PATH_TO_CHECKPOINT \
   --save-predictions

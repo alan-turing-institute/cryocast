@@ -24,7 +24,7 @@ class TestTrainCLI:
         runner.check_output(
             ["train", "--help"],
             expected_patterns=[
-                r"Usage: imp train \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast train \[OPTIONS\] \[overrides\]...",
                 r"Train a model",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
                 r"--checkpoint-dir\s+<str>\s+Path to a directory of existing",

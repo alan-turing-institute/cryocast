@@ -206,7 +206,7 @@ class OptunaSweep:
         """Generate a new W&B sweep."""
         # Generate the W&B sweep config
         sweep_config = {
-            "program": "imp",
+            "program": "cryocast",
             "method": "random",
             "metric": self.metric,
             "parameters": {

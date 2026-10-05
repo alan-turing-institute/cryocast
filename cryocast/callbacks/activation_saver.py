@@ -1,6 +1,6 @@
 """Forward-hook manager for capturing model intermediate activations.
 
-Activations are captured during `trainer.test(...)` (i.e. the `imp evaluate`
+Activations are captured during `trainer.test(...)` (i.e. the `cryocast evaluate`
 command) which invokes `LightningModule.test_step`.
 
 For an `EncodeProcessDecode` model the processor's internal forward runs once

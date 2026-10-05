@@ -14,7 +14,7 @@ class CustomCliRunner(CliRunner):
         self.colorstrip = re.compile(r"\x1b\[[0-9;]*m")
 
     def call(self, commands: Sequence[str]) -> Result:
-        return super().invoke(app, commands, prog_name="imp")
+        return super().invoke(app, commands, prog_name="cryocast")
 
     def check_output(
         self, commands: Sequence[str], expected_patterns: Sequence[str]

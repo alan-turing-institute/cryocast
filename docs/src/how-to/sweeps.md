@@ -31,7 +31,7 @@ parameters:
 
 Every sweep is optimised against the trial's best `validation_loss`, taken from the training run's checkpoint callback; this is not configurable.
 
-`parameters` keys are Hydra dotted override paths, exactly as you'd pass them to `imp train key=value`. Each entry is one of:
+`parameters` keys are Hydra dotted override paths, exactly as you'd pass them to `cryocast train key=value`. Each entry is one of:
 
 - `type: float` / `type: int` — `low`, `high`, optionally `log: true` (log-uniform) or `step`.
   `log` and `step` are mutually exclusive: `type: int` requires `step: 1` (the default) when `log: true`, and `type: float` does not accept a `step` at all when `log: true`.
@@ -40,7 +40,7 @@ Every sweep is optimised against the trial's best `validation_loss`, taken from 
 ## 2. Generate the sweep
 
 ```bash
-uv run imp sweep initialise --sweep-yaml example.sweep.yaml --config-name baseline/02_cnn_unet_cnn
+uv run cryocast sweep initialise --sweep-yaml example.sweep.yaml --config-name baseline/02_cnn_unet_cnn
 ```
 
 !!! note
@@ -50,7 +50,7 @@ uv run imp sweep initialise --sweep-yaml example.sweep.yaml --config-name baseli
 This will create a new W&B sweep and a local directory under `<base_path>/sweeps/<sweep_id>`.
 That directory contains the following files:
 
-- `model_config.yaml`: the base `imp` config
+- `model_config.yaml`: the base `cryocast` config
 - `optuna.yaml`: the sweep config
 - `optuna.db`: a record of local trials (not human-readable)
 - `sampler.pkl`: the state of the Optuna sampler (not human-readable)
@@ -59,7 +59,7 @@ That directory contains the following files:
 ## 3. Run a trial
 
 ```bash
-uv run imp sweep trial --sweep-path <path to sweep directory created above>
+uv run cryocast sweep trial --sweep-path <path to sweep directory created above>
 ```
 
 This will run a single job registered as part of the W&B sweep.
@@ -71,13 +71,13 @@ They will also create an entry in the W&B sweep which provides an easy compariso
 
 ![W&B sweep](../assets/wandb-sweep.png)
 
-If you want to run additional trials in the same search space, simply run `uv run imp sweep trial ...` again.
-If you want to refine the search space, you will need to create a new sweep with `uv run imp sweep initialise ...`.
+If you want to run additional trials in the same search space, simply run `uv run cryocast sweep trial ...` again.
+If you want to refine the search space, you will need to create a new sweep with `uv run cryocast sweep initialise ...`.
 
 ## 5. Summarise the best trial
 
 ```bash
-uv run imp sweep summarise --sweep-path <path to sweep directory created above>
+uv run cryocast sweep summarise --sweep-path <path to sweep directory created above>
 ```
 
 This prints the number of completed trials and the value and hyperparameters from the best trial, read directly from the local Optuna study.

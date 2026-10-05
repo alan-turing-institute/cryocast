@@ -70,7 +70,7 @@ class TestSweepCLI:
         runner.check_output(
             ["sweep", "--help"],
             expected_patterns=[
-                r"Usage: imp sweep \[OPTIONS\] COMMAND \[ARGS\]...",
+                r"Usage: cryocast sweep \[OPTIONS\] COMMAND \[ARGS\]...",
                 r"Generate W&B sweeps with Optuna-sampled hyperparameters",
                 r"--help\s+-h\s+Show this message and exit.",
                 r"initialise\s+Initialise a W&B sweep with Optuna-sampled",
@@ -86,7 +86,7 @@ class TestSweepInitialiseCLI:
         runner.check_output(
             ["sweep", "initialise", "--help"],
             expected_patterns=[
-                r"Usage: imp sweep initialise \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast sweep initialise \[OPTIONS\] \[overrides\]...",
                 r"Initialise a W&B sweep with Optuna-sampled hyperparameters.",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
                 r"--sweep-yaml\s+<path>\s+Full path to a sweep search-space YAML",
@@ -192,7 +192,7 @@ class TestSweepSummariseCLI:
         runner.check_output(
             ["sweep", "summarise", "--help"],
             expected_patterns=[
-                r"Usage: imp sweep summarise \[OPTIONS\]",
+                r"Usage: cryocast sweep summarise \[OPTIONS\]",
                 r"Summarise the best parameters found in a W&B sweep.",
                 r"--sweep-path\s+<path>\s+Full path to a local sweep directory",
                 r"--help\s+-h\s+Show this message and exit.",
@@ -325,7 +325,7 @@ class TestSweepTrialCLI:
         runner.check_output(
             ["sweep", "trial", "--help"],
             expected_patterns=[
-                r"Usage: imp sweep trial \[OPTIONS\]",
+                r"Usage: cryocast sweep trial \[OPTIONS\]",
                 r"Run a single trial from a W&B sweep.",
                 r"--sweep-path\s+<path>\s+Full path to a local sweep directory",
                 r"--checkpoint-dir\s+<str>\s+Path to a directory of existing",

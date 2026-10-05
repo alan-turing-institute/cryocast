@@ -51,14 +51,14 @@ base_path: /path/to/my/data
 Then download datasets and train:
 
 ```bash
-uv run imp datasets create --config-name my.local
-uv run imp train --config-name my.local
+uv run cryocast datasets create --config-name my.local
+uv run cryocast train --config-name my.local
 ```
 
 Evaluate a checkpoint:
 
 ```bash
-uv run imp evaluate --checkpoint /path/to/checkpoint.ckpt --config-name my.local
+uv run cryocast evaluate --checkpoint /path/to/checkpoint.ckpt --config-name my.local
 ```
 
 ## Documentation

@@ -10,7 +10,7 @@ class TestFeatureImportanceCLI:
         runner.check_output(
             ["feature-importance", "--help"],
             expected_patterns=[
-                r"Usage: imp feature-importance \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast feature-importance \[OPTIONS\] \[overrides\]...",
                 r"Fit a Random Forest and print input variables ranked by importance",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
                 r"--config-name\s+<str>\s+Name of a file to load from the config",

@@ -25,18 +25,18 @@ def compute_feature_importance(
 ) -> list[tuple[str, float]]:
     """Fit a Random Forest and return its feature importances, most important first.
 
-    Uses the same training split, prediction target, and history/forecast
-    configuration as ``imp train``. Each training sample is reduced to one scalar
-    per input variable (its spatial and temporal mean over the sample's history
-    window) and one scalar target (the spatial, temporal, and channel mean of the
-    prediction target over its forecast window).
+    Uses the same training split, prediction target, and history/forecast configuration
+    as ``cryocast train``. Each training sample is reduced to one scalar per input
+    variable (its spatial and temporal mean over the sample's history window) and one
+    scalar target (the spatial, temporal, and channel mean of the prediction target over
+    its forecast window).
 
     Every configured group contributes features, including the target group's own
-    variables; those lagged target features are typically the strongest predictors
-    and dominate the top of the ranking.
+    variables; those lagged target features are typically the strongest predictors and
+    dominate the top of the ranking.
 
     Args:
-        config: Hydra-composed config, as passed to ``imp train``.
+        config: Hydra-composed config, as passed to ``cryocast train``.
         n_estimators: Number of trees in the forest.
         random_state: Random seed for reproducibility.
 
