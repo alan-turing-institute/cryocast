@@ -4,9 +4,10 @@ defaults:
   - evaluate: default
   - loss: amse
   - model: quick_test
-  - predict: sic-osisaf-2d
   - random: default
   - reporting: default
   - train: default
   - platform: default
+  - variables: sic-osisaf
+  - window: forecast-3-history-2
   - _self_

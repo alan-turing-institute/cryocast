@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Literal
 from PIL.ImageFile import ImageFile
 
 from icenet_mp.exceptions import InvalidArrayError
-from icenet_mp.types import ArrayHW, ArrayTHW, Metadata, PlotSpec, Timespan
+from icenet_mp.types import NDIM_THW, ArrayHW, ArrayTHW, Metadata, PlotSpec, Timespan
 
 from .difference_panel import DifferencePanel
 from .land_mask import LandMask
@@ -19,8 +19,6 @@ if TYPE_CHECKING:
 
 class PanelRenderer:
     """Renders styled, land-masked panels for one land_mask/plot_spec pairing."""
-
-    VIDEO_NDIM = 3
 
     def __init__(
         self, land_mask: LandMask, metadata: Metadata, plot_spec: PlotSpec
@@ -51,9 +49,7 @@ class PanelRenderer:
 
         """
         shape = arrays[0].shape
-        if dates is not None and (
-            len(shape) != self.VIDEO_NDIM or shape[0] != dates.steps
-        ):
+        if dates is not None and (len(shape) != NDIM_THW or shape[0] != dates.steps):
             msg = (
                 f"Expected a 3D [T, H, W] array with {dates.steps} frames, got {shape}."
             )

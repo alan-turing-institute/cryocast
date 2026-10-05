@@ -163,8 +163,9 @@ class PlotSpec:
         vmax: Upper bound for GT/prediction colour scale (None = infer).
         include_ice_edge: Whether to overlay the sea ice edge contour in red.
         ice_edge_threshold: Concentration value defining the sea ice edge contour.
-        uncertainty_variables: Maps each target variable to the input variable
-            holding its reported standard uncertainty (used for the z-score panel).
+        uncertainty_variables: Maps each target variable to the variable in the same
+            dataset group holding its reported standard uncertainty (used for the
+            z-score panel). This does not need to be selected as an input variable.
 
     """
 
@@ -185,7 +186,7 @@ class PlotSpec:
     vmax: float | None = 1.0
 
     # Sea ice edge overlay
-    include_ice_edge: bool = False
+    include_ice_edge: bool = True
     ice_edge_threshold: float = SEA_ICE_THRESHOLD
 
     # Optional metadata for titling

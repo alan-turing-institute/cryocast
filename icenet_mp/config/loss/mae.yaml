@@ -25,3 +25,4 @@
 # =============================================================================
 
 _target_: torch.nn.L1Loss
+lead_time_exponent: null # Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.

@@ -63,7 +63,7 @@ class EncodeProcessDecode(BaseModel):
             msg = (
                 f"output_space has {self.output_space.channels} channel(s) but "
                 f"target_variable_indices selects {len(target_variable_indices)}; "
-                f"check that predict.target.variables is set correctly."
+                f"check that variables.target is set correctly."
             )
             raise ValueError(msg)
         self.target_variable_indices = target_variable_indices

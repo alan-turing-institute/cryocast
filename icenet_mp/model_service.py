@@ -75,6 +75,7 @@ class ModelService:
         log.info("Building a new '%s' model...", builder.config["model"]["_target_"])
         builder.model_ = hydra.utils.instantiate(
             config["model"],
+            channel_names=builder.data_module.target_variables,
             hemisphere=builder.data_module.hemisphere,
             input_spaces=[s.to_dict() for s in builder.data_module.input_spaces],
             latitudes_fn=lambda: builder.data_module.latitudes,
@@ -108,18 +109,25 @@ class ModelService:
             raise FileNotFoundError(msg)
 
         # Build a combined model configuration where the command line config takes
-        # precedence except for the "model", "predict" and "train" keys which are
-        # related to training the model.
+        # precedence except for the "model", "train", "variables" and "window" keys
+        # which are related to training the model. The exception to this is
+        # "window.batch_size", which is also taken from the command line config.
         config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
         try:
             # Load the model configuration from the checkpoint directory
-            ckpt_config = DictConfig(OmegaConf.load(config_path))
+            ckpt_config = cls._migrate_legacy_config(config_path)
             log.debug("Loaded checkpoint configuration from %s.", config_path)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
-            for key in ("model", "predict", "train"):
+            for key in ("model", "train", "window"):
                 combined_cfg[key] = OmegaConf.merge(
                     combined_cfg.get(key, {}), ckpt_config.get(key, {})
                 )
+            # We must use the same variables that the checkpoint was trained with
+            if "variables" in ckpt_config:
+                combined_cfg["variables"] = ckpt_config["variables"]
+            # Batch size does not affect the trained model, so this can be overridden
+            if "batch_size" in config.get("window", {}):
+                combined_cfg["window"]["batch_size"] = config["window"]["batch_size"]
         except (NotADirectoryError, FileNotFoundError):
             combined_cfg = config
             log.debug("Could not load checkpoint configuration from %s.", config_path)
@@ -139,10 +147,11 @@ class ModelService:
         }
         builder.model_ = model_cls.load_from_checkpoint(
             checkpoint_path,
-            mask_dir=str(builder.data_module.mask_directory),
             latitudes_fn=lambda: builder.data_module.latitudes,
             longitudes_fn=lambda: builder.data_module.longitudes,
-            map_location="cpu",  # Lightning will move this to the correct device later
+            map_location="cpu",  # Lightning will move this to the correct device
+            mask_dir=str(builder.data_module.mask_directory),
+            metrics=combined_cfg["reporting"]["metrics"],
             weights_only=False,
             **non_checkpoint_kwargs,
         )
@@ -152,6 +161,35 @@ class ModelService:
         ).get("epoch")
 
         return builder
+
+    @staticmethod
+    def _migrate_legacy_config(ckpt_config_path: Path) -> DictConfig:
+        """Load a YAML config file, migrating legacy settings to the current format."""
+        ckpt_config = DictConfig(OmegaConf.load(ckpt_config_path))
+
+        # Checkpoints from before 'predict' was split into 'variables' and 'window'
+        # are translated, since the current defaults would otherwise be used.
+        if (predict := ckpt_config.pop("predict", None)) is not None:
+            log.warning(
+                "Checkpoint configuration %s uses the legacy 'predict' key. This "
+                "has been translated into 'variables' and 'window' settings.",
+                ckpt_config_path,
+            )
+            # Legacy checkpoints used every variable from every dataset group as input.
+            # A missing target variable list selected every variable in the target
+            # group, which is expressed as an empty list.
+            target = predict["target"]
+            if "variables" not in ckpt_config:
+                ckpt_config["variables"] = {
+                    "input": {},
+                    "target": {target["group_name"]: target.get("variables", [])},
+                }
+            if "window" not in ckpt_config:
+                ckpt_config["window"] = {
+                    "n_forecast_steps": predict.get("n_forecast_steps", 1),
+                    "n_history_steps": predict.get("n_history_steps", 1),
+                }
+        return ckpt_config
 
     @property
     def config(self) -> DictConfig:
@@ -512,7 +550,7 @@ class ModelService:
 
         log.info("Preparing to train the encoders...")
         trained_encoders = self.train_stage_encoders(
-            config=self._merged_config("encoders"),
+            train_cfg=self._merged_config("encoders"),
             checkpoint_dir=checkpoint_dir,
         )
         target_encoder = trained_encoders.pop()  # the decoder must not use this
@@ -520,14 +558,14 @@ class ModelService:
         log.info("Preparing to train the decoder...")
         trained_decoder = self.train_stage_decoder(
             trained_encoders,
-            config=self._merged_config("decoder"),
+            train_cfg=self._merged_config("decoder"),
             checkpoint_dir=checkpoint_dir,
         )
 
         log.info("Preparing to train the processor...")
         processor_model = self.train_stage_processor(
             trained_decoder,
-            config=self._merged_config("processor"),
+            train_cfg=self._merged_config("processor"),
             checkpoint_dir=checkpoint_dir,
             target_encoder=target_encoder,
         )
@@ -535,14 +573,14 @@ class ModelService:
         log.info("Preparing to finetune...")
         return self.train_stage_finetune(
             processor_model=processor_model,
-            config=self._merged_config("finetune"),
+            train_cfg=self._merged_config("finetune"),
         )
 
     def train_stage_decoder(
         self,
         encoder_models: list[EncoderStage],
         *,
-        config: DictConfig,
+        train_cfg: DictConfig,
         checkpoint_dir: Path | None = None,
     ) -> DecoderStage:
         """Train a decoder on the combined latent space of all frozen encoders."""
@@ -561,18 +599,20 @@ class ModelService:
             )
             return DecoderStage.load_from_checkpoint(
                 checkpoint_path,
-                map_location="cpu",  # portability: will be moved to the correct device later
-                weights_only=False,
                 decoder=self.config["model"]["decoder"],
                 encoders=encoder_models,
+                map_location="cpu",  # Lightning will move this to the correct device
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
                 target_dataset_name=self.data_module.target_group_name,
                 target_variable_indices=self.data_module.target_variable_indices,
-                mask_dir=str(self.data_module.mask_directory),
+                weights_only=False,
             )
 
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
             encoders=encoder_models,
+            output_space=self.data_module.output_space,
             target_dataset_name=self.data_module.target_group_name,
             target_variable_indices=self.data_module.target_variable_indices,
             mask_dir=str(self.data_module.mask_directory),
@@ -582,7 +622,7 @@ class ModelService:
             decoder_model.decoder.data_space_in.chw,
             decoder_model.decoder.data_space_out.chw,
         )
-        trainer = self._fit(model=decoder_model, config=config, job_stage="decoder")
+        trainer = self._fit(model=decoder_model, config=train_cfg, job_stage="decoder")
         ckpt_path = self._save_stage_checkpoint(trainer, "decoder")
         # Reload the best weights into the decoder model
         decoder_model.load_state_dict(
@@ -591,7 +631,7 @@ class ModelService:
         return decoder_model
 
     def train_stage_encoders(
-        self, *, config: DictConfig, checkpoint_dir: Path | None = None
+        self, *, train_cfg: DictConfig, checkpoint_dir: Path | None = None
     ) -> list[EncoderStage]:
         """Train each encoder separately with a disposable decoder."""
         if not isinstance(self.model, EncodeProcessDecode):
@@ -610,7 +650,7 @@ class ModelService:
                 channel_names = self.data_module.target_variables
             else:
                 dataset_name = encoder.name
-                channel_names = self.data_module.variable_names[dataset_name]
+                channel_names = self.data_module.datasets[dataset_name].variable_names
 
             if checkpoint_dir is not None and (
                 matches := sorted(
@@ -626,10 +666,11 @@ class ModelService:
                 encoder_models.append(
                     EncoderStage.load_from_checkpoint(
                         checkpoint_path,
-                        map_location="cpu",  # portability: will be moved to the correct device later
-                        weights_only=False,
                         latitudes_fn=lambda: self.data_module.latitudes,
                         longitudes_fn=lambda: self.data_module.longitudes,
+                        map_location="cpu",  # Lightning will move this to the correct device
+                        metrics=self.config["reporting"]["metrics"],
+                        weights_only=False,
                     )
                 )
                 continue
@@ -650,7 +691,7 @@ class ModelService:
             )
             trainer = self._fit(
                 model=encoder_model,
-                config=config,
+                config=train_cfg,
                 job_stage=f"encoder-{encoder.name}",
             )
             ckpt_path = self._save_stage_checkpoint(trainer, f"encoder-{encoder.name}")
@@ -663,7 +704,7 @@ class ModelService:
         return encoder_models
 
     def train_stage_finetune(
-        self, *, config: DictConfig, processor_model: ProcessorStage
+        self, *, train_cfg: DictConfig, processor_model: ProcessorStage
     ) -> Trainer:
         """Load pretrained weights from all stages into the full model and finetune end-to-end."""
         model = cast("EncodeProcessDecode", self.model)
@@ -675,7 +716,7 @@ class ModelService:
         log.info("Loaded pretrained weights for processor.")
         model.decoder.load_state_dict(processor_model.decoder.state_dict())
         log.info("Loaded pretrained weights for decoder.")
-        trainer = self._fit(config=config, job_stage="finetune")
+        trainer = self._fit(config=train_cfg, job_stage="finetune")
         self._save_stage_checkpoint(trainer, "finetune")
         return trainer
 
@@ -684,7 +725,7 @@ class ModelService:
         decoder_model: DecoderStage,
         target_encoder: EncoderStage,
         *,
-        config: DictConfig,
+        train_cfg: DictConfig,
         checkpoint_dir: Path | None = None,
     ) -> ProcessorStage:
         """Train a processor on the latent space using frozen encoders and decoder."""
@@ -698,12 +739,13 @@ class ModelService:
             )
             return ProcessorStage.load_from_checkpoint(
                 checkpoint_path,
-                map_location="cpu",  # portability: will be moved to the correct device later
-                weights_only=False,
-                processor=self.config["model"]["processor"],
                 decoder_model=decoder_model,
-                target_encoder=target_encoder,
+                map_location="cpu",  # Lightning will move this to the correct device
                 mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
+                processor=self.config["model"]["processor"],
+                target_encoder=target_encoder,
+                weights_only=False,
             )
 
         processor_model = ProcessorStage.from_template(
@@ -719,7 +761,9 @@ class ModelService:
             processor_model.processor.n_forecast_steps,
             *processor_model.processor.data_space.chw,
         )
-        trainer = self._fit(model=processor_model, config=config, job_stage="processor")
+        trainer = self._fit(
+            model=processor_model, config=train_cfg, job_stage="processor"
+        )
         ckpt_path = self._save_stage_checkpoint(trainer, "processor")
         # Reload the best weights into the processor model
         processor_model.load_state_dict(

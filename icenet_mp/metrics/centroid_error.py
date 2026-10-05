@@ -1,7 +1,7 @@
 import torch
 
 from .base_daily_metric import BaseDailyMetric
-from .helpers import SicOnlyMetricMixin
+from .helpers import SingleChannelMetricMixin
 
 # Frames whose target has less total mass than this are treated as empty (undefined
 # centroid) and excluded from the average; it also floors the denominator so the
@@ -9,7 +9,7 @@ from .helpers import SicOnlyMetricMixin
 _EMPTY_MASS_THRESHOLD = 1e-8
 
 
-class CentroidErrorPerForecastDay(SicOnlyMetricMixin, BaseDailyMetric):
+class CentroidErrorPerForecastDay(SingleChannelMetricMixin, BaseDailyMetric):
     """Euclidean distance (in pixels) between the predicted and target centroids.
 
     The centroid of a (batch, time) frame is its value-weighted center of mass over

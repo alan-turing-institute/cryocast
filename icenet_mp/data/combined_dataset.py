@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 from icenet_mp.types import ArrayTCHW
 
-from .calendar_day import calendar_day_index
+from .calendar_day_climatology import CalendarDayClimatology
 from .single_dataset import SingleDataset
 
 
@@ -156,7 +156,7 @@ class CombinedDataset(Dataset):
         if self.climatology is None:
             return None
         day_indices = [
-            calendar_day_index(forecast_step)
+            CalendarDayClimatology.day_index(forecast_step)
             for forecast_step in self.get_forecast_steps(start_date)
         ]
         return self.climatology[day_indices]
@@ -172,4 +172,31 @@ class CombinedDataset(Dataset):
         """Return list of consecutive history dates for a given start date."""
         return [
             start_date + idx * self.frequency for idx in range(self.n_history_steps)
+        ]
+
+    def variable_list(self) -> list[str]:
+        """Return a pretty-formatted list of input variables in the combined dataset.
+
+        Returns:
+            A list of pretty-formatted strings like:
+
+            [
+                "Combined dataset has 3 input variables:",
+                "  1) dataset1/variableA",
+                "  2) dataset1/variableB",
+                "  3) dataset2/variableC",
+            ]
+
+        """
+        variable_ids = [
+            f"{ds.name}/{variable_name}"
+            for ds in self.inputs
+            for variable_name in ds.variable_names
+        ]
+        return [
+            f"Combined dataset has {len(variable_ids)} input variables:",
+            *(
+                f"{idx:>{len(str(len(variable_ids)))}}) {variable_id}"
+                for idx, variable_id in enumerate(variable_ids, start=1)
+            ),
         ]
