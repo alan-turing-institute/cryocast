@@ -119,7 +119,7 @@ class TestRequestedVariableNames:
 
 
 class TestTargetVariables:
-    """The target selection must be non-empty and resolvable on disk."""
+    """The target selection must be resolvable on disk; empty means all variables."""
 
     def test_returns_on_disk_order_filtered_to_requested(self) -> None:
         """Returned order follows the given on-disk list, not the request order."""
@@ -130,14 +130,14 @@ class TestTargetVariables:
         )
         assert selection.target_variables(["a", "b", "c"]) == ["a", "c"]
 
-    def test_empty_target_selection_raises(self) -> None:
+    def test_empty_target_selection_returns_every_variable(self) -> None:
+        """An empty target selection keeps every variable, in on-disk order."""
         selection = VariableSelection(
             dataset_group_names=["group1"],
-            input_variables={"group1": ["a"]},
+            input_variables={"group1": ["a", "b"]},
             target_variables={"group1": []},
         )
-        with pytest.raises(ValueError, match="No variables were requested"):
-            selection.target_variables(["a"])
+        assert selection.target_variables(["a", "b"]) == ["a", "b"]
 
     def test_unknown_target_variable_raises(self) -> None:
         selection = VariableSelection(

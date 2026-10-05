@@ -175,7 +175,9 @@ class ModelService:
                 "has been translated into 'variables' and 'window' settings.",
                 ckpt_config_path,
             )
-            # Legacy checkpoints used every variable from every dataset group as input
+            # Legacy checkpoints used every variable from every dataset group as input.
+            # A missing target variable list selected every variable in the target
+            # group, which is expressed as an empty list.
             target = predict["target"]
             if "variables" not in ckpt_config:
                 ckpt_config["variables"] = {

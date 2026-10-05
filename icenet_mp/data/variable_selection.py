@@ -119,12 +119,10 @@ class VariableSelection:
         input-filtered, on-disk-ordered variable names (i.e. the target
         `SingleDataset.variable_names` after applying `variables_by_dataset`).
         """
-        # Verify that at least one target variable was requested since giving an empty
-        # variable list to `SingleDataset.subset()` includes all variables.
+        # An empty target selection means every variable in the target group
         requested_variables = self._requested_target_variables[self.target_group_name]
         if not requested_variables:
-            msg = f"No variables were requested for group {self.target_group_name}."
-            raise ValueError(msg)
+            return list(on_disk_target_variable_names)
         # Verify that the requested variable names exist in the dataset group
         for requested_variable in requested_variables:
             if requested_variable not in on_disk_target_variable_names:

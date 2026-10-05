@@ -282,8 +282,22 @@ class TestModelService:
             "n_history_steps": 3,
         }
 
+    @pytest.mark.parametrize(
+        ("legacy_target", "expected_target"),
+        [
+            (
+                {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
+                {"sic-ssmis": ["ice_conc"]},
+            ),
+            ({"group_name": "sic-ssmis"}, {"sic-ssmis": []}),
+            ({"group_name": "sic-ssmis", "variables": []}, {"sic-ssmis": []}),
+        ],
+        ids=["explicit-variables", "missing-variables", "empty-variables"],
+    )
     def test_from_checkpoint_translates_legacy_predict_config(
         self,
+        legacy_target: dict[str, Any],
+        expected_target: dict[str, Any],
         cfg_model_service: DictConfig,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
@@ -298,7 +312,7 @@ class TestModelService:
         del ckpt_config["variables"]
         del ckpt_config["window"]
         ckpt_config["predict"] = {
-            "target": {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
+            "target": legacy_target,
             "n_forecast_steps": 7,
             "n_history_steps": 4,
         }
@@ -324,7 +338,7 @@ class TestModelService:
         assert "predict" not in service.config
         assert OmegaConf.to_container(service.config["variables"]) == {
             "input": {},
-            "target": {"sic-ssmis": ["ice_conc"]},
+            "target": expected_target,
         }
         assert service.config["window"]["n_forecast_steps"] == 7
         assert service.config["window"]["n_history_steps"] == 4

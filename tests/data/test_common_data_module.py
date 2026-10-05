@@ -329,13 +329,13 @@ class TestTargetGroupValidation:
 
         assert dm.target_variables == ["ice_conc", "temperature"]
 
-    def test_empty_target_variable_list_raises(self, mock_dataset: Path) -> None:
-        """An empty `variables.target[group]` must raise, not silently select none.
+    def test_empty_target_variable_list_selects_all_variables(
+        self, mock_dataset: Path
+    ) -> None:
+        """An empty `variables.target[group]` selects every input-filtered variable.
 
-        `SingleDataset.subset()` treats an empty `variables` list as "use all
-        variables", so leaving this unchecked would make `output_space` include every
-        on-disk channel while `target_variable_indices` (derived from the empty list)
-        stayed empty.
+        `output_space` and `target_variable_indices` must agree on the channel count,
+        since `SingleDataset.subset()` also treats an empty list as "use all".
         """
         cfg = _single_group_config(
             mock_dataset,
@@ -344,8 +344,8 @@ class TestTargetGroupValidation:
         )
         dm = CommonDataModule(cfg)
 
-        with pytest.raises(ValueError, match="No variables were requested for group"):
-            _ = dm.target_variables
+        assert dm.target_variables == dm.datasets["group1"].variable_names
+        assert len(dm.target_variable_indices) == dm.output_space.channels == 3
 
     def test_multiple_target_groups_raises(self, mock_dataset: Path) -> None:
         """Only one target dataset group is supported; more than one must raise."""

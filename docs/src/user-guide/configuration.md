@@ -109,6 +109,8 @@ target:
     We currently enforce that the target variables must also be input variables.
     This requirement may be relaxed in future.
 
+An empty list of target variables (e.g. `sic-osisaf: []`) selects every input variable in that dataset group.
+
 ### Generating Argo float missing dates
 
 Some dates have no Argo float data. When specifying a new Argo float dataset for the first time it is necessary to generate a list of missing dates for a dataset. This can be done as follows:
