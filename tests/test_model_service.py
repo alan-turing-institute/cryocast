@@ -245,6 +245,28 @@ class TestModelService:
 
         assert OmegaConf.to_container(service.config["variables"]) == ckpt_variables
 
+    def test_from_checkpoint_raises_on_legacy_predict_config(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Refuse checkpoints whose config predates the 'variables'/'window' split."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["predict"] = {
+            "target": {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
+            "n_forecast_steps": 7,
+            "n_history_steps": 3,
+        }
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        with pytest.raises(ValueError, match="legacy 'predict' key"):
+            ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
     ) -> None:

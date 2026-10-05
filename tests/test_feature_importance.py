@@ -20,15 +20,18 @@ def _cfg(
             "data": {
                 "datasets": datasets,
                 "split": {
-                    "batch_size": 2,
                     "predict": [{"start": None, "end": None}],
                     "test": [{"start": None, "end": None}],
                     "train": [{"start": None, "end": None}],
                     "validate": [{"start": None, "end": None}],
                 },
             },
-            "predict": {
-                "target": {"group_name": target_group, "variables": ["ice_conc"]},
+            "variables": {
+                "input": {},
+                "target": {target_group: ["ice_conc"]},
+            },
+            "window": {
+                "batch_size": 2,
                 "n_forecast_steps": 1,
                 "n_history_steps": 1,
             },

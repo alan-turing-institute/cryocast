@@ -116,6 +116,15 @@ class ModelService:
             # Load the model configuration from the checkpoint directory
             ckpt_config = DictConfig(OmegaConf.load(config_path))
             log.debug("Loaded checkpoint configuration from %s.", config_path)
+            # Checkpoints from before 'predict' was split into 'variables' and 'window'
+            # cannot be loaded, since the current defaults would silently be used.
+            if "predict" in ckpt_config:
+                msg = (
+                    f"Checkpoint configuration {config_path} uses the legacy 'predict' "
+                    "key, which has been replaced by 'variables' and 'window'. Please "
+                    "retrain the model or manually update the config file."
+                )
+                raise ValueError(msg)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
             for key in ("model", "train", "window"):
                 combined_cfg[key] = OmegaConf.merge(

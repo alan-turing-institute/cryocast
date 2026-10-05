@@ -24,7 +24,7 @@ class TestVariablesConfigs:
         assert config.variables.target
         for group_name, variable_names in config.variables.target.items():
             assert group_name
-            assert variable_names
+            assert "ice_conc" in variable_names
 
     @pytest.mark.parametrize("config_name", VARIABLES_CONFIGS)
     def test_target_groups_are_also_input_groups(
