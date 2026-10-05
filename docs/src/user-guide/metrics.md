@@ -1,6 +1,6 @@
 # Metrics
 
-`icenet_mp.metrics` ([API reference](../api/metrics.md)) implements several
+`cryocast.metrics` ([API reference](../api/metrics.md)) implements several
 `torchmetrics.Metric` classes, each computed per forecast lead time.
 Using a combination of these metrics it is possible to understand why model results differ.
 Here we use six synthetic scenarios to show what each metric actually captures and what its strengths and weaknesses are.
@@ -14,20 +14,20 @@ Each entry gives the metric's `name`, which is its key in logs and W&B, a Hydra 
 reporting:
   metrics:
     - name: accuracy
-      _target_: icenet_mp.metrics.IceNetAccuracyPerForecastDay
+      _target_: cryocast.metrics.IceNetAccuracyPerForecastDay
     - name: sieerror
-      _target_: icenet_mp.metrics.SeaIceExtentErrorPerForecastDay
+      _target_: cryocast.metrics.SeaIceExtentErrorPerForecastDay
     - name: fss_neighbourhood_size_5
-      _target_: icenet_mp.metrics.FractionalSkillScorePerForecastDay
+      _target_: cryocast.metrics.FractionalSkillScorePerForecastDay
       neighbourhood_size: 5
 ```
 
-See `icenet_mp/config/reporting/metrics/default.yaml` for the full default list.
+See `cryocast/config/reporting/metrics/default.yaml` for the full default list.
 The same form works as a command-line override:
 
 ```bash
 uv run imp train --config-name <config> \
-  'reporting.metrics=[{name: mae, _target_: icenet_mp.metrics.MAEPerForecastDay}]'
+  'reporting.metrics=[{name: mae, _target_: cryocast.metrics.MAEPerForecastDay}]'
 ```
 
 ## Adding your own metrics
@@ -38,7 +38,7 @@ Any `torchmetrics.Metric` can be added as a metric, by adding an entry to `repor
 reporting:
   metrics:
     - name: mae
-      _target_: icenet_mp.metrics.MAEPerForecastDay
+      _target_: cryocast.metrics.MAEPerForecastDay
     - name: my_metric
       _target_: my_package.metrics.MyMetric
       threshold: 0.3
@@ -47,7 +47,7 @@ reporting:
 The `name` is used as the metric's key in logs and W&B, and must be unique.
 Hydra imports the module itself, so this works through the `imp` CLI and when evaluating a saved checkpoint, without any extra set-up.
 
-Two mixins from `icenet_mp.metrics` change how the model treats a metric:
+Two mixins from `cryocast.metrics` change how the model treats a metric:
 
 - `LandMaskMixin`: the model must pass its land mask (or `None`) to the metric as a `land_mask` keyword argument at construction time.
 - `SingleChannelMetricMixin`: the metric only makes sense for a single output channel (e.g. sea ice concentration), so it is skipped automatically for models that predict several channels.

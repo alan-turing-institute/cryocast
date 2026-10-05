@@ -45,7 +45,7 @@ uv run imp sweep initialise --sweep-yaml example.sweep.yaml --config-name baseli
 
 !!! note
     `--sweep-yaml` is a full filesystem path, resolved relative to your current working directory (or given as an absolute path).
-    This is different from `--config-name`, which resolved relative to `icenet_mp/config/`.
+    This is different from `--config-name`, which resolved relative to `cryocast/config/`.
 
 This will create a new W&B sweep and a local directory under `<base_path>/sweeps/<sweep_id>`.
 That directory contains the following files:

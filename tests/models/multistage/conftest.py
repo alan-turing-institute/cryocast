@@ -3,8 +3,8 @@ from typing import Any
 import pytest
 from omegaconf import DictConfig
 
-from icenet_mp.models.multistage import DecoderStage, EncoderStage
-from icenet_mp.types import DataSpace
+from cryocast.models.multistage import DecoderStage, EncoderStage
+from cryocast.types import DataSpace
 
 
 @pytest.fixture

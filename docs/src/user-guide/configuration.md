@@ -2,7 +2,7 @@
 
 ## Your local config file
 
-Create a file in `icenet_mp/config` named `<chosen-name>.local.yaml`.
+Create a file in `cryocast/config` named `<chosen-name>.local.yaml`.
 Local config files should inherit from `base.yaml` and override only what you need:
 
 ```yaml

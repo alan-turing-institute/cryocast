@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
-from icenet_mp.model_service import ModelService
+from cryocast.model_service import ModelService
 
 from .conftest import CustomCliRunner
 

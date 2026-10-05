@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 import torch
 
-from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
+from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
 
 
 class TestGaussianDiffusion:

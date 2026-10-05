@@ -2,7 +2,7 @@ import pytest
 import torch
 from torchmetrics import Metric
 
-from icenet_mp.metrics import IceNetAccuracyPerForecastDay, LandMaskMixin
+from cryocast.metrics import IceNetAccuracyPerForecastDay, LandMaskMixin
 
 
 class TestSingleChannelMetricMixin:

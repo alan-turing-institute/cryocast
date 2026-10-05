@@ -4,8 +4,8 @@ from typing import Any
 import pytest
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.ingestion.downloaders import build_downloaders
-from icenet_mp.ingestion.postprocessors import (
+from cryocast.ingestion.downloaders import build_downloaders
+from cryocast.ingestion.postprocessors import (
     StatusFlagMaskGenerator,
     SyntheticMaskGenerator,
 )
@@ -14,8 +14,8 @@ from icenet_mp.ingestion.postprocessors import (
 class TestBuildDownloaders:
     """Tests for the build_downloaders function."""
 
-    STATUS_FLAG_TARGET = "icenet_mp.ingestion.postprocessors.StatusFlagMaskGenerator"
-    SYNTHETIC_TARGET = "icenet_mp.ingestion.postprocessors.SyntheticMaskGenerator"
+    STATUS_FLAG_TARGET = "cryocast.ingestion.postprocessors.StatusFlagMaskGenerator"
+    SYNTHETIC_TARGET = "cryocast.ingestion.postprocessors.SyntheticMaskGenerator"
 
     def _config(self, tmp_path: Path, dataset_overrides: dict[str, Any]) -> DictConfig:
         """Build a minimal Hydra-style config for a single dataset named "test"."""

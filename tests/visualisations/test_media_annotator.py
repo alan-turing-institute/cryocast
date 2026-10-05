@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
-from icenet_mp.types import Hemisphere, Metadata, PlotSpec, Timespan
-from icenet_mp.visualisations.media_annotator import MediaAnnotator
+from cryocast.types import Hemisphere, Metadata, PlotSpec, Timespan
+from cryocast.visualisations.media_annotator import MediaAnnotator
 
 
 class TestFormatTitle:

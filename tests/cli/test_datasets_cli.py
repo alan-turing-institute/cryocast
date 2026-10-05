@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from icenet_mp.data import SingleDataset
-from icenet_mp.visualisations import DatasetMediaWriter
+from cryocast.data import SingleDataset
+from cryocast.visualisations import DatasetMediaWriter
 
 from .conftest import CustomCliRunner
 
@@ -63,7 +63,7 @@ class TestDatasetsCreateCLI:
         first = self.FakeDownloader("first")
         second = self.FakeDownloader("second")
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [first, second]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [first, second]
         )
 
         result = runner.call(["datasets", "create", "--overwrite"])
@@ -80,7 +80,7 @@ class TestDatasetsCreateCLI:
         """Default --overwrite to False when not passed."""
         downloader = self.FakeDownloader("example")
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [downloader]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [downloader]
         )
 
         result = runner.call(["datasets", "create"])
@@ -98,7 +98,7 @@ class TestDatasetsCreateCLI:
         failing = self.FakeDownloader("failing", error=RuntimeError("boom"))
         never_reached = self.FakeDownloader("never-reached")
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders",
+            "cryocast.cli.datasets.build_downloaders",
             lambda _config: [failing, never_reached],
         )
 
@@ -148,7 +148,7 @@ class TestDatasetsInspectCLI:
         first = self.FakeDownloader("first")
         second = self.FakeDownloader("second")
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [first, second]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [first, second]
         )
 
         result = runner.call(["datasets", "inspect", "--verbose"])
@@ -165,7 +165,7 @@ class TestDatasetsInspectCLI:
         """Default --verbose to False when not passed."""
         downloader = self.FakeDownloader("example")
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [downloader]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [downloader]
         )
 
         result = runner.call(["datasets", "inspect"])
@@ -183,7 +183,7 @@ class TestDatasetsInspectCLI:
         failing = self.FakeDownloader("failing", error=RuntimeError("boom"))
         still_runs = self.FakeDownloader("still-runs")
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders",
+            "cryocast.cli.datasets.build_downloaders",
             lambda _config: [failing, still_runs],
         )
 
@@ -234,7 +234,7 @@ class TestDatasetsPlotCLI:
             self.FakeDownloader("missing", tmp_path / "missing.zarr"),
         ]
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: downloaders
+            "cryocast.cli.datasets.build_downloaders", lambda _config: downloaders
         )
 
         calls = []
@@ -267,7 +267,7 @@ class TestDatasetsPlotCLI:
         existing_path = tmp_path / "example.zarr"
         existing_path.mkdir()
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders",
+            "cryocast.cli.datasets.build_downloaders",
             lambda _config: [self.FakeDownloader("example", existing_path)],
         )
         monkeypatch.setattr(
@@ -316,7 +316,7 @@ class TestDatasetsPlotCLI:
     ) -> None:
         """Exit non-zero when --dataset names a dataset that isn't configured."""
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders",
+            "cryocast.cli.datasets.build_downloaders",
             lambda _config: [self.FakeDownloader("example", tmp_path / "example.zarr")],
         )
 
@@ -363,7 +363,7 @@ class TestDatasetsPostProcessorCLI:
             "example", tmp_path / "example.zarr", postprocessor
         )
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [downloader]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [downloader]
         )
 
         result = runner.call(["datasets", "masks", "--overwrite"])
@@ -383,7 +383,7 @@ class TestDatasetsPostProcessorCLI:
             "example", tmp_path / "example.zarr", postprocessor
         )
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [downloader]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [downloader]
         )
 
         result = runner.call(["datasets", "masks"])
@@ -403,7 +403,7 @@ class TestDatasetsPostProcessorCLI:
             "example", tmp_path / "example.zarr", postprocessor
         )
         monkeypatch.setattr(
-            "icenet_mp.cli.datasets.build_downloaders", lambda _config: [downloader]
+            "cryocast.cli.datasets.build_downloaders", lambda _config: [downloader]
         )
 
         result = runner.call(["datasets", "masks"])

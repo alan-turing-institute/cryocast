@@ -1,0 +1,5 @@
+ema_weight_averaging:
+  _target_: cryocast.callbacks.EMAWeightAveragingCallback
+  decay_rate: 0.999
+  every_n_epochs: 1
+  every_n_steps: 100

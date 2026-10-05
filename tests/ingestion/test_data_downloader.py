@@ -9,9 +9,9 @@ import anemoi.datasets.create.tasks
 import numpy as np
 import pytest
 
-from icenet_mp.ingestion.data_downloader import DataDownloader
-from icenet_mp.types import AnemoiDatasetStatus, AnemoiInspectArgs
-from icenet_mp.utils import mask_dir
+from cryocast.ingestion.data_downloader import DataDownloader
+from cryocast.types import AnemoiDatasetStatus, AnemoiInspectArgs
+from cryocast.utils import mask_dir
 from tests.conftest import build_zarr
 
 
@@ -49,8 +49,8 @@ class MockInspectZarr:
 def _make_data_downloader(tmp_path: Path, name: str) -> DataDownloader:
     """Build a DataDownloader for `name` from a minimal dataset config."""
     postprocessor_target = {
-        "samp-sic-ssmis": "icenet_mp.ingestion.postprocessors.StatusFlagMaskGenerator",
-        "samp-sic-synthetic": "icenet_mp.ingestion.postprocessors.SyntheticMaskGenerator",
+        "samp-sic-ssmis": "cryocast.ingestion.postprocessors.StatusFlagMaskGenerator",
+        "samp-sic-synthetic": "cryocast.ingestion.postprocessors.SyntheticMaskGenerator",
     }.get(name)
     anemoi_config: dict[str, Any] = {
         "name": name,
@@ -99,7 +99,7 @@ def mock_inspect_zarr(monkeypatch: pytest.MonkeyPatch) -> MockInspectZarr:
     """Patch InspectZarr with MockInspectZarr; returns the instance for per-test configuration."""
     instance = MockInspectZarr()
     monkeypatch.setattr(
-        "icenet_mp.ingestion.data_downloader.InspectZarr",
+        "cryocast.ingestion.data_downloader.InspectZarr",
         lambda: instance,
     )
     return instance
@@ -523,7 +523,7 @@ class TestDataDownloader:
         mock_dataset.__len__.return_value = 3
         mock_dataset.__getitem__.side_effect = _getitem
         monkeypatch.setattr(
-            "icenet_mp.ingestion.data_downloader.open_dataset",
+            "cryocast.ingestion.data_downloader.open_dataset",
             lambda _: mock_dataset,
         )
         with pytest.raises(

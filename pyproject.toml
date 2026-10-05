@@ -3,7 +3,7 @@ requires = ["uv_build>=0.12.3,<0.13.0"]
 build-backend = "uv_build"
 
 [project]
-name = "icenet-mp"
+name = "cryocast"
 version = "2026-07"
 description = "IceNet Multimodal Pipeline for predicting sea ice."
 readme = "README.md"
@@ -81,10 +81,10 @@ notebooks = [
 ]
 
 [project.scripts]
-imp = "icenet_mp.cli:run"
+imp = "cryocast.cli:run"
 
 [tool.coverage.paths]
-source = ["icenet_mp/"]
+source = ["cryocast/"]
 
 [tool.coverage.run]
 relative_files = true
@@ -97,7 +97,7 @@ disable_error_code = ["import-untyped"]
 
 [tool.pytest.ini_options]
 addopts = [
-    "--cov=icenet_mp",
+    "--cov=cryocast",
     "--cov-report=term-missing",
     "-vvv",
     "-n",

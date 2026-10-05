@@ -2,7 +2,7 @@
 
 ## Selecting a loss
 
-The training loss is a Hydra config group. The default is set in `icenet_mp/config/base.yaml`
+The training loss is a Hydra config group. The default is set in `cryocast/config/base.yaml`
 (`loss: amse`) and can be overridden on any command line:
 
 ```bash
@@ -11,7 +11,7 @@ imp train --config-name <config> loss=huber loss.delta=0.1
 imp train --config-name <config> loss.mode=hybrid loss.spectral_weight=0.1 loss.lead_time_exponent=2
 ```
 
-Each option corresponds to a file in `icenet_mp/config/loss/`, whose header comments carry the full
+Each option corresponds to a file in `cryocast/config/loss/`, whose header comments carry the full
 parameter documentation; this page summarises how to choose between them.
 
 ## Supported losses
@@ -32,7 +32,7 @@ model cannot predict perfectly equals its coherence with the target — at 50 %
 coherence the optimal move is to halve that scale's amplitude. Spatial blur is
 therefore the *optimum* of pointwise training, not a failure of it; AMSE modifies the
 per-scale decomposition so that preserving the target's spectrum is optimal instead
-(full derivation in the header of `icenet_mp/losses/amse_loss.py`).
+(full derivation in the header of `cryocast/losses/amse_loss.py`).
 
 ### AMSE options
 

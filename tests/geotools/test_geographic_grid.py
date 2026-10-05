@@ -5,8 +5,8 @@ import pytest
 from earthkit.data.utils.bbox import BoundingBox
 from pyproj import Transformer
 
-from icenet_mp.geotools.geographic_grid import GeographicGrid
-from icenet_mp.geotools.grid_factory import ease2_grid_helper
+from cryocast.geotools.geographic_grid import GeographicGrid
+from cryocast.geotools.grid_factory import ease2_grid_helper
 
 
 class TestGeographicGrid:

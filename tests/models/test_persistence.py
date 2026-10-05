@@ -4,7 +4,7 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models import Persistence
+from cryocast.models import Persistence
 
 
 class TestPersistence:

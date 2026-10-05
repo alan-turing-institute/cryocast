@@ -5,8 +5,8 @@ import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.models.multistage import DecoderStage, EncoderStage
-from icenet_mp.types import DataSpace
+from cryocast.models.multistage import DecoderStage, EncoderStage
+from cryocast.types import DataSpace
 
 
 class TestDecoderStage:
@@ -60,7 +60,7 @@ class TestDecoderStage:
         decoder_stage = DecoderStage.from_template(
             decoder=DictConfig(
                 {
-                    "_target_": "icenet_mp.models.decoders.NaiveLinearDecoder",
+                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
                     "skip_connection": skip_connection,
                 }
             ),

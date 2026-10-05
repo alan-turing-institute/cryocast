@@ -10,8 +10,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import OmegaConf
 from optuna.trial import TrialState
 
-from icenet_mp.model_service import ModelService
-from icenet_mp.sweep import OptunaSweep
+from cryocast.model_service import ModelService
+from cryocast.sweep import OptunaSweep
 
 from .conftest import CustomCliRunner
 

@@ -1,6 +1,6 @@
 import pytest
 
-import icenet_mp.cli.feature_importance as feature_importance_module
+import cryocast.cli.feature_importance as feature_importance_module
 
 from .conftest import CustomCliRunner
 

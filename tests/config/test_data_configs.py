@@ -5,14 +5,14 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
-DATA_DIR = Path(str(files("icenet_mp.config"))) / "data"
+DATA_DIR = Path(str(files("cryocast.config"))) / "data"
 DATA_GROUP_CONFIGS = sorted(
     p.stem for p in DATA_DIR.glob("*.yaml") if not p.name.endswith(".local.yaml")
 )
 
 
 class TestDataConfigs:
-    """Regression tests for icenet-mp's top-level data= config groups."""
+    """Regression tests for cryocast's top-level data= config groups."""
 
     @pytest.mark.parametrize("config_name", DATA_GROUP_CONFIGS, ids=DATA_GROUP_CONFIGS)
     def test_data_groups_compose(
