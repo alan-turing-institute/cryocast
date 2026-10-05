@@ -82,7 +82,7 @@ class TestHydraConfigLoading:
     def test_climatology_baseline_composes(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
-        cfg = compose_config(config_name="baseline/00_climatology")
+        cfg = compose_config(config_name="baseline/climatology")
         assert cfg.model._target_ == "icenet_mp.models.Climatology"
         assert cfg.model.name == "climatology"
         assert cfg.train.trainer.max_epochs == 1
@@ -105,18 +105,18 @@ class TestHydraConfigLoading:
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         overrides = ["random=deterministic"]
-        baseline = compose_config(
-            config_name="baseline/05_piecewise_unet_piecewise", overrides=overrides
+        baseline_conv = compose_config(
+            config_name="baseline/piecewise_unet_piecewise_conv", overrides=overrides
         )
-        naive = compose_config(
-            config_name="baseline/06_piecewise_unet_piecewise_naive",
+        baseline_linear = compose_config(
+            config_name="baseline/piecewise_unet_piecewise_linear",
             overrides=overrides,
         )
 
-        assert baseline.model.name == "piecewise-unet-piecewise"
-        assert naive.model.name == "piecewise-unet-piecewise-naive"
-        assert baseline.random.seed == 123
-        assert baseline.random.fully_deterministic is True
+        assert baseline_conv.model.name == "piecewise-unet-piecewise-conv"
+        assert baseline_linear.model.name == "piecewise-unet-piecewise-linear"
+        assert baseline_conv.random.seed == 123
+        assert baseline_conv.random.fully_deterministic is True
         for key in (
             "data",
             "loss",
@@ -126,9 +126,9 @@ class TestHydraConfigLoading:
             "variables",
             "window",
         ):
-            assert OmegaConf.to_container(
-                baseline[key], resolve=False
-            ) == OmegaConf.to_container(naive[key], resolve=False)
+            key_conv = OmegaConf.to_container(baseline_conv[key], resolve=False)
+            key_linear = OmegaConf.to_container(baseline_linear[key], resolve=False)
+            assert key_conv == key_linear, f"Mismatch in config section '{key}'"
 
 
 class TestHydraAdaptor:
