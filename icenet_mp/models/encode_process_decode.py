@@ -255,8 +255,9 @@ class EncodeProcessDecode(BaseModel):
         )
         full_target[:, :, self.target_variable_indices, :, :] = target
 
-        # Detach so that the latent loss cannot move the shared input encoder away
-        # from the latent space that the frozen decoder was trained on.
+        # Detach so that the latent loss cannot move its own target, e.g. by shrinking
+        # the target latent. During finetune the shared encoder still receives
+        # gradients through the conditioning path while the decoder is frozen.
         return target_input_encoder.rollout(full_target).detach()
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
@@ -393,12 +394,14 @@ class EncodeProcessDecode(BaseModel):
 
     def _freeze_unused_modules(self) -> None:
         """Freeze unused modules."""
-        # Processors that compute loss in latent space do not touch the decoder.
-        # However, processors that do not do this, do not touch the target_encoder.
+        # Processors that compute loss in latent space do not touch the decoder, and
+        # only use the target_encoder if the target dataset is not also an input.
+        # Other processors never touch the target_encoder.
         # We therefore explicitly freeze the unused modules.
-        if self.processor.computes_loss_in_latent_space:
+        latent_loss = self.processor.computes_loss_in_latent_space
+        if latent_loss:
             self.decoder.freeze()
-        else:
+        if not latent_loss or self.target_input_encoder is not None:
             self.target_encoder.freeze()
 
     def _validate_rollout_options(

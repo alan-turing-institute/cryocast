@@ -402,3 +402,6 @@ class TestEncodeProcessDecode:
         assert processor.target is not None
         assert all(p.requires_grad for e in model.encoders for p in e.parameters())
         assert not processor.target.requires_grad
+
+        # The unused target encoder must be frozen (e.g. so that DDP does not fail)
+        assert not any(p.requires_grad for p in model.target_encoder.parameters())
