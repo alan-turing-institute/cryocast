@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_bcc802990ed783ec_encoder_stage_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-06 11:38 +0000
+            created at 2026-10-06 11:40 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -220,18 +220,18 @@
     <p class="run run2"><span class="n"><a id="t138" href="#t138">138</a></span><span class="t">        <span class="nam">self</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t139" href="#t139">139</a></span><span class="t">        <span class="nam">batch</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">TensorNTCHW</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">    <span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">TensorNTCHW</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Extract only the two time steps from each relevant batch element.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Align decoder inputs with the physical timestamp they must decode.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t"><span class="str">        Inputs use t=-2 (yesterday) while the target uses t=-1 (today). We also extract</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t"><span class="str">        a persistence entry using t=-2 but sliced to only the target variables.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t"><span class="str">        Encoder inputs and the target both use t=-1 (yesterday). This is because we want</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t"><span class="str">        the decoder to learn a time-invariant NCHW -&gt; NCHW mapping.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t146" href="#t146">146</a></span><span class="t"><span class="str">        This is because we want the decoder to learn an NCHW -&gt; NCHW mapping but also to</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t147" href="#t147">147</a></span><span class="t"><span class="str">        include the most recent target value as a skip connection for each forecast so</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t148" href="#t148">148</a></span><span class="t"><span class="str">        that the decoder will learn to predict residuals. If we use the same time step</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t149" href="#t149">149</a></span><span class="t"><span class="str">        for both input and target, the model will learn that these residuals are zero.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t146" href="#t146">146</a></span><span class="t"><span class="str">        However, if a skip-connection is used, we also need to include the most recent</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t147" href="#t147">147</a></span><span class="t"><span class="str">        target value as a skip connection for each forecast. If we also use t=-1 for</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t148" href="#t148">148</a></span><span class="t"><span class="str">        this, the decoder will learn that the residuals are zero. To avoid this, we use</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t149" href="#t149">149</a></span><span class="t"><span class="str">        t=-2 (two days ago) for the persistence entry.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t150" href="#t150">150</a></span><span class="t"><span class="str">        &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t151" href="#t151">151</a></span><span class="t">        <span class="key">return</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t152" href="#t152">152</a></span><span class="t">            <span class="nam">name</span><span class="op">:</span> <span class="nam">batch</span><span class="op">[</span><span class="nam">name</span><span class="op">]</span><span class="op">[</span><span class="op">:</span><span class="op">,</span> <span class="op">-</span><span class="num">2</span><span class="op">,</span> <span class="op">:</span><span class="op">,</span> <span class="op">:</span><span class="op">,</span> <span class="op">:</span><span class="op">]</span><span class="op">.</span><span class="nam">unsqueeze</span><span class="op">(</span><span class="num">1</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t152" href="#t152">152</a></span><span class="t">            <span class="nam">name</span><span class="op">:</span> <span class="nam">batch</span><span class="op">[</span><span class="nam">name</span><span class="op">]</span><span class="op">[</span><span class="op">:</span><span class="op">,</span> <span class="op">-</span><span class="num">1</span><span class="op">,</span> <span class="op">:</span><span class="op">,</span> <span class="op">:</span><span class="op">,</span> <span class="op">:</span><span class="op">]</span><span class="op">.</span><span class="nam">unsqueeze</span><span class="op">(</span><span class="num">1</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t153" href="#t153">153</a></span><span class="t">            <span class="key">for</span> <span class="nam">name</span> <span class="key">in</span> <span class="nam">self</span><span class="op">.</span><span class="nam">encoder_names</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t154" href="#t154">154</a></span><span class="t">        <span class="op">}</span> <span class="op">|</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t155" href="#t155">155</a></span><span class="t">            <span class="str">&quot;target&quot;</span><span class="op">:</span> <span class="nam">batch</span><span class="op">[</span><span class="nam">self</span><span class="op">.</span><span class="nam">target_name</span><span class="op">]</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
@@ -259,7 +259,7 @@
             <a class="nav" href="z_bcc802990ed783ec_encoder_stage_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-06 11:38 +0000
+            created at 2026-10-06 11:40 +0000
         </p>
     </div>
 </footer>
