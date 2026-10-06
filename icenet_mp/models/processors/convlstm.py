@@ -3,11 +3,9 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
-from icenet_mp.types import ProcessorOutput, TensorNTCHW
+from icenet_mp.types import ProcessorOutput, TensorNCHW, TensorNTCHW
 
 from .base_processor import BaseProcessor
-
-_NTCHW_NDIM = 5
 
 
 class ConvLSTMCell(nn.Module):
@@ -114,10 +112,10 @@ class ConvLSTMProcessor(BaseProcessor):
         ]
 
     def _step(
-        self, x: Tensor, states: list[tuple[Tensor, Tensor]]
-    ) -> list[tuple[Tensor, Tensor]]:
+        self, x: TensorNCHW, states: list[tuple[TensorNCHW, TensorNCHW]]
+    ) -> list[tuple[TensorNCHW, TensorNCHW]]:
         """Advance all recurrent layers by one timestep."""
-        next_states: list[tuple[Tensor, Tensor]] = []
+        next_states: list[tuple[TensorNCHW, TensorNCHW]] = []
         layer_input = x
         for layer_idx, (cell, state) in enumerate(zip(self.cells, states, strict=True)):
             next_state = cell(layer_input, state)
@@ -129,30 +127,31 @@ class ConvLSTMProcessor(BaseProcessor):
 
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
         """Consume history and autoregressively forecast future latent frames."""
-        if x.ndim != _NTCHW_NDIM:
-            msg = f"Expected NTCHW input with 5 dimensions, got shape {tuple(x.shape)}."
-            raise ValueError(msg)
-        if x.shape[1] != self.n_history_steps:
-            msg = f"Expected {self.n_history_steps} history steps, got {x.shape[1]}."
-            raise ValueError(msg)
-        if x.shape[2] != self.data_space.channels:
-            msg = f"Expected {self.data_space.channels} latent channels, got {x.shape[2]}."
-            raise ValueError(msg)
-
-        current = x[:, 0]
+        # Initialise hidden states with zeros for every layer
+        current: TensorNCHW = x[:, 0]
         states = self._initial_states(current)
-        for time_idx in range(self.n_history_steps):
-            current = x[:, time_idx]
+
+        # Consume the history timesteps one at a time to initialise the recurrent state
+        for idx_history in range(x.shape[1]):
+            current = x[:, idx_history]
             states = self._step(current, states)
 
         predictions: list[Tensor] = []
-        for forecast_idx in range(self.n_forecast_steps):
+        for idx_forecast in range(self.n_forecast_steps):
+            # Convolve the most recent hidden state to latent space
             next_frame = self.output_projection(states[-1][0])
+
+            # Optionally combine the prediction with the most recent frame
             if self.residual:
                 next_frame = current + next_frame
+
+            # Add the prediction to the list of forecast timesteps
             predictions.append(next_frame)
-            current = next_frame
-            if forecast_idx < self.n_forecast_steps - 1:
+
+            # Add the prediction as the next hidden state
+            if idx_forecast < self.n_forecast_steps - 1:
+                current = next_frame
                 states = self._step(current, states)
 
+        # Stack the forecast timesteps into NTCHW
         return ProcessorOutput(prediction=torch.stack(predictions, dim=1))

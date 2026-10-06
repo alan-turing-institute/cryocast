@@ -116,19 +116,3 @@ def test_convlstm_processor_rejects_invalid_configuration(
             n_forecast_steps=2,
             **kwargs,
         )
-
-
-def test_convlstm_processor_validates_input_shape() -> None:
-    """Reject invalid history and latent-channel dimensions."""
-    latent_space = DataSpace(name="latent", channels=2, shape=(4, 4))
-    processor = ConvLSTMProcessor(
-        data_space=latent_space,
-        n_history_steps=2,
-        n_forecast_steps=2,
-        hidden_channels=4,
-    )
-
-    with pytest.raises(ValueError, match="history steps"):
-        processor.rollout(torch.randn(1, 3, 2, 4, 4))
-    with pytest.raises(ValueError, match="latent channels"):
-        processor.rollout(torch.randn(1, 2, 3, 4, 4))
