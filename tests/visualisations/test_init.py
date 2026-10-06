@@ -1,6 +1,6 @@
 from matplotlib import rcParams
 
-from icenet_mp.visualisations import register_animation_backends
+from cryocast.visualisations import register_animation_backends
 
 
 class TestRegisterAnimationBackends:

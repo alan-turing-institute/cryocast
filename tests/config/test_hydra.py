@@ -4,11 +4,11 @@ from collections.abc import Callable
 import pytest
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.cli.hydra import hydra_adaptor
+from cryocast.cli.hydra import hydra_adaptor
 
 
 class TestHydraConfigLoading:
-    """Regression tests for icenet-mp config composition via hydra."""
+    """Regression tests for cryocast config composition via hydra."""
 
     def test_sample_config_has_expected_top_level_keys(
         self, compose_config: Callable[..., DictConfig]
@@ -31,13 +31,13 @@ class TestHydraConfigLoading:
         # sample.yaml uses `override /model: quick_test`, replacing the base default
         cfg = compose_config()
         assert cfg.model.name == "quick-test"
-        assert cfg.model._target_ == "icenet_mp.models.EncodeProcessDecode"
+        assert cfg.model._target_ == "cryocast.models.EncodeProcessDecode"
 
     def test_loss_defaults_resolved_from_base(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         cfg = compose_config()
-        assert cfg.loss._target_ == "icenet_mp.losses.amse_loss.AMSELoss"
+        assert cfg.loss._target_ == "cryocast.losses.amse_loss.AMSELoss"
         assert cfg.loss.delta == pytest.approx(0.5)
 
     def test_scalar_override_applied(
@@ -83,7 +83,7 @@ class TestHydraConfigLoading:
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         cfg = compose_config(config_name="baseline/climatology")
-        assert cfg.model._target_ == "icenet_mp.models.Climatology"
+        assert cfg.model._target_ == "cryocast.models.Climatology"
         assert cfg.model.name == "climatology"
         assert cfg.train.trainer.max_epochs == 1
         assert cfg.train.trainer.gradient_clip_val is None
@@ -96,7 +96,7 @@ class TestHydraConfigLoading:
         assert "wandb" not in cfg.reporting.loggers
         assert (
             cfg.reporting.loggers.local_files._target_
-            == "icenet_mp.loggers.LocalFileLogger"
+            == "cryocast.loggers.LocalFileLogger"
         )
         assert "metric_summary" not in cfg.train.callbacks
         assert "metric_summary" not in cfg.evaluate.callbacks
@@ -132,7 +132,7 @@ class TestHydraConfigLoading:
 
 
 class TestHydraAdaptor:
-    """Regression tests for icenet-mp's hydra_adaptor signature rewriter."""
+    """Regression tests for the hydra_adaptor signature rewriter."""
 
     def test_signature_rewriting(self) -> None:
         def fn(config: DictConfig) -> None:

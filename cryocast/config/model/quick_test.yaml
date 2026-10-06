@@ -1,0 +1,26 @@
+_target_: cryocast.models.EncodeProcessDecode
+
+name: quick-test
+
+encoders:
+  latent_space: [128, 128]
+  era5:
+    _target_: cryocast.models.encoders.NaiveLinearEncoder
+  float-argo:
+    _target_: cryocast.models.encoders.NaiveLinearEncoder
+  sic-osisaf:
+    _target_: cryocast.models.encoders.NaiveLinearEncoder
+  sic-ssmis:
+    _target_: cryocast.models.encoders.NaiveLinearEncoder
+
+processor:
+  _target_: cryocast.models.processors.UNetProcessor
+  norm_type: groupnorm
+  start_out_channels: 64
+
+decoder:
+  _target_: cryocast.models.decoders.NaiveLinearDecoder
+  mask_type: active
+  restrict_range: sigmoid
+  skip_connection:
+    method: none

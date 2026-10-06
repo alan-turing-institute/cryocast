@@ -1,0 +1,38 @@
+# Piecewise encoder/decoder with spatial convolutions
+_target_: cryocast.models.EncodeProcessDecode
+
+name: piecewise-unet-piecewise-conv
+
+encoders:
+  latent_space: [144, 144]
+  era5:
+    _target_: cryocast.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 1
+    conv_subblocks_final: 1
+  float-argo:
+    _target_: cryocast.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 1
+    conv_subblocks_final: 1
+  sic-osisaf:
+    _target_: cryocast.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 1
+    conv_subblocks_final: 1
+  sic-ssmis:
+    _target_: cryocast.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 1
+    conv_subblocks_final: 1
+
+processor:
+  _target_: cryocast.models.processors.UNetProcessor
+  norm_type: batchnorm
+  start_out_channels: 64
+
+decoder:
+  _target_: cryocast.models.decoders.PiecewiseDecoder
+  conv_subblocks_initial: 1
+  conv_subblocks_final: 1
+  mask_type: active
+  restrict_range: clamp
+  use_final_normalisation: false
+  skip_connection:
+    method: none

@@ -9,7 +9,7 @@ import pytest
 import xarray as xr
 from anemoi.datasets.create.sources.xarray import load_one
 
-from icenet_mp.ingestion.filters.crop_latlon_filter import CropLatLonFilter
+from cryocast.ingestion.filters.crop_latlon_filter import CropLatLonFilter
 
 
 def _field_list(

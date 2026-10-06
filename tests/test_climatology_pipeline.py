@@ -12,8 +12,8 @@ from pathlib import Path
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.model_service import ModelService
-from icenet_mp.models import Climatology
+from cryocast.model_service import ModelService
+from cryocast.models import Climatology
 from tests.conftest import CLIMATOLOGY_VARIABLES
 
 
@@ -38,16 +38,16 @@ def _cfg(base_path: Path) -> DictConfig:
             "reporting": {
                 "loggers": {},
                 "metrics": [
-                    {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+                    {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"},
                     {
                         "name": "rmse",
-                        "_target_": "icenet_mp.metrics.RMSEPerForecastDay",
+                        "_target_": "cryocast.metrics.RMSEPerForecastDay",
                     },
                 ],
             },
             "loss": {"_target_": "torch.nn.HuberLoss", "delta": 0.5},
             "model": {
-                "_target_": "icenet_mp.models.Climatology",
+                "_target_": "cryocast.models.Climatology",
                 "name": "climatology",
             },
             "variables": {

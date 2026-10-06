@@ -1,6 +1,6 @@
 import pytest
 
-from icenet_mp.types import (
+from cryocast.types import (
     BetaSchedule,
     DiffMode,
     Hemisphere,
@@ -11,7 +11,7 @@ from icenet_mp.types import (
 
 
 class TestEnums:
-    """Tests for the icenet_mp.types StrEnum classes."""
+    """Tests for the cryocast.types StrEnum classes."""
 
     def test_beta_schedule_members(self) -> None:
         """Expose the expected BetaSchedule members."""

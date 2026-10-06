@@ -8,7 +8,7 @@ import pytest
 from anemoi.datasets.create.recipe.dates import StartEndDates
 from anemoi.datasets.dates.groups import GroupOfDates
 
-from icenet_mp.ingestion.sources import CDSSource
+from cryocast.ingestion.sources import CDSSource
 
 
 class TestCDSSource:
@@ -39,8 +39,8 @@ class TestCDSSource:
         }
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.ingestion.sources.cds.from_source", mock_from_source)
-            mp.setattr("icenet_mp.ingestion.sources.cds.MultiFieldList", mock_multi)
+            mp.setattr("cryocast.ingestion.sources.cds.from_source", mock_from_source)
+            mp.setattr("cryocast.ingestion.sources.cds.MultiFieldList", mock_multi)
             source = CDSSource(
                 self.context,
                 dataset="reanalysis-pan-carra",
@@ -74,7 +74,7 @@ class TestCDSSource:
         mock_from_source = MagicMock(side_effect=[MagicMock(), MagicMock()])
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.ingestion.sources.cds.from_source", mock_from_source)
+            mp.setattr("cryocast.ingestion.sources.cds.from_source", mock_from_source)
             source = CDSSource(
                 self.context,
                 dataset="reanalysis-pan-carra",
@@ -104,7 +104,7 @@ class TestCDSSource:
         mock_from_source = MagicMock(side_effect=[MagicMock(), MagicMock()])
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.ingestion.sources.cds.from_source", mock_from_source)
+            mp.setattr("cryocast.ingestion.sources.cds.from_source", mock_from_source)
             source = CDSSource(
                 self.context,
                 dataset="reanalysis-pan-carra",
@@ -131,7 +131,7 @@ class TestCDSSource:
         mock_from_source = MagicMock(return_value=MagicMock())
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.ingestion.sources.cds.from_source", mock_from_source)
+            mp.setattr("cryocast.ingestion.sources.cds.from_source", mock_from_source)
             source = CDSSource(self.context, dataset="dataset", request=request)
             source.execute(self.dates(datetime(2024, 1, 2, 12)))
 
@@ -163,8 +163,8 @@ class TestCDSSource:
         mock_from_source = MagicMock()
         mock_multi = MagicMock()
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.ingestion.sources.cds.from_source", mock_from_source)
-            mp.setattr("icenet_mp.ingestion.sources.cds.MultiFieldList", mock_multi)
+            mp.setattr("cryocast.ingestion.sources.cds.from_source", mock_from_source)
+            mp.setattr("cryocast.ingestion.sources.cds.MultiFieldList", mock_multi)
             source = CDSSource(self.context, dataset="dataset", request={})
             source.execute(self.dates())
 
