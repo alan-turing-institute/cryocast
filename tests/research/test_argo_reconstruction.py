@@ -1,11 +1,11 @@
 import numpy as np
 import torch
 
-from icenet_mp.research.argo_cross_attention import (
+from cryocast.research.argo_cross_attention import (
     SparseCrossAttentionConfig,
     SparseCrossAttentionEncoder,
 )
-from icenet_mp.research.argo_reconstruction import (
+from cryocast.research.argo_reconstruction import (
     MeasurementNormaliser,
     ReconstructionTrainingConfig,
     SparseReconstructionModel,
@@ -16,8 +16,8 @@ from icenet_mp.research.argo_reconstruction import (
     parameter_counts,
     summarise_records,
 )
-from icenet_mp.research.argo_setconv import SparseSetConvConfig, SparseSetConvEncoder
-from icenet_mp.research.argo_sparse import SparseObservations
+from cryocast.research.argo_setconv import SparseSetConvConfig, SparseSetConvEncoder
+from cryocast.research.argo_sparse import SparseObservations
 
 
 def _observations(shift: float = 0.0) -> SparseObservations:

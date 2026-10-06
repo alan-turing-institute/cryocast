@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from icenet_mp.research.argo_sparse import (
+from cryocast.research.argo_sparse import (
     ArgoFrameColumns,
     GaussianInterpolationBaseline,
     SparseObservations,

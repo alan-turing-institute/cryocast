@@ -2,12 +2,12 @@
 
 import numpy as np
 
-from icenet_mp.research.argo_profile_split import (
+from cryocast.research.argo_profile_split import (
     profile_group_count,
     profiles_overlap,
     split_observations,
 )
-from icenet_mp.research.argo_sparse import SparseObservations
+from cryocast.research.argo_sparse import SparseObservations
 
 
 def _profile_observations() -> SparseObservations:

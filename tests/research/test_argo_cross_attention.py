@@ -1,12 +1,12 @@
 import numpy as np
 import torch
 
-from icenet_mp.research.argo_cross_attention import (
+from cryocast.research.argo_cross_attention import (
     SparseCrossAttentionConfig,
     SparseCrossAttentionEncoder,
 )
-from icenet_mp.research.argo_sparse import SparseObservations
-from icenet_mp.research.argo_torch import (
+from cryocast.research.argo_sparse import SparseObservations
+from cryocast.research.argo_torch import (
     spherical_fourier_features,
     torch_sparse_sequence_from_observations,
 )

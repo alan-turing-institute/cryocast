@@ -2,9 +2,9 @@
 
 > **Held-out Argo reconstruction is an information-preservation proxy only. It is not evidence of improved sea-ice forecasting.**
 
-This note records the research benchmark for [IceNet-MP issue #477](https://github.com/alan-turing-institute/icenet-mp/issues/477). It does not change production Argo ingestion or forecasting behaviour.
+This note records the research benchmark for [CryoCast issue #477](https://github.com/alan-turing-institute/cryocast/issues/477). It does not change production Argo ingestion or forecasting behaviour.
 
-## Current IceNet-MP Argo interpolation
+## Current CryoCast Argo interpolation
 
 The production `ArgoSource` fetches raw Argo observations in a four-hour window centred on each requested time and in the upper 50 m. It computes pairwise haversine distances from observations to the configured output grid and uses Gaussian weights
 
@@ -170,4 +170,4 @@ Hold constant across all three arms:
 
 For the primary representation test, keep the underlying Argo value/QC policy the same between the interpolated and direct-sparse arms so that only the representation path differs. Then, if useful, run a separate pre-declared Argo data-quality ablation in which adjusted values, QC filtering, adjusted-error weighting and position-quality handling are applied symmetrically to both Argo arms. This avoids attributing a QC/calibration improvement to the encoder architecture.
 
-Report the existing IceNet-MP forecast metrics per lead for every seed, together with training/inference cost. A direct sparse encoder should proceed only if its forecast improvement over current interpolated Argo is consistent across seeds and leads and is larger than run-to-run variation.
+Report the existing CryoCast forecast metrics per lead for every seed, together with training/inference cost. A direct sparse encoder should proceed only if its forecast improvement over current interpolated Argo is consistent across seeds and leads and is larger than run-to-run variation.

@@ -10,9 +10,9 @@ from hydra.errors import InstantiationException
 from omegaconf import DictConfig, OmegaConf
 from torchmetrics import MeanSquaredError, Metric
 
-import icenet_mp
-from icenet_mp.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
-from icenet_mp.metrics import (
+import cryocast
+from cryocast.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
+from cryocast.metrics import (
     CentroidErrorPerForecastDay,
     DistanceAveragedIceEdgeErrorPerForecastDay,
     FractionalSkillScorePerForecastDay,
@@ -25,13 +25,13 @@ from icenet_mp.metrics import (
     SpatialMeanPredictionPerForecastDay,
     SSIMPerForecastDay,
 )
-from icenet_mp.models import BaseModel, Persistence
-from icenet_mp.types import Hemisphere, ModelStepOutput, TensorNTCHW
+from cryocast.models import BaseModel, Persistence
+from cryocast.types import Hemisphere, ModelStepOutput, TensorNTCHW
 
 # The metrics configured by default, which also checks that the shipped config is valid
 DEFAULT_METRICS: list[Any] = OmegaConf.to_container(  # type: ignore[assignment]
     OmegaConf.load(
-        Path(icenet_mp.__file__).parent / "config/reporting/metrics/default.yaml"
+        Path(cryocast.__file__).parent / "config/reporting/metrics/default.yaml"
     )
 )
 
@@ -569,9 +569,9 @@ class TestBaseModelMetricSelection:
         "spec",
         [
             "mae",
-            {"_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+            {"_target_": "cryocast.metrics.MAEPerForecastDay"},
             {"name": "mae"},
-            {"name": 1, "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+            {"name": 1, "_target_": "cryocast.metrics.MAEPerForecastDay"},
         ],
         ids=["plain-name", "no-name", "no-target", "non-string-name"],
     )
@@ -746,12 +746,12 @@ class TestBaseModelLossConfig:
                 id="smooth_l1",
             ),
             pytest.param(
-                OmegaConf.create({"_target_": "icenet_mp.losses.rmse_loss.RMSELoss"}),
+                OmegaConf.create({"_target_": "cryocast.losses.rmse_loss.RMSELoss"}),
                 RMSELoss,
                 id="rmse",
             ),
             pytest.param(
-                OmegaConf.create({"_target_": "icenet_mp.losses.amse_loss.AMSELoss"}),
+                OmegaConf.create({"_target_": "cryocast.losses.amse_loss.AMSELoss"}),
                 AMSELoss,
                 id="amse",
             ),
@@ -818,11 +818,11 @@ class TestBaseModelLossConfig:
         self, cfg_input_space: DictConfig, cfg_output_space: DictConfig
     ) -> None:
         bad_loss = OmegaConf.create(
-            {"_target_": "icenet_mp.losses.does_not_exist.FakeLoss"}
+            {"_target_": "cryocast.losses.does_not_exist.FakeLoss"}
         )
         with pytest.raises(
             InstantiationException,
-            match=r"Error locating target 'icenet_mp\.losses\.does_not_exist\.FakeLoss'",
+            match=r"Error locating target 'cryocast\.losses\.does_not_exist\.FakeLoss'",
         ):
             Persistence(
                 target_variable_indices=[0],

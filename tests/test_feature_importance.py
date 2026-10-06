@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 from omegaconf import DictConfig
 
-from icenet_mp.data import CommonDataModule
-from icenet_mp.feature_importance import compute_feature_importance
-from icenet_mp.types import ArrayTCHW
+from cryocast.data import CommonDataModule
+from cryocast.feature_importance import compute_feature_importance
+from cryocast.types import ArrayTCHW
 
 
 def _cfg(

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from icenet_mp.data.single_dataset import SingleDataset
-from icenet_mp.types import DataSpace
+from cryocast.data.single_dataset import SingleDataset
+from cryocast.types import DataSpace
 
 
 class TestSingleDataset:
@@ -627,7 +627,7 @@ class TestSingleDatasetCache:
         """Repeated reads of one fileset should reuse the class-level dataset cache."""
         mock_open_dataset = MagicMock()
         monkeypatch.setattr(
-            "icenet_mp.data.single_dataset.open_dataset", mock_open_dataset
+            "cryocast.data.single_dataset.open_dataset", mock_open_dataset
         )
         monkeypatch.setattr(SingleDataset, "anemoi_cache", {})
         input_files = (mock_dataset,)
@@ -644,7 +644,7 @@ class TestSingleDatasetCache:
         """SingleDataset subsets should not reopen their shared source files."""
         mock_open_dataset = MagicMock()
         monkeypatch.setattr(
-            "icenet_mp.data.single_dataset.open_dataset", mock_open_dataset
+            "cryocast.data.single_dataset.open_dataset", mock_open_dataset
         )
         monkeypatch.setattr(SingleDataset, "anemoi_cache", {})
         dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])

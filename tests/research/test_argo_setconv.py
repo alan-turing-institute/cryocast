@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 
-from icenet_mp.research.argo_setconv import SparseSetConvConfig, SparseSetConvEncoder
-from icenet_mp.research.argo_sparse import SparseObservations
-from icenet_mp.research.argo_torch import (
+from cryocast.research.argo_setconv import SparseSetConvConfig, SparseSetConvEncoder
+from cryocast.research.argo_sparse import SparseObservations
+from cryocast.research.argo_torch import (
     latlon_to_unit_xyz,
     torch_sparse_sequence_from_observations,
 )

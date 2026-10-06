@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import ModuleType
@@ -11,7 +12,7 @@ from lightning import Trainer
 from lightning.pytorch.loggers import WandbLogger
 from wandb.wandb_run import Run
 
-from icenet_mp.utils import (
+from cryocast.utils import (
     datetime_from_npdatetime,
     get_device_name,
     get_timestamp,
@@ -33,6 +34,22 @@ class TestDatetimeFromNpdatetime:
 
         assert result.tzinfo is UTC
         assert result.microsecond == 789000
+
+    @pytest.mark.skipif(not hasattr(time, "tzset"), reason="requires time.tzset")
+    def test_keeps_utc_time_in_non_utc_local_timezone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep the UTC time unchanged when the local timezone is not UTC."""
+        # Midnight on a summer date, when Europe/London is on BST (UTC+1)
+        monkeypatch.setenv("TZ", "Europe/London")
+        time.tzset()
+        try:
+            result = datetime_from_npdatetime(np.datetime64("2024-06-06T00:00"))
+        finally:
+            monkeypatch.undo()
+            time.tzset()
+
+        assert result == datetime(2024, 6, 6, tzinfo=UTC)
 
 
 class TestFormatDateKey:
