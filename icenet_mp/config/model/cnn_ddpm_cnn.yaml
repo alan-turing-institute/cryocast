@@ -26,8 +26,10 @@ encoders:
     scale_factor: 3
 
 processor:
-  _target_: icenet_mp.models.processors.DDPMProcessor
+  _target_: icenet_mp.models.processors.DiffusionProcessor
   timesteps: 150
+  ddim_steps: null   # null = all 150 timesteps -> DDPM sampling
+  eta: 1.0           # with ddim_steps=null, gives standard DDPM
   beta_schedule: cosine
   start_out_channels: 64
   time_embed_dim: 256

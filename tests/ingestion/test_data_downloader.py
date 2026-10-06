@@ -365,7 +365,7 @@ class TestDataDownloader:
         assert residual.exists()
         assert "Residual artifacts" in caplog.text
 
-    @pytest.mark.parametrize("overwrite", [False, True])
+    @pytest.mark.parametrize("overwrite", [False, True], ids=["create", "recreate"])
     def test_postprocessor_process_creates_or_recreates_land_and_active_masks(
         self,
         mock_data_downloader_ssmis: DataDownloader,

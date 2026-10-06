@@ -16,7 +16,13 @@ from .complex_datatypes import (
     PlotSpec,
     Timespan,
 )
-from .constants import SEA_ICE_THRESHOLD
+from .constants import (
+    NDIM_HW,
+    NDIM_NHW,
+    NDIM_NTCHW,
+    NDIM_THW,
+    SEA_ICE_THRESHOLD,
+)
 from .enums import (
     BetaSchedule,
     DiffMode,
@@ -29,6 +35,7 @@ from .enums import (
 from .protocols import (
     SupportsImageLogging,
     SupportsMetadataFromDataset,
+    SupportsPerLeadTimeLoss,
     SupportsVideoLogging,
 )
 from .simple_datatypes import (
@@ -43,6 +50,10 @@ from .simple_datatypes import (
 )
 
 __all__ = [
+    "NDIM_HW",
+    "NDIM_NHW",
+    "NDIM_NTCHW",
+    "NDIM_THW",
     "SEA_ICE_THRESHOLD",
     "AnemoiCleanupArgs",
     "AnemoiDatasetStatus",
@@ -72,6 +83,7 @@ __all__ = [
     "SkipConnectionType",
     "SupportsImageLogging",
     "SupportsMetadataFromDataset",
+    "SupportsPerLeadTimeLoss",
     "SupportsVideoLogging",
     "TensorNCHW",
     "TensorNTCHW",

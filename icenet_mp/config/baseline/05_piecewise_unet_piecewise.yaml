@@ -1,6 +1,0 @@
-# @package _global_
-defaults:
-  - /base
-  - override /loss: huber
-  - override /model: piecewise_unet_piecewise
-  - _self_

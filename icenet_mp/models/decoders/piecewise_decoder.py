@@ -71,16 +71,6 @@ class PiecewiseDecoder(BaseDecoder):
         # Construct the list of layers
         layers: list[nn.Module] = []
 
-        if (self.data_space_in.channels != input_channels_required) and (
-            conv_subblocks_initial < 1
-        ):
-            msg = (
-                f"conv_subblocks_initial {conv_subblocks_initial} must be >= 1 "
-                f"if input channels {self.data_space_in.channels} != "
-                f"required input channels {input_channels_required}."
-            )
-            raise ValueError(msg)
-
         # Optionally add an initial convolutional block at input resolution.
         # This will also set the correct number of channels if needed.
         if conv_subblocks_initial > 0:
@@ -92,6 +82,13 @@ class PiecewiseDecoder(BaseDecoder):
                     activation=conv_activation,
                     n_subblocks=conv_subblocks_initial,
                 ),
+            )
+        # Otherwise, if needed, set the number of channels with a 1x1 linear projection
+        elif self.data_space_in.channels != input_channels_required:
+            layers.append(
+                nn.Conv2d(
+                    self.data_space_in.channels, input_channels_required, kernel_size=1
+                )
             )
 
         # Unflatten the channel dimension to extract the patches: [N, n_patches, C, patch_h, patch_w]

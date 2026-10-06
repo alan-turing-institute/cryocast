@@ -3,7 +3,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,6 +15,8 @@ from icenet_mp.model_service import ModelService
 from icenet_mp.models import EncodeProcessDecode
 from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from icenet_mp.types import DataSpace
+
+MAE_METRIC_CFG = {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"}
 
 
 class FakeCommonDataModule:
@@ -30,10 +32,12 @@ class FakeCommonDataModule:
         self.n_history_steps = 3
         self.output_space = DataSpace(1, "output", (10, 10))
         self.target_variable_indices = [0]
+        self.target_variables = ["mock_var"]
 
 
 class FakeModel:
     ignored_hparams: ClassVar[frozenset[str]] = frozenset()
+    metrics: list[dict[str, Any]] | None = None
 
     @classmethod
     def load_from_checkpoint(
@@ -44,6 +48,7 @@ class FakeModel:
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         map_location: str | None = None,
+        metrics: list[dict[str, Any]] | None = None,
         weights_only: bool = False,
     ) -> "FakeModel":
         del (
@@ -54,7 +59,9 @@ class FakeModel:
             map_location,
             weights_only,
         )
-        return cls()
+        model = cls()
+        model.metrics = metrics
+        return model
 
 
 class TestModelService:
@@ -191,6 +198,154 @@ class TestModelService:
             expected_config["reporting"]["loggers"] = "will_overwrite"
             assert service.config == expected_config
             assert service.config["model"]["name"] != "will_not_overwrite"
+
+    def test_from_checkpoint_variables_replaced_not_merged(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Checkpoint variables win outright rather than being unioned with the CLI."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        ckpt_variables = {
+            "input": {"sic-ssmis": ["ice_conc"]},
+            "target": {"sic-ssmis": ["ice_conc"]},
+        }
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["variables"] = ckpt_variables
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(
+                DictConfig(
+                    {
+                        "variables": {
+                            "input": {
+                                "era5": ["2t"],
+                                "float-argo": ["TEMP"],
+                                "sic-osisaf": ["ice_conc"],
+                            },
+                            "target": {"sic-osisaf": ["ice_conc"]},
+                        }
+                    }
+                ),
+                checkpoint_path,
+            )
+
+        assert OmegaConf.to_container(service.config["variables"]) == ckpt_variables
+
+    def test_from_checkpoint_batch_size_from_current_config(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Batch size comes from the current config; other window keys do not."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
+
+        cli_config = cfg_model_service.copy()
+        cli_config["window"] = {
+            "batch_size": 1,
+            "n_forecast_steps": 7,
+            "n_history_steps": 1,
+        }
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(cli_config, checkpoint_path)
+
+        assert OmegaConf.to_container(service.config["window"]) == {
+            "batch_size": 1,
+            "n_forecast_steps": 2,
+            "n_history_steps": 3,
+        }
+
+    @pytest.mark.parametrize(
+        ("legacy_target", "expected_target"),
+        [
+            (
+                {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
+                {"sic-ssmis": ["ice_conc"]},
+            ),
+            ({"group_name": "sic-ssmis"}, {"sic-ssmis": []}),
+            ({"group_name": "sic-ssmis", "variables": []}, {"sic-ssmis": []}),
+        ],
+        ids=["explicit-variables", "missing-variables", "empty-variables"],
+    )
+    def test_from_checkpoint_translates_legacy_predict_config(
+        self,
+        legacy_target: dict[str, Any],
+        expected_target: dict[str, Any],
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Translate checkpoints whose config predates the 'variables'/'window' split."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        ckpt_config = cfg_model_service.copy()
+        del ckpt_config["variables"]
+        del ckpt_config["window"]
+        ckpt_config["predict"] = {
+            "target": legacy_target,
+            "n_forecast_steps": 7,
+            "n_history_steps": 4,
+        }
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        with (
+            pytest.MonkeyPatch.context() as mp,
+            caplog.at_level(logging.WARNING, logger="icenet_mp.model_service"),
+        ):
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+
+        assert "uses the legacy 'predict' key" in caplog.text
+        assert "predict" not in service.config
+        assert OmegaConf.to_container(service.config["variables"]) == {
+            "input": {},
+            "target": expected_target,
+        }
+        assert service.config["window"]["n_forecast_steps"] == 7
+        assert service.config["window"]["n_history_steps"] == 4
+        assert (
+            service.config["window"]["batch_size"]
+            == cfg_model_service["window"]["batch_size"]
+        )
 
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
@@ -775,20 +930,20 @@ class TestModelService:
             result = service.train_multistage(checkpoint_dir=tmp_path)
 
         mock_encoders.assert_called_once_with(
-            config="merged_encoders", checkpoint_dir=tmp_path
+            train_cfg="merged_encoders", checkpoint_dir=tmp_path
         )
         trained_encoders = mock_encoders.return_value
         mock_decoder.assert_called_once_with(
-            trained_encoders, config="merged_decoder", checkpoint_dir=tmp_path
+            trained_encoders, train_cfg="merged_decoder", checkpoint_dir=tmp_path
         )
         mock_processor.assert_called_once_with(
             trained_decoder,
-            config="merged_processor",
+            train_cfg="merged_processor",
             checkpoint_dir=tmp_path,
             target_encoder=target_encoder,
         )
         mock_finetune.assert_called_once_with(
-            processor_model=processor_model, config="merged_finetune"
+            processor_model=processor_model, train_cfg="merged_finetune"
         )
         assert result is final_trainer
 
@@ -797,7 +952,7 @@ class TestModelService:
         service.model_ = MagicMock()
 
         with pytest.raises(TypeError, match="EncodeProcessDecode"):
-            service.train_stage_decoder([], config=DictConfig({}))
+            service.train_stage_decoder([], train_cfg=DictConfig({}))
 
     def test_train_stage_decoder_trains_new_decoder(self, tmp_path: Path) -> None:
         service = ModelService.__new__(ModelService)
@@ -826,12 +981,13 @@ class TestModelService:
                 lambda *_a, **_k: {"state_dict": "decoder_state"},
             )
             result = service.train_stage_decoder(
-                encoder_models, config=DictConfig({"lr": 1})
+                encoder_models, train_cfg=DictConfig({"lr": 1})
             )
 
         mock_from_template.assert_called_once_with(
             decoder=service.config_["model"]["decoder"],
             encoders=encoder_models,
+            output_space=service.data_module_.output_space,
             target_dataset_name="target",
             target_variable_indices=[0],
             mask_dir=str(tmp_path),
@@ -844,7 +1000,12 @@ class TestModelService:
     ) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.config_ = DictConfig({"model": {"decoder": {"foo": "bar"}}})
+        service.config_ = DictConfig(
+            {
+                "model": {"decoder": {"foo": "bar"}},
+                "reporting": {"metrics": [MAE_METRIC_CFG]},
+            }
+        )
         service.data_module_ = MagicMock()
         service.data_module_.target_group_name = "target"
         service.data_module_.target_variable_indices = [0]
@@ -858,12 +1019,13 @@ class TestModelService:
             mock_load = MagicMock(return_value=loaded_decoder)
             mp.setattr(DecoderStage, "load_from_checkpoint", mock_load)
             result = service.train_stage_decoder(
-                encoder_models, config=DictConfig({}), checkpoint_dir=tmp_path
+                encoder_models, train_cfg=DictConfig({}), checkpoint_dir=tmp_path
             )
 
         mock_load.assert_called_once_with(
             checkpoint_path,
             map_location="cpu",
+            metrics=[MAE_METRIC_CFG],
             weights_only=False,
             decoder=service.config_["model"]["decoder"],
             encoders=encoder_models,
@@ -878,7 +1040,7 @@ class TestModelService:
         service.model_ = MagicMock()
 
         with pytest.raises(TypeError, match="EncodeProcessDecode"):
-            service.train_stage_encoders(config=DictConfig({}))
+            service.train_stage_encoders(train_cfg=DictConfig({}))
 
     def test_train_stage_encoders_trains_new_and_skips_via_checkpoint(
         self, tmp_path: Path
@@ -893,12 +1055,20 @@ class TestModelService:
         service.model_.encoders = [encoder_era5]
         service.model_.target_encoder = target_encoder
         service.config_ = DictConfig(
-            {"model": {"decoder": {"foo": "bar"}, "encoders": {"era5": {"baz": "qux"}}}}
+            {
+                "model": {
+                    "decoder": {"foo": "bar"},
+                    "encoders": {"era5": {"baz": "qux"}},
+                },
+                "reporting": {"metrics": [MAE_METRIC_CFG]},
+            }
         )
         service.data_module_ = MagicMock()
         service.data_module_.target_group_name = "target"
         service.data_module_.target_variables = ["sic"]
-        service.data_module_.variable_names = {"era5": ["t2m"]}
+        service.data_module_.datasets = {
+            "era5": SimpleNamespace(variable_names=["t2m"])
+        }
         service.data_module_.latitudes = {"input": [0.0]}
         service.data_module_.longitudes = {"input": [0.0]}
 
@@ -924,7 +1094,7 @@ class TestModelService:
                 lambda *_a, **_k: {"state_dict": "era5_state"},
             )
             result = service.train_stage_encoders(
-                config=DictConfig({"foo": "bar"}), checkpoint_dir=tmp_path
+                train_cfg=DictConfig({"foo": "bar"}), checkpoint_dir=tmp_path
             )
 
         assert result == [trained_encoder_model, loaded_target_model]
@@ -941,6 +1111,7 @@ class TestModelService:
         assert mock_load_from_checkpoint.call_args.args == (checkpoint_path,)
         load_kwargs = mock_load_from_checkpoint.call_args.kwargs
         assert load_kwargs["map_location"] == "cpu"
+        assert load_kwargs["metrics"] == [MAE_METRIC_CFG]
         assert load_kwargs["weights_only"] is False
         assert load_kwargs["latitudes_fn"]() == service.data_module_.latitudes
         assert load_kwargs["longitudes_fn"]() == service.data_module_.longitudes
@@ -970,7 +1141,7 @@ class TestModelService:
             mp.setattr(service, "_fit", mock_fit)
             mp.setattr(service, "_save_stage_checkpoint", mock_save)
             result = service.train_stage_finetune(
-                config=DictConfig({"lr": 1}),
+                train_cfg=DictConfig({"lr": 1}),
                 processor_model=cast("ProcessorStage", processor_model),
             )
 
@@ -1009,7 +1180,7 @@ class TestModelService:
                 lambda *_a, **_k: {"state_dict": "processor_state"},
             )
             result = service.train_stage_processor(
-                decoder_model, target_encoder, config=DictConfig({"lr": 1})
+                decoder_model, target_encoder, train_cfg=DictConfig({"lr": 1})
             )
 
         mock_from_template.assert_called_once_with(
@@ -1025,7 +1196,12 @@ class TestModelService:
         self, tmp_path: Path
     ) -> None:
         service = ModelService.__new__(ModelService)
-        service.config_ = DictConfig({"model": {"processor": {"foo": "bar"}}})
+        service.config_ = DictConfig(
+            {
+                "model": {"processor": {"foo": "bar"}},
+                "reporting": {"metrics": [MAE_METRIC_CFG]},
+            }
+        )
         service.data_module_ = MagicMock()
         service.data_module_.mask_directory = tmp_path
         decoder_model = MagicMock()
@@ -1040,13 +1216,14 @@ class TestModelService:
             result = service.train_stage_processor(
                 decoder_model,
                 target_encoder,
-                config=DictConfig({}),
+                train_cfg=DictConfig({}),
                 checkpoint_dir=tmp_path,
             )
 
         mock_load.assert_called_once_with(
             checkpoint_path,
             map_location="cpu",
+            metrics=[MAE_METRIC_CFG],
             weights_only=False,
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
