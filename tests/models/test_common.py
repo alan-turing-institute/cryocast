@@ -9,6 +9,7 @@ from cryocast.models.common import (
     ConvBlockUpsample,
     ConvLSTMCell,
     ConvNormActUpsample,
+    LiteMLA,
     Mask,
     NormalisedFold,
     ResBlock,
@@ -173,6 +174,19 @@ class TestGatedAttentionBlock:
                 mlp_ratio=2.0,
                 **probabilities,
             )
+
+
+class TestLiteMLA:
+    def test_fp16_attention_accumulates_without_overflow(self) -> None:
+        attention = LiteMLA(channels=16, heads=1, scales=())
+        qkv = torch.ones((1, 48, 72, 72), dtype=torch.float16)
+
+        result = attention.relu_linear_attention(qkv)
+        reference = attention.relu_linear_attention(qkv.float())
+
+        assert result.dtype == torch.float16
+        assert torch.isfinite(result).all()
+        torch.testing.assert_close(result.float(), reference, rtol=1e-3, atol=1e-3)
 
 
 class TestNormalisedFold:
