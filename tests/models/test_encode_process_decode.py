@@ -10,7 +10,74 @@ from icenet_mp.models import EncodeProcessDecode
 from icenet_mp.models.decoders import BaseDecoder
 from icenet_mp.models.encoders import BaseEncoder
 from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
+from icenet_mp.types import (
+    DataSpace,
+    Hemisphere,
+    ProcessorOutput,
+    TensorNCHW,
+    TensorNTCHW,
+)
+
+
+def test_uncertainty_loss_rejects_processor_owned_training_loss(
+    cfg_decoder: DictConfig,
+    cfg_encoders: DictConfig,
+    cfg_processor: DictConfig,
+    cfg_input_space: DictConfig,
+    cfg_output_space: DictConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject uncertainty weighting when the processor supplies its own loss."""
+    cfg_processor = DictConfig({**cfg_processor, "computes_loss_in_latent_space": True})
+    model = EncodeProcessDecode(
+        name="encode-null-decode",
+        encoders=cfg_encoders,
+        processor=cfg_processor,
+        decoder=cfg_decoder,
+        hemisphere=Hemisphere.NORTH,
+        input_spaces=[cfg_input_space],
+        loss=DictConfig(
+            {"_target_": "icenet_mp.losses.UncertaintyWeightedLoss", "delta": 0.5}
+        ),
+        n_forecast_steps=1,
+        n_history_steps=1,
+        output_space=cfg_output_space,
+        optimizer=DictConfig({}),
+        scheduler=DictConfig({}),
+        lr_scheduler=DictConfig({}),
+        metrics=[],
+        target_variable_indices=[0],
+    )
+    processor_output = ProcessorOutput(
+        prediction=torch.empty(0),
+        loss=torch.tensor(1.0),
+    )
+    monkeypatch.setattr(
+        model.processor,
+        "rollout",
+        lambda *args, **kwargs: processor_output,  # noqa: ARG005
+    )
+    target = torch.rand(
+        1,
+        1,
+        cfg_output_space["channels"],
+        cfg_output_space["shape"][0],
+        cfg_output_space["shape"][1],
+    )
+    batch = {
+        cfg_input_space["name"]: torch.randn(
+            1,
+            1,
+            cfg_input_space["channels"],
+            cfg_input_space["shape"][0],
+            cfg_input_space["shape"][1],
+        ),
+        "target": target,
+        "target_uncertainty": torch.full_like(target, 0.1),
+    }
+
+    with pytest.raises(ValueError, match="owns the training loss in latent space"):
+        model.training_step(batch, 0)
 
 
 class _ScaledEncoder(BaseEncoder):

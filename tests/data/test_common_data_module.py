@@ -2,6 +2,7 @@ import datetime
 import logging
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -614,6 +615,50 @@ class TestDataLoaders:
         assert loader.num_workers == 0
         assert loader.persistent_workers is False
         assert loader.prefetch_factor is None
+
+    @pytest.mark.parametrize(
+        "loader_name",
+        [
+            "predict_dataloader",
+            "test_dataloader",
+            "train_dataloader",
+            "val_dataloader",
+        ],
+    )
+    def test_uncertainty_variable_is_forwarded_to_all_splits(
+        self,
+        cfg_common_data_module: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        loader_name: str,
+    ) -> None:
+        """Pass configured target uncertainty to every dataset split."""
+        uncertainty_variable = "total_standard_uncertainty"
+        cfg_common_data_module["loss"] = {"uncertainty_variable": uncertainty_variable}
+        dm = CommonDataModule(cfg_common_data_module)
+
+        source = MagicMock()
+        source.name = "group1"
+        source.variable_names = ["mock_var", uncertainty_variable]
+        source.subset.return_value = source
+        dm.__dict__["datasets"] = {"group1": source}
+        dm.__dict__["climatology"] = None
+
+        fake_dataset = MagicMock()
+        fake_dataset.__len__.return_value = 1
+        fake_dataset.start_date = np.datetime64("2020-01-01")
+        fake_dataset.end_date = np.datetime64("2020-01-01")
+        fake_dataset.variable_list.return_value = []
+        combined_dataset = MagicMock(return_value=fake_dataset)
+        monkeypatch.setattr(
+            "icenet_mp.data.common_data_module.CombinedDataset", combined_dataset
+        )
+
+        getattr(dm, loader_name)()
+
+        assert (
+            combined_dataset.call_args.kwargs["target_uncertainty_variable"]
+            == uncertainty_variable
+        )
 
     def test_only_train_dataloader_shuffles(self, mock_dataset: Path) -> None:
         """Only train_dataloader should shuffle; predict/test/val must stay sequential."""

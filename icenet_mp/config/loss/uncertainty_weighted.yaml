@@ -1,0 +1,10 @@
+# Huber loss weighted by inverse observational uncertainty.
+#
+# Directly downloaded SSMIS SIC datasets expose `total_standard_uncertainty` as a
+# fraction after ingestion. Invalid/sentinel values are excluded from weighting.
+_target_: icenet_mp.losses.UncertaintyWeightedLoss
+uncertainty_variable: total_standard_uncertainty
+delta: 0.5
+min_uncertainty: 0.01
+max_uncertainty: 1.0
+power: 2.0
