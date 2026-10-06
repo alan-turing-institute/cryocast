@@ -140,16 +140,14 @@ class DecoderStage(BaseModel):
     ) -> dict[str, TensorNTCHW]:
         """Align decoder inputs with the physical timestamp they must decode.
 
-        Encoder inputs and the target both use t=-1. This makes decoder pretraining a
-        same-timestamp latent-to-physical mapping, matching how ProcessorStage later
-        supplies predicted future latents to the frozen decoder.
+        Encoder inputs and the target both use t=-1 (yesterday). This is because we want
+        the decoder to learn a time-invariant NCHW -> NCHW mapping.
 
-        If a decoder skip connection is configured, persistence still comes from t=-2:
-        the decoder then learns the change from the previous physical state to the
-        t=-1 target while conditioning on the t=-1 latent. Without a skip connection,
-        persistence is unused and is kept at t=-1 for a consistent batch contract.
+        However, if a skip-connection is used, we also need to include the most recent
+        target value as a skip connection for each forecast. If we also use t=-1 for
+        this, the decoder will learn that the residuals are zero. To avoid this, we use
+        t=-2 (two days ago) for the persistence entry.
         """
-        persistence_t = -2 if self.decoder.skip_connection else -1
         return {
             name: batch[name][:, -1, :, :, :].unsqueeze(1)
             for name in self.encoder_names
@@ -158,7 +156,7 @@ class DecoderStage(BaseModel):
                 :, -1, self.target_variable_indices, :, :
             ].unsqueeze(1),
             "persistence": batch[self.target_name][
-                :, persistence_t, self.target_variable_indices, :, :
+                :, -2, self.target_variable_indices, :, :
             ].unsqueeze(1),
         }
 
