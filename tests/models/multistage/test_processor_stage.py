@@ -16,9 +16,7 @@ class _CaptureLatentLossProcessor(BaseProcessor):
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
         self.target: TensorNTCHW | None = None
 
-    def rollout(
-        self, x: TensorNTCHW, y: TensorNTCHW | None = None
-    ) -> ProcessorOutput:
+    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
         self.target = y
         prediction = x[:, -1:].expand(-1, self.n_forecast_steps, -1, -1, -1)
         return ProcessorOutput(prediction=prediction, loss=torch.tensor(0.0))
