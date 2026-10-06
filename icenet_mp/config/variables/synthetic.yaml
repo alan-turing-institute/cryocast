@@ -1,0 +1,6 @@
+input:
+  sic-ssmis:
+    - ice_conc
+target:
+  sic-ssmis:
+    - ice_conc

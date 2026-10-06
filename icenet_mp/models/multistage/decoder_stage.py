@@ -7,6 +7,7 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models import BaseModel
 from icenet_mp.types import DataSpace, TensorNTCHW
 
@@ -33,6 +34,15 @@ class DecoderStage(BaseModel):
     ) -> None:
         """Initialise a DecoderStage with multiple frozen encoders and a trainable decoder."""
         super().__init__(mask_dir=mask_dir, **kwargs)
+
+        # This stage trains on a single time step so lead-time weighting is a no-op
+        if isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            logger.warning(
+                "lead_time_exponent=%s has no effect on %s, which trains on a single "
+                "time step. It is still applied in the processor stage.",
+                self.loss_fn.exponent,
+                type(self).__name__,
+            )
 
         # We require at least two history steps to train the decoder
         if self.n_history_steps < 2:  # noqa: PLR2004
@@ -68,7 +78,7 @@ class DecoderStage(BaseModel):
             msg = (
                 f"output_space has {self.output_space.channels} channel(s) but "
                 f"target_variable_indices selects {len(target_variable_indices)}; "
-                f"check that predict.target.variables is set correctly."
+                f"check that variables.target is set correctly."
             )
             raise ValueError(msg)
         self.decoder: BaseDecoder = hydra.utils.instantiate(
@@ -84,6 +94,7 @@ class DecoderStage(BaseModel):
         *,
         decoder: DictConfig,
         encoders: list[EncoderStage],
+        output_space: DataSpace,
         target_dataset_name: str,
         target_variable_indices: list[int],
         mask_dir: str | None = None,
@@ -96,16 +107,16 @@ class DecoderStage(BaseModel):
             target_variable_indices=target_variable_indices,
             mask_dir=mask_dir,
             hemisphere=encoders[0].hemisphere,
-            input_spaces=[s.to_dict() for s in encoders[0].input_spaces],
+            input_spaces=[e.encoder.data_space_in.to_dict() for e in encoders],
             lr_scheduler=copy.deepcopy(encoders[0].lr_scheduler_cfg),
             n_forecast_steps=encoders[0].n_forecast_steps,
             n_history_steps=encoders[0].n_history_steps,
             name=f"{target_dataset_name}_decoder".replace("-", "_"),
             optimizer=copy.deepcopy(encoders[0].optimizer_cfg),
-            output_space=encoders[0].output_space.to_dict(),
+            output_space=output_space.to_dict(),
             scheduler=copy.deepcopy(encoders[0].scheduler_cfg),
             loss=copy.deepcopy(encoders[0].loss_cfg),
-            metrics=copy.deepcopy(encoders[0].metrics),
+            metrics=copy.deepcopy(list(encoders[0].metric_cfgs.values())),
         )
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
@@ -127,18 +138,18 @@ class DecoderStage(BaseModel):
         self,
         batch: dict[str, TensorNTCHW],
     ) -> dict[str, TensorNTCHW]:
-        """Extract only the two time steps from each relevant batch element.
+        """Align decoder inputs with the physical timestamp they must decode.
 
-        Inputs use t=-2 (yesterday) while the target uses t=-1 (today). We also extract
-        a persistence entry using t=-2 but sliced to only the target variables.
+        Encoder inputs and the target both use t=-1 (yesterday). This is because we want
+        the decoder to learn a time-invariant NCHW -> NCHW mapping.
 
-        This is because we want the decoder to learn an NCHW -> NCHW mapping but also to
-        include the most recent target value as a skip connection for each forecast so
-        that the decoder will learn to predict residuals. If we use the same time step
-        for both input and target, the model will learn that these residuals are zero.
+        However, if a skip-connection is used, we also need to include the most recent
+        target value as a skip connection for each forecast. If we also use t=-1 for
+        this, the decoder will learn that the residuals are zero. To avoid this, we use
+        t=-2 (two days ago) for the persistence entry.
         """
         return {
-            name: batch[name][:, -2, :, :, :].unsqueeze(1)
+            name: batch[name][:, -1, :, :, :].unsqueeze(1)
             for name in self.encoder_names
         } | {
             "target": batch[self.target_name][

@@ -1,0 +1,37 @@
+# Piecewise encoder/decoder without spatial convolutions
+_target_: icenet_mp.models.EncodeProcessDecode
+
+name: piecewise-unet-piecewise-linear
+
+encoders:
+  latent_space: [144, 144]
+  era5:
+    _target_: icenet_mp.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 0
+    conv_subblocks_final: 0
+  float-argo:
+    _target_: icenet_mp.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 0
+    conv_subblocks_final: 0
+  sic-osisaf:
+    _target_: icenet_mp.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 0
+    conv_subblocks_final: 0
+  sic-ssmis:
+    _target_: icenet_mp.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 0
+    conv_subblocks_final: 0
+
+processor:
+  _target_: icenet_mp.models.processors.UNetProcessor
+  start_out_channels: 64
+
+decoder:
+  _target_: icenet_mp.models.decoders.PiecewiseDecoder
+  conv_subblocks_initial: 0
+  conv_subblocks_final: 0
+  mask_type: active
+  restrict_range: clamp
+  use_final_normalisation: false
+  skip_connection:
+    method: none

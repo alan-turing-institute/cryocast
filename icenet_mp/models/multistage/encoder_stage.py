@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import hydra
 from omegaconf import DictConfig
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models import BaseModel, EncodeProcessDecode
 from icenet_mp.types import DataSpace, TensorNTCHW
 
@@ -18,7 +19,6 @@ logger = logging.getLogger(__name__)
 class EncoderStage(BaseModel):
     def __init__(
         self,
-        channel_names: list[str],
         data_space_in: DataSpace,
         encoder: DictConfig,
         decoder: DictConfig,
@@ -28,8 +28,14 @@ class EncoderStage(BaseModel):
         """Initialise an EncoderStage with a trainable encoder and a disposable decoder."""
         super().__init__(**kwargs)
 
-        # Store channel names
-        self.channel_names = channel_names
+        # This stage trains on a single time step so lead-time weighting is a no-op
+        if isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            logger.warning(
+                "lead_time_exponent=%s has no effect on %s, which trains on a single "
+                "time step. It is still applied in the processor stage.",
+                self.loss_fn.exponent,
+                type(self).__name__,
+            )
 
         # Encode from a single input space to a latent space. For most datasets this
         # space is one of the model's raw input spaces, found by name. The target
@@ -82,7 +88,7 @@ class EncoderStage(BaseModel):
             decoder=decoder,
             encoder=encoder,
             hemisphere=template.hemisphere,
-            input_spaces=[s.to_dict() for s in template.input_spaces],
+            input_spaces=[data_space_in.to_dict()],
             latent_space=template.encoders[0].data_space_out.shape,
             latitudes_fn=template.latitudes_fn,
             longitudes_fn=template.longitudes_fn,
@@ -91,10 +97,10 @@ class EncoderStage(BaseModel):
             n_history_steps=template.n_history_steps,
             name=f"{dataset}_encoder".replace("-", "_"),
             optimizer=copy.deepcopy(template.optimizer_cfg),
-            output_space=template.output_space.to_dict(),
+            output_space=data_space_in.to_dict(),
             scheduler=copy.deepcopy(template.scheduler_cfg),
             loss=copy.deepcopy(template.loss_cfg),
-            metrics=copy.deepcopy(template.metrics),
+            metrics=copy.deepcopy(list(template.metric_cfgs.values())),
         )
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:

@@ -4,6 +4,7 @@ from typing import Any, ClassVar, NoReturn
 import torch
 import torch.nn.functional as F
 
+from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models.common import Mask, RestrictRange
 from icenet_mp.models.diffusion import GaussianDiffusion, UNetDiffusion
 from icenet_mp.types import ModelStepOutput, RangeRestriction, TensorNCHW, TensorNTCHW
@@ -100,6 +101,15 @@ class DDPM(BaseModel):
 
         self.use_autoregressive = use_autoregressive
         self.osisaf_key = self.output_space.name
+
+        # Autoregressive training only optimises one forecast step at a time
+        if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
+            log.warning(
+                "lead_time_exponent=%s has no effect on the autoregressive DDPM "
+                "training loss, which is computed on a single forecast step. "
+                "Validation and test losses are still lead-time weighted.",
+                self.loss_fn.exponent,
+            )
 
         # Bound sampled output into [0, 1] before masking.
         self.restrict = RestrictRange(
@@ -431,13 +441,14 @@ class DDPM(BaseModel):
         # Reshape back to [B, C_new, T, H, W] then flatten T into C
         era5_features = era5_resized.reshape(B, C_new * T, H, W)
 
-        # Encode Both
-        osisaf_features = self.osisaf_encoder(osisaf)  # [B, cond//2, H, W]
+        # Encode OSISAF to [B, cond//2, H, W].
+        osisaf_features = self.osisaf_encoder(osisaf)
 
-        # era5_features enters the encoder as a 2D tensor with many channels
-        era5_features = self.era5_encoder(era5_features)  # [B, cond//2, H, W]
+        # Encode ERA5 to [B, cond//2, H, W].
+        era5_features = self.era5_encoder(era5_features)
 
-        return torch.cat([osisaf_features, era5_features], dim=1)  # [B, cond, H, W]
+        # Combine into final conditioning tensor [B, cond, H, W].
+        return torch.cat([osisaf_features, era5_features], dim=1)
 
     def training_step(
         self, batch: dict[str, TensorNTCHW], _batch_idx: int
@@ -461,38 +472,46 @@ class DDPM(BaseModel):
             - loss: training loss value
 
         """
-        # Prepare input tensor by combining osisaf-south and era5
-        x = self.prepare_inputs(batch)  # [B, C_cond, H, W]
+        # Prepare input tensor by combining osisaf-south and era5 [B, C_cond, H, W].
+        x = self.prepare_inputs(batch)
 
         # Extract target
         if self.use_autoregressive:
-            y = batch["target"][
-                :, 0, :, :, :
-            ]  # [B, C, H, W] — one step at a time (AR trains on t=0 only)
+            # AR runs one step at a time so has shape [B, C, H, W].
+            y = batch["target"][:, 0, :, :, :]
         else:
-            y = batch["target"].flatten(1, 2)  # [B, T*C, H, W] — all steps at once
+            # Parallel runs all steps at once so has shape [B, T*C, H, W].
+            y = batch["target"].flatten(1, 2)
 
         # Sample random timesteps
         t = torch.randint(0, self.timesteps, (x.shape[0],), device=self.device).long()
 
         # Create noisy version
-        noise = torch.randn_like(y)  # [B, C, H, W] (AR) or [B, T*C, H, W] (parallel)
-        noisy_y = self.diffusion.q_sample(
-            y, t, noise
-        )  # [B, C, H, W] (AR) or [B, T*C, H, W] (parallel)
+        noise: TensorNCHW = torch.randn_like(y)
+        noisy_y: TensorNCHW = self.diffusion.q_sample(y, t, noise)
 
         # Predict v
-        pred_v: torch.Tensor = self.model(
-            noisy_y, t, x
-        )  # [B, C, H, W] (AR) or [B, T*C, H, W] (parallel)
+        pred_v: TensorNCHW = self.model(noisy_y, t, x)
 
         # Compute target v
-        target_v = self.diffusion.calculate_v(
-            y, noise, t
-        )  # [B, C, H, W] (AR) or [B, T*C, H, W] (parallel)
+        target_v: TensorNCHW = self.diffusion.calculate_v(y, noise, t)
 
-        # Compute loss
-        loss = self.loss(pred_v, target_v)
+        # Expand to NTCHW. AR shape [B, 1, C, H, W], parallel shape [B, T, C, H, W].
+        prediction: TensorNTCHW = (
+            pred_v.unsqueeze(1)
+            if self.use_autoregressive
+            else pred_v.unflatten(1, (self.n_forecast_steps, self.base_output_channels))
+        )
+        target: TensorNTCHW = (
+            target_v.unsqueeze(1)
+            if self.use_autoregressive
+            else target_v.unflatten(
+                1, (self.n_forecast_steps, self.base_output_channels)
+            )
+        )
+
+        # Compute loss on NTCHW tensors
+        loss = self.loss(prediction, target)
         self.log(
             "train_loss",
             loss,
@@ -502,17 +521,8 @@ class DDPM(BaseModel):
             sync_dist=True,
         )
 
-        # Convert to NTCHW format to update metrics
-        if self.use_autoregressive:
-            prediction = pred_v.unsqueeze(1)  # [B, 1, C, H, W]
-            target = target_v.unsqueeze(1)  # [B, 1, C, H, W]
-        else:
-            T, C = self.n_forecast_steps, self.base_output_channels  # noqa: N806
-            prediction = pred_v.unflatten(1, (T, C))  # [B, T, C, H, W]
-            target = target_v.unflatten(1, (T, C))  # [B, T, C, H, W]
-
+        # Update metrics and return
         self.train_metrics.update(prediction, target)
-
         return ModelStepOutput(prediction, target, loss)
 
     def validation_step(
@@ -537,14 +547,19 @@ class DDPM(BaseModel):
             - loss: validation loss value
 
         """
-        # Extract target and optional weights
-        y = batch["target"].flatten(1, 2)  # [B, T*C, H, W]
+        # Extract target [B, T*C, H, W].
+        y: TensorNCHW = batch["target"].flatten(1, 2)
 
-        # Generate samples
-        y_hat = self.sample(batch)  # [B, T*C, H, W]
+        # Generate samples [B, T*C, H, W].
+        y_hat: TensorNCHW = self.sample(batch)
 
-        # Calculate loss
-        loss = self.loss(y_hat, y)
+        # Convert to NTCHW format [B, T, C, H, W].
+        T, C = self.n_forecast_steps, self.base_output_channels  # noqa: N806
+        prediction: TensorNTCHW = y_hat.unflatten(1, (T, C))
+        target: TensorNTCHW = y.unflatten(1, (T, C))
+
+        # Compute loss on NTCHW tensors
+        loss = self.loss(prediction, target)
         self.log(
             "validation_loss",
             loss,
@@ -554,13 +569,8 @@ class DDPM(BaseModel):
             sync_dist=True,
         )
 
-        # Convert to NTCHW format to update metrics and return
-        T, C = self.n_forecast_steps, self.base_output_channels  # noqa: N806
-        prediction = y_hat.unflatten(1, (T, C))  # [B, T, C, H, W]
-        target = y.unflatten(1, (T, C))  # [B, T, C, H, W]
-
+        # Update metrics and return
         self.validation_metrics.update(prediction, target)
-
         return ModelStepOutput(prediction, target, loss)
 
     def test_step(
@@ -588,10 +598,19 @@ class DDPM(BaseModel):
             - loss: test loss value
 
         """
-        y = batch["target"].flatten(1, 2)  # [B, T*C, H, W]
-        y_hat = self.sample(batch)  # [B, T*C, H, W]
+        # Extract target [B, T*C, H, W].
+        y: TensorNCHW = batch["target"].flatten(1, 2)
 
-        loss = self.loss(y_hat, y)
+        # Generate samples [B, T*C, H, W].
+        y_hat: TensorNCHW = self.sample(batch)
+
+        # Convert to NTCHW format [B, T, C, H, W].
+        T, C = self.n_forecast_steps, self.base_output_channels  # noqa: N806
+        prediction: TensorNTCHW = y_hat.unflatten(1, (T, C))
+        target: TensorNTCHW = y.unflatten(1, (T, C))
+
+        # Compute loss on NTCHW tensors
+        loss = self.loss(prediction, target)
         self.log(
             "test_loss",
             loss,
@@ -601,11 +620,8 @@ class DDPM(BaseModel):
             sync_dist=True,
         )
 
-        # Convert to NTCHW format to update metrics and return
-        T, C = self.n_forecast_steps, self.base_output_channels  # noqa: N806
-        prediction = y_hat.unflatten(1, (T, C))  # [B, T, C, H, W]
-        target = y.unflatten(1, (T, C))  # [B, T, C, H, W]
-
+        # Update metrics and return
         self.test_metrics.update(prediction, target)
-
+        if "climatology" in batch:
+            self.climatology_metrics.update(batch["climatology"], target)
         return ModelStepOutput(prediction, target, loss)
