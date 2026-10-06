@@ -88,12 +88,13 @@
 | icenet\_mp/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
 | icenet\_mp/models/base\_model.py                                     |      130 |        3 |     98% |166, 170, 174 |
 | icenet\_mp/models/climatology.py                                     |       15 |        0 |    100% |           |
-| icenet\_mp/models/common/\_\_init\_\_.py                             |       23 |        0 |    100% |           |
+| icenet\_mp/models/common/\_\_init\_\_.py                             |       24 |        0 |    100% |           |
 | icenet\_mp/models/common/activations.py                              |        2 |        0 |    100% |           |
 | icenet\_mp/models/common/channel\_adaptor.py                         |       18 |        0 |    100% |           |
 | icenet\_mp/models/common/conv\_block\_common.py                      |        8 |        0 |    100% |           |
 | icenet\_mp/models/common/conv\_block\_downsample.py                  |       13 |        2 |     85% |     45-46 |
 | icenet\_mp/models/common/conv\_block\_upsample.py                    |       19 |        4 |     79% |55-56, 59-60 |
+| icenet\_mp/models/common/conv\_lstm\_cell.py                         |       26 |        0 |    100% |           |
 | icenet\_mp/models/common/conv\_norm\_act.py                          |        9 |        0 |    100% |           |
 | icenet\_mp/models/common/conv\_norm\_act\_upsample.py                |       10 |        0 |    100% |           |
 | icenet\_mp/models/common/freezable.py                                |        7 |        0 |    100% |           |
@@ -138,8 +139,9 @@
 | icenet\_mp/models/multistage/encoder\_stage.py                       |       28 |        0 |    100% |           |
 | icenet\_mp/models/multistage/processor\_stage.py                     |       26 |        0 |    100% |           |
 | icenet\_mp/models/persistence.py                                     |       17 |        0 |    100% |           |
-| icenet\_mp/models/processors/\_\_init\_\_.py                         |        7 |        0 |    100% |           |
+| icenet\_mp/models/processors/\_\_init\_\_.py                         |        8 |        0 |    100% |           |
 | icenet\_mp/models/processors/base\_processor.py                      |       30 |        2 |     93% |     39-43 |
+| icenet\_mp/models/processors/conv\_lstm.py                           |       52 |        0 |    100% |           |
 | icenet\_mp/models/processors/diffusion.py                            |      143 |        0 |    100% |           |
 | icenet\_mp/models/processors/gsta.py                                 |       22 |       12 |     45% |65-73, 99-110 |
 | icenet\_mp/models/processors/null.py                                 |       10 |        0 |    100% |           |
@@ -169,7 +171,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6335** |  **362** | **94%** |           |
+| **TOTAL**                                                            | **6415** |  **362** | **94%** |           |
 
 
 ## Setup coverage badge
