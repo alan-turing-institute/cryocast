@@ -712,6 +712,10 @@ class ModelService:
         for encoder in model.encoders:
             encoder.load_state_dict(pretrained_encoders[encoder.name].state_dict())
             log.info("Loaded pretrained weights for encoder '%s'.", encoder.name)
+        model.target_encoder.load_state_dict(
+            processor_model.target_encoder.state_dict()
+        )
+        log.info("Loaded pretrained weights for target encoder.")
         model.processor.load_state_dict(processor_model.processor.state_dict())
         log.info("Loaded pretrained weights for processor.")
         model.decoder.load_state_dict(processor_model.decoder.state_dict())
