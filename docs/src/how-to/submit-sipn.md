@@ -1,10 +1,10 @@
 # Submit forecasts to SIPN
 
-This guide records the requirements for a first manual IceNet-MP submission to the Sea Ice Prediction Network (SIPN) or SIPN South. Submission protocols change between seasons, so check the current call before generating files.
+This guide records the requirements for a first manual CryoCast submission to the Sea Ice Prediction Network (SIPN) or SIPN South. Submission protocols change between seasons, so check the current call before generating files.
 
 ## Requirements at a glance
 
-| Programme | Forecast window | Main IceNet-MP-compatible outputs | Grid and metadata |
+| Programme | Forecast window | Main CryoCast-compatible outputs | Grid and metadata |
 | --- | --- | --- | --- |
 | 2026 Sea Ice Outlook | September 2026 | September mean extent; optionally daily sea-ice concentration or derived SIP/IFD/IAD fields | Extent follows the NSIDC >15% definition. The public full-field instructions do not prescribe one common grid or complete NetCDF schema. |
 | SIPN South 2025-2026 | 1 December 2025 to 28 February 2026, 90 daily steps | Total area, regional area, and sea-ice concentration | No common grid is specified; concentration files include `longitude`, `latitude`, `sftof`, and `areacello`. |
@@ -13,7 +13,7 @@ The remaining 2026 SIO schedule lists the September deadline as **14 September 2
 
 ## Check the forecast horizon
 
-The tracked daily SIC prediction configs in `icenet_mp/config/predict/` currently provide 2-, 14-, and 21-day forecast horizons. A complete September forecast requires the whole month, and SIPN South requires 90 daily steps.
+The tracked forecast-window configs in `cryocast/config/window/` currently provide 3-, 7-, 14-, and 21-step horizons; for daily SIC data these correspond to 3, 7, 14, and 21 days. A complete September forecast requires the whole month, and SIPN South requires 90 daily steps.
 
 Before preparing a submission, agree how the selected checkpoint will cover the required window. Use a checkpoint/configuration trained and validated for that horizon, or document and validate an agreed rollout strategy. Do not silently reinitialise with observations after the call's information cutoff, because that changes the forecast being submitted.
 
@@ -22,7 +22,7 @@ Before preparing a submission, agree how the selected checkpoint will cover the 
 Use the best current model agreed by the project and record enough information to reproduce the submitted forecast:
 
 - checkpoint path or identifier;
-- IceNet-MP git commit;
+- CryoCast git commit;
 - inference configuration;
 - forecast initialisation date and input-data cutoff;
 - forecast horizon and any rollout/reinitialisation strategy;
