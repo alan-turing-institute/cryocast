@@ -35,9 +35,7 @@ def test_encode_process_decode_uses_attention_fusion() -> None:
         encoders=encoders,
         fusion=fusion,
         processor=DictConfig({"_target_": "cryocast.models.processors.NullProcessor"}),
-        decoder=DictConfig(
-            {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
-        ),
+        decoder=DictConfig({"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}),
         hemisphere="north",
         input_spaces=input_spaces,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss"}),
