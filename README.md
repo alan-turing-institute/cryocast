@@ -10,7 +10,7 @@
 | icenet\_mp/callbacks/ema\_weight\_averaging\_callback.py             |       21 |        0 |    100% |           |
 | icenet\_mp/callbacks/media\_logging\_callback.py                     |      151 |        0 |    100% |           |
 | icenet\_mp/callbacks/metric\_summary\_callback.py                    |      106 |        1 |     99% |        93 |
-| icenet\_mp/callbacks/prediction\_writer.py                           |      182 |       18 |     90% |68-71, 76-77, 161-165, 278-279, 335-339, 341-345, 351-352, 368-372 |
+| icenet\_mp/callbacks/prediction\_writer.py                           |      203 |       19 |     91% |71-74, 79-80, 164-168, 282-283, 340-344, 346-350, 369, 392-393, 409-413 |
 | icenet\_mp/callbacks/unconditional\_checkpoint.py                    |       26 |        0 |    100% |           |
 | icenet\_mp/cli/\_\_init\_\_.py                                       |        2 |        0 |    100% |           |
 | icenet\_mp/cli/datasets.py                                           |       53 |        1 |     98% |       129 |
@@ -36,11 +36,12 @@
 | icenet\_mp/data/variable\_selection.py                               |       50 |        0 |    100% |           |
 | icenet\_mp/exceptions.py                                             |        3 |        0 |    100% |           |
 | icenet\_mp/feature\_importance.py                                    |       26 |        0 |    100% |           |
-| icenet\_mp/geotools/\_\_init\_\_.py                                  |       10 |        0 |    100% |           |
+| icenet\_mp/geotools/\_\_init\_\_.py                                  |       11 |        0 |    100% |           |
 | icenet\_mp/geotools/geographic\_field.py                             |       37 |        0 |    100% |           |
 | icenet\_mp/geotools/geographic\_grid.py                              |       76 |        0 |    100% |           |
 | icenet\_mp/geotools/geographic\_metadata.py                          |       88 |        0 |    100% |           |
 | icenet\_mp/geotools/grid\_factory.py                                 |       44 |        0 |    100% |           |
+| icenet\_mp/geotools/regrid\_forecast.py                              |       74 |        0 |    100% |           |
 | icenet\_mp/geotools/reproject.py                                     |       26 |        0 |    100% |           |
 | icenet\_mp/ingestion/\_\_init\_\_.py                                 |        2 |        0 |    100% |           |
 | icenet\_mp/ingestion/data\_downloader.py                             |      144 |       52 |     64% |67-68, 105-145, 149-166, 195, 200-203, 212-214, 223-224, 238-248 |
@@ -154,7 +155,7 @@
 | icenet\_mp/types/\_\_init\_\_.py                                     |        7 |        0 |    100% |           |
 | icenet\_mp/types/annotations.py                                      |       12 |        0 |    100% |           |
 | icenet\_mp/types/complex\_datatypes.py                               |      112 |        0 |    100% |           |
-| icenet\_mp/types/constants.py                                        |        5 |        0 |    100% |           |
+| icenet\_mp/types/constants.py                                        |        6 |        0 |    100% |           |
 | icenet\_mp/types/enums.py                                            |       28 |        0 |    100% |           |
 | icenet\_mp/types/protocols.py                                        |       17 |        0 |    100% |           |
 | icenet\_mp/types/simple\_datatypes.py                                |       25 |        0 |    100% |           |
@@ -168,7 +169,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6238** |  **361** | **94%** |           |
+| **TOTAL**                                                            | **6335** |  **362** | **94%** |           |
 
 
 ## Setup coverage badge
