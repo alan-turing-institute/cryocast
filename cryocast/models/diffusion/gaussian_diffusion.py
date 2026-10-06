@@ -39,7 +39,17 @@ class GaussianDiffusion:
         self.timesteps = timesteps
 
         if beta_schedule == BetaSchedule.LINEAR:
-            self.betas = torch.linspace(1e-4, 0.02, timesteps)
+            # The canonical linear endpoints are defined for a 1000-step chain.
+            # Scale them with the requested chain length so shorter schedules reach
+            # a comparable terminal noise level instead of retaining substantial x_0.
+            scale = 1000 / timesteps
+            beta_start = scale * 1e-4
+            beta_end = scale * 0.02
+            self.betas = (
+                torch.tensor([beta_end])
+                if timesteps == 1
+                else torch.linspace(beta_start, beta_end, timesteps)
+            ).clamp(max=0.999)
         elif beta_schedule == BetaSchedule.COSINE:
             self.betas = self._cosine_beta_schedule(timesteps)
         else:
