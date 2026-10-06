@@ -63,10 +63,12 @@ uv run imp evaluate --checkpoint /path/to/checkpoint.ckpt --config-name my.local
 
 ## Documentation
 
-- [Installation](https://alan-turing-institute.github.io/icenet-mp/user-guide/installation/) — prerequisites, `uv` setup, HPC-specific steps
-- [Configuration](https://alan-turing-institute.github.io/icenet-mp/user-guide/configuration/) — local config files, model overrides, custom datasets
-- [Commands](https://alan-turing-institute.github.io/icenet-mp/user-guide/commands/) — `datasets create`, `datasets inspect`, `train`, `evaluate`
-- [Add a model](https://alan-turing-institute.github.io/icenet-mp/how-to/add-a-model/) — tensor format, standalone vs. processor model architectures
+See the [project documentation](https://alan-turing-institute.github.io/icenet-mp/) for the full user guide and reference material.
+
+- [Installation](https://alan-turing-institute.github.io/icenet-mp/user-guide/installation/) for prerequisites, `uv` setup, and HPC-specific steps
+- [Configuration](https://alan-turing-institute.github.io/icenet-mp/user-guide/configuration/) for local config files, model overrides, and custom datasets
+- [Commands](https://alan-turing-institute.github.io/icenet-mp/user-guide/commands/) for `datasets create`, `datasets inspect`, `train`, and `evaluate`
+- [Add a model](https://alan-turing-institute.github.io/icenet-mp/how-to/add-a-model/) for tensor format and model architecture guidance
 
 ## Jupyter notebooks
 
@@ -77,3 +79,11 @@ uv run --group notebooks jupyter notebook
 ```
 
 Start with `notebooks/demo_pipeline.ipynb` for a worked example of the full pipeline.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, coding conventions, and test instructions. For project questions, contact [SeaIce@turing.ac.uk](mailto:SeaIce@turing.ac.uk).
+
+## License
+
+IceNet-MP is released under the [MIT License](LICENSE).
