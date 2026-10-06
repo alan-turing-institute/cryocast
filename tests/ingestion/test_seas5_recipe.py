@@ -5,11 +5,11 @@ from typing import Any
 import numpy as np
 import yaml
 
-from icenet_mp.ingestion.data_downloader import DataDownloader
+from cryocast.ingestion.data_downloader import DataDownloader
 
 DATASET_NAME = "demo-sicnorth-seas5-1p0-2024-2024-24h-v1"
 RECIPE_PATH = (
-    files("icenet_mp.config")
+    files("cryocast.config")
     / "data"
     / "datasets"
     / "demo_sicnorth_seas5_1p0_2024_2024_24h_v1.yaml"

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
-from icenet_mp.model_service import ModelService
+from cryocast.model_service import ModelService
 
 from .conftest import CustomCliRunner
 
@@ -22,7 +22,7 @@ class TestEvaluateCLI:
         runner.check_output(
             ["evaluate", "--help"],
             expected_patterns=[
-                r"Usage: imp evaluate \[OPTIONS\] \[overrides\]...",
+                r"Usage: cryocast evaluate \[OPTIONS\] \[overrides\]...",
                 r"Evaluate a pre-trained model",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
                 r"--checkpoint\s+<str>\s+Path of a trained model checkpoint",

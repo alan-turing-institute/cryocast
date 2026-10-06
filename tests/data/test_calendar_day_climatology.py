@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from numpy.typing import ArrayLike
 
-from icenet_mp.data import CalendarDayClimatology, SingleDataset
-from icenet_mp.types import DataSpace
+from cryocast.data import CalendarDayClimatology, SingleDataset
+from cryocast.types import DataSpace
 
 JAN_1 = CalendarDayClimatology.day_index(np.datetime64("2000-01-01"))
 FEB_28 = CalendarDayClimatology.day_index(np.datetime64("2000-02-28"))

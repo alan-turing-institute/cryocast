@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from icenet_mp.geotools import GeographicGrid, GridFactory
-from icenet_mp.geotools.grid_factory import (
+from cryocast.geotools import GeographicGrid, GridFactory
+from cryocast.geotools.grid_factory import (
     ease2_grid_helper,
     epsg_4326n_builder,
     epsg_4326s_builder,

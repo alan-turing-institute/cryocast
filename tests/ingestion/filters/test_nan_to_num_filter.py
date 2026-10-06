@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from icenet_mp.ingestion.filters.nan_to_num_filter import NanToNumFilter
+from cryocast.ingestion.filters.nan_to_num_filter import NanToNumFilter
 
 from .conftest import make_array_field
 

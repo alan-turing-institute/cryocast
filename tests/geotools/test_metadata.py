@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 from earthkit.data.core.metadata import Metadata
 
-from icenet_mp.geotools.geographic_grid import GeographicGrid
-from icenet_mp.geotools.geographic_metadata import GeographicMetadata
+from cryocast.geotools.geographic_grid import GeographicGrid
+from cryocast.geotools.geographic_metadata import GeographicMetadata
 
 DELEGATING_METHODS = [
     ("base_datetime", datetime(2020, 1, 1)),

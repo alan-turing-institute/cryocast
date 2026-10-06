@@ -1,3 +1,3 @@
 # Callbacks
 
-::: icenet_mp.callbacks
+::: cryocast.callbacks

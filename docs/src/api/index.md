@@ -1,6 +1,6 @@
 # API Reference
 
-Every public module, class, and function in `icenet_mp` is documented here.
+Every public module, class, and function in `cryocast` is documented here.
 Select a module from the navigation to view its full API.
 
 | Module | Description |

@@ -1,3 +1,3 @@
 # Types
 
-::: icenet_mp.types
+::: cryocast.types

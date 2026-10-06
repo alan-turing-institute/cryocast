@@ -4,7 +4,7 @@ This guide walks through running an evaluation on a trained checkpoint: launchin
 
 ## Prerequisites
 
-Make sure IceNet-MP is [installed](../user-guide/installation.md) and that you have a trained checkpoint — either from a [training run](train.md) or downloaded from shared storage.
+Make sure CryoCast is [installed](../user-guide/installation.md) and that you have a trained checkpoint — either from a [training run](train.md) or downloaded from shared storage.
 
 ## 1. Get a checkpoint
 
@@ -19,7 +19,7 @@ Ask a team member for the path.
 
 ## 2. Create a local config
 
-If you do not already have a local config from a training run, create one at `icenet_mp/config/<your-name>.local.yaml`.
+If you do not already have a local config from a training run, create one at `cryocast/config/<your-name>.local.yaml`.
 See [Train a model — Create a local config](train.md#2-create-a-local-config) for details.
 
 ## 3. Run evaluate
@@ -27,12 +27,12 @@ See [Train a model — Create a local config](train.md#2-create-a-local-config) 
 See the [`evaluate` command reference](../user-guide/commands.md#evaluate) for full option details, then run:
 
 ```bash
-uv run imp evaluate --config-name <your-name>.local --checkpoint PATH_TO_CHECKPOINT
+uv run cryocast evaluate --config-name <your-name>.local --checkpoint PATH_TO_CHECKPOINT
 ```
 
 ### Enabling visualisations
 
-By default, all visualisations are enabled (see `icenet_mp/config/evaluate/callbacks/plotting.yaml`). To disable forecast plots, set `make_static_plots` and `make_video_plots` to `false` in your local config:
+By default, all visualisations are enabled (see `cryocast/config/evaluate/callbacks/plotting.yaml`). To disable forecast plots, set `make_static_plots` and `make_video_plots` to `false` in your local config:
 
 ```yaml
 evaluate:
@@ -56,7 +56,7 @@ evaluate:
 Pass `--save-predictions` to write the model output from the configured test period to a NetCDF file:
 
 ```bash
-uv run imp evaluate \
+uv run cryocast evaluate \
   --config-name <your-name>.local \
   --checkpoint PATH_TO_CHECKPOINT \
   --save-predictions

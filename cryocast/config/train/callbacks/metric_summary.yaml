@@ -1,0 +1,2 @@
+metric_summary:
+  _target_: cryocast.callbacks.MetricSummaryCallback
