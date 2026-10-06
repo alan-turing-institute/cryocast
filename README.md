@@ -84,7 +84,7 @@
 | icenet\_mp/metrics/sie.py                                            |       14 |        2 |     86% |     21-22 |
 | icenet\_mp/metrics/spatial\_mean\_trace.py                           |        8 |        0 |    100% |           |
 | icenet\_mp/metrics/ssim.py                                           |       43 |        2 |     95% |     55-56 |
-| icenet\_mp/model\_service.py                                         |      285 |        4 |     99% |57-58, 213-214 |
+| icenet\_mp/model\_service.py                                         |      287 |        4 |     99% |57-58, 213-214 |
 | icenet\_mp/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
 | icenet\_mp/models/base\_model.py                                     |      130 |        3 |     98% |166, 170, 174 |
 | icenet\_mp/models/climatology.py                                     |       15 |        0 |    100% |           |
@@ -102,7 +102,7 @@
 | icenet\_mp/models/common/glumb\_conv.py                              |       23 |        1 |     96% |        71 |
 | icenet\_mp/models/common/lite\_mla.py                                |       30 |        2 |     93% |     44-45 |
 | icenet\_mp/models/common/mask.py                                     |       24 |        2 |     92% |     52-56 |
-| icenet\_mp/models/common/normalisations.py                           |       20 |        3 |     85% | 13-14, 35 |
+| icenet\_mp/models/common/normalisations.py                           |       20 |        2 |     90% |     13-14 |
 | icenet\_mp/models/common/normalised\_fold.py                         |       19 |        0 |    100% |           |
 | icenet\_mp/models/common/patchembed.py                               |       13 |        0 |    100% |           |
 | icenet\_mp/models/common/permute.py                                  |        7 |        0 |    100% |           |
@@ -171,7 +171,7 @@
 | icenet\_mp/visualisations/media\_publisher.py                        |      114 |        1 |     99% |       184 |
 | icenet\_mp/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | icenet\_mp/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                            | **6415** |  **362** | **94%** |           |
+| **TOTAL**                                                            | **6417** |  **361** | **94%** |           |
 
 
 ## Setup coverage badge
