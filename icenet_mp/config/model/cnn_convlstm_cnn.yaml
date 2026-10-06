@@ -1,0 +1,50 @@
+_target_: icenet_mp.models.EncodeProcessDecode
+
+name: cnn-convlstm-cnn
+
+encoders:
+  latent_space: [144, 144]
+  era5:
+    _target_: icenet_mp.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  float-argo:
+    _target_: icenet_mp.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  sic-icenet:
+    _target_: icenet_mp.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  sic-osisaf:
+    _target_: icenet_mp.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  sic-ssmis:
+    _target_: icenet_mp.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+
+processor:
+  _target_: icenet_mp.models.processors.ConvLSTMProcessor
+  hidden_channels: 128
+  kernel_size: 3
+  n_layers: 2
+  dropout: 0.1
+  residual: true
+
+decoder:
+  _target_: icenet_mp.models.decoders.CNNDecoder
+  kernel_size: 5
+  mask_type: active
+  n_layers: 1
+  norm_type: groupnorm
+  restrict_range: sigmoid
+  scale_factor: 3
+  skip_connection:
+    method: none

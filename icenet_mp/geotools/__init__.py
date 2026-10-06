@@ -7,6 +7,7 @@ from .grid_factory import (
     epsg_6931_builder,
     epsg_6932_builder,
 )
+from .regrid_forecast import regrid_forecast_run
 from .reproject import nearest_neighbour_indices
 
 grid_factory = GridFactory()
@@ -20,4 +21,5 @@ __all__ = [
     "GeographicGrid",
     "grid_factory",
     "nearest_neighbour_indices",
+    "regrid_forecast_run",
 ]
