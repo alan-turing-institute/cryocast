@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -6,6 +7,7 @@ import numpy as np
 from lightning import LightningModule, Trainer
 from lightning.pytorch import Callback
 from netCDF4 import Dataset as NetCDFDataset
+from netCDF4 import Variable as NetCDFVariable
 from torch import Tensor
 
 from icenet_mp.data import CombinedDataset
@@ -59,6 +61,7 @@ class PredictionWriter(Callback):
         self._dataset: CombinedDataset | None = None
         self._file: Any | None = None
         self._sample_offset = 0
+        self._n_clipped: Counter[str] = Counter()
 
     @staticmethod
     def _load_dataset(trainer: Trainer) -> CombinedDataset:
@@ -301,6 +304,7 @@ class PredictionWriter(Callback):
 
         self._dataset = self._load_dataset(trainer)
         self._sample_offset = 0
+        self._n_clipped.clear()
         self._initialise_file(self._dataset)
 
     def on_test_batch_end(
@@ -346,6 +350,42 @@ class PredictionWriter(Callback):
             raise ValueError(msg)
         return PredictionWriter._denormalise(field, dataset)
 
+    def _clip_to_valid_range(
+        self, variable: NetCDFVariable, values: np.ndarray
+    ) -> np.ndarray:
+        """Clip values to the variable's valid range, if it has one.
+
+        CF readers (including netCDF4 with auto-masking) treat values outside
+        valid_min/valid_max as missing, so out-of-range model outputs would
+        otherwise be silently masked on read. NaNs are preserved. The number of
+        clipped values is recorded per variable and reported at the end of the run,
+        so that out-of-range outputs are still visible.
+        """
+        values = values.astype(np.float32, copy=False)
+        attributes = variable.ncattrs()
+        valid_min = variable.valid_min if "valid_min" in attributes else None
+        valid_max = variable.valid_max if "valid_max" in attributes else None
+        if valid_min is None and valid_max is None:
+            return values
+        clipped = np.clip(values, valid_min, valid_max)
+        # NaN != NaN, so exclude NaNs from the count of changed values
+        self._n_clipped[variable.name] += int(
+            np.count_nonzero((clipped != values) & ~np.isnan(values))
+        )
+        return clipped
+
+    def _warn_about_clipped_values(self) -> None:
+        """Log a warning for each variable that had values clipped to its range."""
+        for name, count in self._n_clipped.items():
+            if count:
+                logger.warning(
+                    "Clipped %d value(s) of '%s' to its valid range "
+                    "[valid_min, valid_max] before writing to %s.",
+                    count,
+                    name,
+                    self.output_path,
+                )
+
     def _write_batch(self, outputs: Tensor | Mapping[str, Any] | None) -> None:
         """Validate and append one evaluation batch to the NetCDF file."""
         if self._dataset is None or self._file is None:
@@ -386,12 +426,14 @@ class PredictionWriter(Callback):
         for channel_idx, variable_name in enumerate(
             self._dataset.target.variable_names
         ):
-            self._file.variables[variable_name][start:end, :, :, :] = prediction[
-                :, :, channel_idx, :, :
-            ].astype(np.float32, copy=False)
-            self._file.variables[f"{variable_name}{_OBSERVED_SUFFIX}"][
-                start:end, :, :, :
-            ] = target[:, :, channel_idx, :, :].astype(np.float32, copy=False)
+            for name, values in (
+                (variable_name, prediction),
+                (f"{variable_name}{_OBSERVED_SUFFIX}", target),
+            ):
+                variable = self._file.variables[name]
+                variable[start:end, :, :, :] = self._clip_to_valid_range(
+                    variable, values[:, :, channel_idx, :, :]
+                )
 
         self._sample_offset = end
 
@@ -409,6 +451,7 @@ class PredictionWriter(Callback):
         if not self.enabled:
             return
         self._close()
+        self._warn_about_clipped_values()
         logger.info(
             "Saved %d model prediction window(s) to %s.",
             self._sample_offset,
