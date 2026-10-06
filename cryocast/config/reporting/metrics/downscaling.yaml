@@ -1,4 +1,4 @@
 - name: mae
-  _target_: icenet_mp.metrics.MAEPerForecastDay
+  _target_: cryocast.metrics.MAEPerForecastDay
 - name: rmse
-  _target_: icenet_mp.metrics.RMSEPerForecastDay
+  _target_: cryocast.metrics.RMSEPerForecastDay
