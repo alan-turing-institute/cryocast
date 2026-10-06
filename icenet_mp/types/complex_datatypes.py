@@ -26,6 +26,20 @@ class DataSpace:
         self.name = name
         self.shape = (int(shape[0]), int(shape[1]))
 
+    def __eq__(self, other: object) -> bool:
+        """Compare DataSpaces by value rather than by identity."""
+        if not isinstance(other, DataSpace):
+            return NotImplemented
+        return (self.channels, self.name, self.shape) == (
+            other.channels,
+            other.name,
+            other.shape,
+        )
+
+    def __hash__(self) -> int:
+        """Hash consistently with __eq__."""
+        return hash((self.channels, self.name, self.shape))
+
     @property
     def area(self) -> int:
         """Return the area of the data space."""

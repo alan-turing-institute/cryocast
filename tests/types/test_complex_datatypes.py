@@ -46,6 +46,36 @@ class TestDataSpace:
         assert result.name == "weather"
         assert tuple(result.shape) == (32, 48)
 
+    def test_equal_by_value(self) -> None:
+        """Treat distinct DataSpaces with the same values as equal, with equal hashes."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+        other = DataSpace(channels="3", name="sic", shape=["16", "24"])  # type: ignore[arg-type]
+
+        assert space is not other
+        assert space == other
+        assert hash(space) == hash(other)
+        assert len({space, other}) == 1
+
+    @pytest.mark.parametrize(
+        ("channels", "name", "shape"),
+        [(4, "sic", (16, 24)), (3, "era5", (16, 24)), (3, "sic", (24, 16))],
+        ids=["channels", "name", "shape"],
+    )
+    def test_not_equal_when_any_field_differs(
+        self, channels: int, name: str, shape: tuple[int, int]
+    ) -> None:
+        """Treat DataSpaces that differ in any one field as unequal."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+
+        assert space != DataSpace(channels=channels, name=name, shape=shape)
+
+    def test_not_equal_to_other_types(self) -> None:
+        """Do not treat a DataSpace as equal to an object of another type."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+
+        assert space != (3, "sic", (16, 24))
+        assert space != space.to_dict()
+
 
 class TestColourScale:
     """Tests for ColourScale."""
