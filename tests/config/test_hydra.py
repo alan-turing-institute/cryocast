@@ -97,7 +97,7 @@ class TestHydraConfigLoading:
         assert cfg.model.source_group_name == "sic-osisaf"
         assert list(cfg.variables.target) == ["sic-carra2"]
         assert cfg.window.target_offset_steps == 0
-        assert set(cfg.reporting.metrics) == {"mae", "rmse"}
+        assert {metric.name for metric in cfg.reporting.metrics} == {"mae", "rmse"}
         groups = {dataset.group_as for dataset in cfg.data.datasets.values()}
         assert groups == {"sic-osisaf", "sic-carra2"}
 

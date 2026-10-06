@@ -17,7 +17,10 @@ def _coordinates() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     return source_lat, source_lon, target_lat, target_lon
 
 
-def _make_downscaler(mask_dir: Path | None = None) -> Downscaler:
+def _make_downscaler(
+    mask_dir: Path | None = None,
+    target_variable_indices: list[int] | None = None,
+) -> Downscaler:
     source_lat, source_lon, target_lat, target_lon = _coordinates()
     return Downscaler(
         hemisphere="north",
@@ -53,6 +56,7 @@ def _make_downscaler(mask_dir: Path | None = None) -> Downscaler:
         source_group_name="sic-osisaf",
         source_variable="ice_conc",
         source_crs="EPSG:4326",
+        target_variable_indices=target_variable_indices,
         variable_names=DictConfig(
             {
                 "sic-osisaf": ["total_standard_uncertainty", "ice_conc"],
@@ -66,6 +70,11 @@ def _make_downscaler(mask_dir: Path | None = None) -> Downscaler:
 
 class TestDownscaler:
     """Tests for trainable residual spatial downscaling."""
+
+    def test_accepts_model_service_target_variable_indices(self) -> None:
+        """ModelService metadata is accepted without changing downscaler behaviour."""
+        model = _make_downscaler(target_variable_indices=[0])
+        assert model.output_space.channels == 1
 
     def test_starts_at_geographic_interpolation_baseline(self) -> None:
         """Zero-initialised residuals make the initial model equal interpolation."""

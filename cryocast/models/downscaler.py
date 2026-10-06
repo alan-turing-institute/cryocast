@@ -1,6 +1,6 @@
 """Trainable geospatial downscaling of low-resolution sea-ice predictions."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -75,7 +75,8 @@ class Downscaler(BaseModel):
     """Learn residual high-resolution structure around a geographic interpolation."""
 
     ignored_hparams: ClassVar[frozenset[str]] = BaseModel.ignored_hparams | {
-        "variable_names"
+        "target_variable_indices",
+        "variable_names",
     }
 
     coordinate_features: torch.Tensor
@@ -88,6 +89,7 @@ class Downscaler(BaseModel):
         source_variable: str,
         source_crs: str,
         variable_names: Mapping[str, list[str]] | DictConfig,
+        target_variable_indices: Sequence[int] | None = None,
         hidden_channels: int = 32,
         n_residual_blocks: int = 4,
         residual_scale: float = 0.25,
@@ -95,6 +97,7 @@ class Downscaler(BaseModel):
         **kwargs: Any,
     ) -> None:
         """Initialise a downscaler from one low-resolution source variable."""
+        _ = target_variable_indices  # Target selection is reflected in output_space.
         super().__init__(mask_dir=mask_dir, **kwargs)
 
         if residual_scale <= 0:
