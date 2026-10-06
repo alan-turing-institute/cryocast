@@ -48,6 +48,14 @@ class TestDataSpace:
         assert hash(space) == hash(other)
         assert len({space, other}) == 1
 
+    @pytest.mark.parametrize("field", ["channels", "name", "shape"])
+    def test_immutable(self, field: str) -> None:
+        """Reject assignment to any field, so that the hash cannot change."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+
+        with pytest.raises(AttributeError):
+            setattr(space, field, getattr(space, field))
+
     @pytest.mark.parametrize(
         ("channels", "name", "shape"),
         [(4, "sic", (16, 24)), (3, "era5", (16, 24)), (3, "sic", (24, 16))],

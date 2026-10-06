@@ -231,7 +231,11 @@ class TestVerifyOutputChannels:
         input_space = DataSpace(name=name, channels=actual_channels, shape=(8, 8))
         encoder = NaiveLinearEncoder(data_space_in=input_space, latent_space=(4, 4))
         # Override the declared output channels to simulate a mismatch with reality
-        encoder.data_space_out.channels = declared_channels
+        encoder.data_space_out = DataSpace(
+            channels=declared_channels,
+            name=encoder.data_space_out.name,
+            shape=encoder.data_space_out.shape,
+        )
         return encoder
 
     def test_raises_with_channel_counts_and_encoder_name(self) -> None:
