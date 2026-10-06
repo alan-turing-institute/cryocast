@@ -255,7 +255,7 @@ class EncodeProcessDecode(BaseModel):
                 return encoder
         return None
 
-    def encode_target_latent(
+    def _encode_target_latent(
         self, inputs: dict[str, TensorNTCHW], target: TensorNTCHW
     ) -> TensorNTCHW:
         """Encode a forecast target in the decoder-compatible latent space."""
@@ -466,7 +466,7 @@ class EncodeProcessDecode(BaseModel):
         if self.processor.computes_loss_in_latent_space:
             # Encode inputs and target into decoder-compatible latent space.
             latent_input_combined = self._encode_inputs(batch)
-            target_latent = self.encode_target_latent(batch, target)
+            target_latent = self._encode_target_latent(batch, target)
 
             # Process in latent space
             processor_output = self.processor.rollout(

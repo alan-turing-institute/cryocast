@@ -288,6 +288,6 @@ def test_latent_target_uses_target_input_encoder(
     full_target[:, :, 2:3] = target
 
     expected = target_input_encoder.rollout(full_target)
-    actual = model.encode_target_latent({cfg_input_space["name"]: history}, target)
+    actual = model._encode_target_latent({cfg_input_space["name"]: history}, target)
 
     torch.testing.assert_close(actual, expected)
