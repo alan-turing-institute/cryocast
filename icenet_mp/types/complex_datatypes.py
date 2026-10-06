@@ -14,17 +14,34 @@ from .protocols import SupportsMetadataFromDataset
 
 
 class DataSpace:
-    """Description of a CHW data space."""
-
-    channels: int
-    name: str
-    shape: tuple[int, int]
+    """Immutable description of a CHW data space, compared and hashed by value."""
 
     def __init__(self, channels: int, name: str, shape: Sequence[int]) -> None:
         """Initialise a DataSpace from channels, name and shape."""
-        self.channels = int(channels)
-        self.name = name
-        self.shape = (int(shape[0]), int(shape[1]))
+        self._channels = int(channels)
+        self._name = name
+        self._shape = (int(shape[0]), int(shape[1]))
+
+    def __eq__(self, other: object) -> bool:
+        """Compare DataSpaces by value rather than by identity."""
+        if not isinstance(other, DataSpace):
+            return NotImplemented
+        return self._key == other._key
+
+    def __hash__(self) -> int:
+        """Hash consistently with __eq__."""
+        return hash(self._key)
+
+    def __repr__(self) -> str:
+        """Show the DataSpace values."""
+        return (
+            f"DataSpace(channels={self.channels}, name={self.name!r}, "
+            f"shape={self.shape})"
+        )
+
+    @property
+    def _key(self) -> tuple[int, str, tuple[int, int]]:
+        return (self._channels, self._name, self._shape)
 
     @property
     def area(self) -> int:
@@ -32,9 +49,24 @@ class DataSpace:
         return self.shape[0] * self.shape[1]
 
     @property
+    def channels(self) -> int:
+        """Return the number of channels."""
+        return self._channels
+
+    @property
     def chw(self) -> tuple[int, int, int]:
         """Return a tuple of [channels, height, width]."""
         return (self.channels, *self.shape)
+
+    @property
+    def name(self) -> str:
+        """Return the name."""
+        return self._name
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Return the (height, width) shape."""
+        return self._shape
 
     @classmethod
     def from_dict(cls, config: DictConfig | dict[str, Any]) -> Self:

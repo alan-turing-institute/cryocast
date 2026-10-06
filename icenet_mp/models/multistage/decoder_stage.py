@@ -138,18 +138,18 @@ class DecoderStage(BaseModel):
         self,
         batch: dict[str, TensorNTCHW],
     ) -> dict[str, TensorNTCHW]:
-        """Extract only the two time steps from each relevant batch element.
+        """Align decoder inputs with the physical timestamp they must decode.
 
-        Inputs use t=-2 (yesterday) while the target uses t=-1 (today). We also extract
-        a persistence entry using t=-2 but sliced to only the target variables.
+        Encoder inputs and the target both use t=-1 (yesterday). This is because we want
+        the decoder to learn a time-invariant NCHW -> NCHW mapping.
 
-        This is because we want the decoder to learn an NCHW -> NCHW mapping but also to
-        include the most recent target value as a skip connection for each forecast so
-        that the decoder will learn to predict residuals. If we use the same time step
-        for both input and target, the model will learn that these residuals are zero.
+        However, if a skip-connection is used, we also need to include the most recent
+        target value as a skip connection for each forecast. If we also use t=-1 for
+        this, the decoder will learn that the residuals are zero. To avoid this, we use
+        t=-2 (two days ago) for the persistence entry.
         """
         return {
-            name: batch[name][:, -2, :, :, :].unsqueeze(1)
+            name: batch[name][:, -1, :, :, :].unsqueeze(1)
             for name in self.encoder_names
         } | {
             "target": batch[self.target_name][
