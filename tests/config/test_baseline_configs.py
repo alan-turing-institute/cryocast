@@ -30,9 +30,9 @@ class TestBaselineConfigs:
         assert config.model.name == expected_model_name(config_name)
         assert config.model._target_.startswith("icenet_mp.models.")
         assert "data" in config
-        assert "predict" in config
-        assert "train" in config
         assert "evaluate" in config
+        assert "train" in config
+        assert "window" in config
 
     @pytest.mark.parametrize("config_name", BASELINE_CONFIGS, ids=BASELINE_CONFIGS)
     def test_baselines_accept_standard_data_override(

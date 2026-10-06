@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -48,14 +48,15 @@ class BaseModel(LightningModule, ABC):
     def __init__(  # noqa: PLR0913
         self,
         *,
+        channel_names: Sequence[str] | None = None,
         hemisphere: Hemisphere,
-        input_spaces: list[DictConfig],
+        input_spaces: Sequence[DictConfig],
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         loss: DictConfig,
         mask_dir: str | Path | None = None,
         lr_scheduler: DictConfig,
-        metrics: list[Mapping[str, Any]],
+        metrics: Sequence[Mapping[str, Any]],
         n_forecast_steps: int,
         n_history_steps: int,
         name: str,
@@ -83,11 +84,12 @@ class BaseModel(LightningModule, ABC):
         """
         super().__init__(**kwargs)
 
-        # Save model name, hemisphere and lat/lon information
+        # Save model name, hemisphere, lat/lon information and channel names
         self.name = name
         self.hemisphere: Hemisphere = hemisphere
         self.latitudes_fn = latitudes_fn
         self.longitudes_fn = longitudes_fn
+        self.channel_names = list(channel_names) if channel_names else []
 
         # Number of epochs in the checkpoint this model was loaded from, if any
         self.checkpoint_epoch: int | None = None

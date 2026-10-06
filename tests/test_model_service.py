@@ -32,6 +32,7 @@ class FakeCommonDataModule:
         self.n_history_steps = 3
         self.output_space = DataSpace(1, "output", (10, 10))
         self.target_variable_indices = [0]
+        self.target_variables = ["mock_var"]
 
 
 class FakeModel:
@@ -197,6 +198,154 @@ class TestModelService:
             expected_config["reporting"]["loggers"] = "will_overwrite"
             assert service.config == expected_config
             assert service.config["model"]["name"] != "will_not_overwrite"
+
+    def test_from_checkpoint_variables_replaced_not_merged(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Checkpoint variables win outright rather than being unioned with the CLI."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        ckpt_variables = {
+            "input": {"sic-ssmis": ["ice_conc"]},
+            "target": {"sic-ssmis": ["ice_conc"]},
+        }
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["variables"] = ckpt_variables
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(
+                DictConfig(
+                    {
+                        "variables": {
+                            "input": {
+                                "era5": ["2t"],
+                                "float-argo": ["TEMP"],
+                                "sic-osisaf": ["ice_conc"],
+                            },
+                            "target": {"sic-osisaf": ["ice_conc"]},
+                        }
+                    }
+                ),
+                checkpoint_path,
+            )
+
+        assert OmegaConf.to_container(service.config["variables"]) == ckpt_variables
+
+    def test_from_checkpoint_batch_size_from_current_config(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Batch size comes from the current config; other window keys do not."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
+
+        cli_config = cfg_model_service.copy()
+        cli_config["window"] = {
+            "batch_size": 1,
+            "n_forecast_steps": 7,
+            "n_history_steps": 1,
+        }
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(cli_config, checkpoint_path)
+
+        assert OmegaConf.to_container(service.config["window"]) == {
+            "batch_size": 1,
+            "n_forecast_steps": 2,
+            "n_history_steps": 3,
+        }
+
+    @pytest.mark.parametrize(
+        ("legacy_target", "expected_target"),
+        [
+            (
+                {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
+                {"sic-ssmis": ["ice_conc"]},
+            ),
+            ({"group_name": "sic-ssmis"}, {"sic-ssmis": []}),
+            ({"group_name": "sic-ssmis", "variables": []}, {"sic-ssmis": []}),
+        ],
+        ids=["explicit-variables", "missing-variables", "empty-variables"],
+    )
+    def test_from_checkpoint_translates_legacy_predict_config(
+        self,
+        legacy_target: dict[str, Any],
+        expected_target: dict[str, Any],
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Translate checkpoints whose config predates the 'variables'/'window' split."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        ckpt_config = cfg_model_service.copy()
+        del ckpt_config["variables"]
+        del ckpt_config["window"]
+        ckpt_config["predict"] = {
+            "target": legacy_target,
+            "n_forecast_steps": 7,
+            "n_history_steps": 4,
+        }
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        with (
+            pytest.MonkeyPatch.context() as mp,
+            caplog.at_level(logging.WARNING, logger="icenet_mp.model_service"),
+        ):
+            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "icenet_mp.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr(
+                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+            )
+            service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+
+        assert "uses the legacy 'predict' key" in caplog.text
+        assert "predict" not in service.config
+        assert OmegaConf.to_container(service.config["variables"]) == {
+            "input": {},
+            "target": expected_target,
+        }
+        assert service.config["window"]["n_forecast_steps"] == 7
+        assert service.config["window"]["n_history_steps"] == 4
+        assert (
+            service.config["window"]["batch_size"]
+            == cfg_model_service["window"]["batch_size"]
+        )
 
     def test_from_checkpoint_raises_when_checkpoint_missing(
         self, tmp_path: Path
@@ -917,7 +1066,9 @@ class TestModelService:
         service.data_module_ = MagicMock()
         service.data_module_.target_group_name = "target"
         service.data_module_.target_variables = ["sic"]
-        service.data_module_.variable_names = {"era5": ["t2m"]}
+        service.data_module_.datasets = {
+            "era5": SimpleNamespace(variable_names=["t2m"])
+        }
         service.data_module_.latitudes = {"input": [0.0]}
         service.data_module_.longitudes = {"input": [0.0]}
 

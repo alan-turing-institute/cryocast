@@ -142,6 +142,59 @@ def make_climatology_data_dict(
 
 
 @pytest.fixture
+def cfg_common_data_module() -> DictConfig:
+    """Test configuration for a CommonDataModule."""
+    return DictConfig(
+        {
+            "base_path": "/mock/base/path",
+            "data": {
+                "datasets": {"ds1": {"name": "mock", "group_as": "group1"}},
+                "split": {
+                    "predict": [{"start": None, "end": None}],
+                    "test": [{"start": "2020-01-01", "end": "2020-12-31"}],
+                    "train": [
+                        {"start": None, "end": "2019-12-31"},
+                        {"start": "2018-01-01", "end": None},
+                    ],
+                    "validate": [{"start": "2020-01-01", "end": "2020-03-31"}],
+                },
+            },
+            "variables": {
+                "input": {"group1": ["mock_var"]},
+                "target": {"group1": ["mock_var"]},
+            },
+            "window": {
+                "batch_size": 2,
+                "n_forecast_steps": 1,
+                "n_history_steps": 1,
+            },
+        }
+    )
+
+
+@pytest.fixture
+def cfg_decoder() -> DictConfig:
+    """Test configuration for a decoder."""
+    return DictConfig({"_target_": "icenet_mp.models.decoders.NaiveLinearDecoder"})
+
+
+@pytest.fixture
+def cfg_encoders() -> DictConfig:
+    """Test configuration for an encoder."""
+    return DictConfig(
+        {
+            "latent_space": (64, 64),
+            "test-input": {
+                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
+            },
+            "target": {
+                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
+            },
+        }
+    )
+
+
+@pytest.fixture
 def cfg_input_space() -> DictConfig:
     """Test configuration for an input space."""
     return DictConfig(
@@ -170,7 +223,6 @@ def cfg_model_service() -> DictConfig:
                     },
                 },
                 "split": {
-                    "batch_size": 2,
                     "predict": [{"start": None, "end": None}],
                     "test": [{"start": "2019-01-01", "end": "2019-01-31"}],
                     "train": [
@@ -186,11 +238,6 @@ def cfg_model_service() -> DictConfig:
             "model": {
                 "_target_": "MockModel",
                 "name": "mock-model",
-            },
-            "predict": {
-                "target": {"group_name": "mock-dataset-group-1"},
-                "n_forecast_steps": 2,
-                "n_history_steps": 3,
             },
             "reporting": {
                 "loggers": {},
@@ -208,6 +255,15 @@ def cfg_model_service() -> DictConfig:
                 "scheduler": {},
                 "lr_scheduler": {},
                 "trainer": {},
+            },
+            "variables": {
+                "input": {"mock-dataset-group-1": ["mock_var"]},
+                "target": {"mock-dataset-group-1": ["mock_var"]},
+            },
+            "window": {
+                "batch_size": 2,
+                "n_forecast_steps": 2,
+                "n_history_steps": 3,
             },
         }
     )

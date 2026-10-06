@@ -21,7 +21,7 @@ class TestSanitisedName:
             ("train.scheduler.T_max", "scheduler.T_max"),
             ("train.optimizer", "optimizer"),
             ("loss.delta", "loss.delta"),
-            ("predict.n_forecast_steps", "predict.n_forecast_steps"),
+            ("window.n_forecast_steps", "window.n_forecast_steps"),
         ],
         ids=[
             "model-decoder",
@@ -31,7 +31,7 @@ class TestSanitisedName:
             "train-scheduler",
             "train-optimizer-leaf",
             "loss-unprefixed",
-            "predict-unprefixed",
+            "window-unprefixed",
         ],
     )
     def test_strips_known_prefixes(self, name: str, expected: str) -> None:
