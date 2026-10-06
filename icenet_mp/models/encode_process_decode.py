@@ -277,7 +277,10 @@ class EncodeProcessDecode(BaseModel):
             target_input[:, -1:].expand(-1, target.shape[1], -1, -1, -1).clone()
         )
         full_target[:, :, self.target_variable_indices, :, :] = target
-        return target_input_encoder.rollout(full_target)
+
+        # Detach so that the latent loss cannot move the shared input encoder away
+        # from the latent space that the frozen decoder was trained on.
+        return target_input_encoder.rollout(full_target).detach()
 
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.

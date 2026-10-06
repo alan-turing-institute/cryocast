@@ -291,3 +291,7 @@ def test_latent_target_uses_target_input_encoder(
     actual = model._encode_target_latent({cfg_input_space["name"]: history}, target)
 
     torch.testing.assert_close(actual, expected)
+
+    # The latent loss must not train the shared encoder through the target latent
+    assert all(p.requires_grad for p in target_input_encoder.parameters())
+    assert not actual.requires_grad
