@@ -96,14 +96,10 @@ class TestEncodeProcessDecode:
         )
 
         assert model.name == "encode-null-decode"
-        assert model.input_spaces[0].channels == cfg_input_space["channels"]
-        assert model.input_spaces[0].name == cfg_input_space["name"]
-        assert model.input_spaces[0].shape == cfg_input_space["shape"]
+        assert model.input_spaces == [DataSpace.from_dict(cfg_input_space)]
         assert model.n_forecast_steps == test_n_forecast_steps
         assert model.n_history_steps == test_n_history_steps
-        assert model.output_space.channels == cfg_output_space["channels"]
-        assert model.output_space.name == cfg_output_space["name"]
-        assert model.output_space.shape == cfg_output_space["shape"]
+        assert model.output_space == DataSpace.from_dict(cfg_output_space)
 
     @pytest.mark.parametrize(
         ("test_computes_loss_in_latent_space", "expected_multistage_only"),
@@ -405,5 +401,4 @@ class TestEncodeProcessDecode:
         assert isinstance(processor, _OracleProcessor)
         assert processor.target is not None
         assert all(p.requires_grad for e in model.encoders for p in e.parameters())
-        target_requires_grad = processor.target.requires_grad
-        assert not target_requires_grad
+        assert not processor.target.requires_grad

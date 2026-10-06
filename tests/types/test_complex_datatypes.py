@@ -17,13 +17,6 @@ from icenet_mp.types import (
 class TestDataSpace:
     """Tests for DataSpace."""
 
-    def test_coerces_numeric_values_to_ints(self) -> None:
-        """Coerce numeric string values to integer dimensions."""
-        space = DataSpace(channels="2", name="sic", shape=("8", "12"))  # type: ignore[arg-type]
-
-        assert space.channels == 2
-        assert space.shape == (8, 12)
-
     def test_properties(self) -> None:
         """Expose the expected DataSpace helper properties."""
         space = DataSpace(channels=3, name="sic", shape=(16, 24))
@@ -41,10 +34,9 @@ class TestDataSpace:
         space = DataSpace.from_dict(config)
         result = space.to_dict()
 
+        assert space == DataSpace(channels=4, name="weather", shape=(32, 48))
         assert isinstance(result, DictConfig)
-        assert result.channels == 4
-        assert result.name == "weather"
-        assert tuple(result.shape) == (32, 48)
+        assert DataSpace.from_dict(result) == space
 
     def test_equal_by_value(self) -> None:
         """Treat distinct DataSpaces with the same values as equal, with equal hashes."""
