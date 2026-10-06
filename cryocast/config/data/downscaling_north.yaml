@@ -1,0 +1,15 @@
+defaults:
+  - datasets:
+    - samp_sicnorth_carra2_2p5km_2020_2024_24h_v1
+  - split: sample_dataset
+  - _self_
+
+# Initial Arctic downscaling region of interest, expressed as a lat/lon box.
+# CDS area order is north / west / south / east.
+roi:
+  name: svalbard
+  crs: EPSG:4326
+  north: 81.0
+  west: 15.0
+  south: 76.0
+  east: 35.0
