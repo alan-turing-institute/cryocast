@@ -69,8 +69,8 @@ class FakeModel:
 def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
     """Build a real full model and a pretrained ProcessorStage to hand over from.
 
-    The CNNEncoder carries BatchNorm buffers and the DDPMProcessor computes its loss in
-    latent space, so the target encoder is both stateful and used by the objective.
+    The CNNEncoder carries BatchNorm buffers and the DiffusionProcessor computes its
+    loss in latent space, so the target encoder is stateful and used by the objective.
     """
     space = DictConfig({"name": "sic", "channels": 1, "shape": [16, 16]})
     encoder = DictConfig(
@@ -84,7 +84,7 @@ def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, Processor
     decoder = DictConfig({"_target_": "icenet_mp.models.decoders.NaiveLinearDecoder"})
     processor = DictConfig(
         {
-            "_target_": "icenet_mp.models.processors.DDPMProcessor",
+            "_target_": "icenet_mp.models.processors.DiffusionProcessor",
             "timesteps": 2,
             "start_out_channels": 8,
             "time_embed_dim": 256,
@@ -130,6 +130,7 @@ def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, Processor
     decoder_stage = DecoderStage.from_template(
         decoder=decoder,
         encoders=[input_stage],
+        output_space=model.output_space,
         target_dataset_name="sic",
         target_variable_indices=[0],
     )
@@ -1296,7 +1297,7 @@ class TestModelService:
             mp.setattr(service, "_fit", mock_fit)
             mp.setattr(service, "_save_stage_checkpoint", mock_save)
             result = service.train_stage_finetune(
-                config=DictConfig({}), processor_model=pretrained
+                train_cfg=DictConfig({}), processor_model=pretrained
             )
 
         mock_fit.assert_called_once_with(config=DictConfig({}), job_stage="finetune")
@@ -1332,7 +1333,7 @@ class TestModelService:
             mp.setattr(service, "_fit", MagicMock())
             mp.setattr(service, "_save_stage_checkpoint", MagicMock())
             service.train_stage_finetune(
-                config=DictConfig({}), processor_model=pretrained
+                train_cfg=DictConfig({}), processor_model=pretrained
             )
 
         assert torch.isfinite(expected)
