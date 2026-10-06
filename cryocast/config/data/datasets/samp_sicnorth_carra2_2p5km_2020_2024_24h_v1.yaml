@@ -48,7 +48,7 @@ samp-sicnorth-carra2-2p5km-2020-2024-24h-v1:
           south: ${data.roi.south}
           east: ${data.roi.east}
           resolution: 2p5km
-      # Match the existing sea-ice target variable name used by IceNet-MP.
+      # Match the existing sea-ice target variable name used by CryoCast.
       - rename:
           param:
             ci: ice_conc
