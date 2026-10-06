@@ -1,0 +1,71 @@
+samp-sicnorth-ssmis-25p0km-2017-2019-24h-v2:
+  name: samp-sicnorth-ssmis-25p0km-2017-2019-24h-v2
+  group_as: sic-ssmis
+  description: Sea ice concentration from SMMR/SSMI/SSMIS for northern hemisphere
+  attribution: EUMETSAT/OSISAF
+  licence: CC-BY-4.0
+
+  dates:
+    start: '2017-01-01T12:00:00'
+    end: '2019-01-31T12:00:00'
+    frequency: 24h
+
+  postprocessors:
+    mask_generator:
+      _target_: cryocast.ingestion.postprocessors.StatusFlagMaskGenerator
+
+  input:
+    pipe:
+      - concat:
+        # OSI-450-a1 (1978-2020)
+        # https://osi-saf.eumetsat.int/products/osi-450-a1
+        - dates:
+            start: '1978-10-25T12:00:00'
+            end: '2020-12-31T12:00:00'
+            frequency: 24h
+          ftp:
+            url: ftp://osisaf.met.no/reprocessed/ice/conc/v3p1/{date:strftime(%Y)}/{date:strftime(%m)}/ice_conc_nh_ease2-250_cdr-v3p1_{date:strftime(%Y%m%d)}1200.nc
+
+        # OSI-430-a (2021-2025)
+        # https://osi-saf.eumetsat.int/products/osi-430-a
+        - dates:
+            start: '2021-01-01T12:00:00'
+            end: '2025-10-16T12:00:00'
+            frequency: 24h
+          ftp:
+            url: ftp://osisaf.met.no/reprocessed/ice/conc-cont-reproc/v3p0/{date:strftime(%Y)}/{date:strftime(%m)}/ice_conc_nh_ease2-250_icdr-v3p0_{date:strftime(%Y%m%d)}1200.nc
+
+      # Rescale concentration variables and uncertainties from percent to fraction
+      - rescale:
+          scale: 0.01
+          offset: 0.0
+          param: algorithm_standard_uncertainty
+      - rescale:
+          scale: 0.01
+          offset: 0.0
+          param: ice_conc
+      - rescale:
+          scale: 0.01
+          offset: 0.0
+          param: raw_ice_conc_values
+      - rescale:
+          scale: 0.01
+          offset: 0.0
+          param: smearing_standard_uncertainty
+      - rescale:
+          scale: 0.01
+          offset: 0.0
+          param: total_standard_uncertainty
+
+      # Replace NaNs with 0 for concentration variables and 99 for uncertainty variables
+      - nan-to-num:
+          variables: [ice_conc, raw_ice_conc_values]
+          replace_with: 0.0
+      - nan-to-num:
+          variables: [algorithm_standard_uncertainty, smearing_standard_uncertainty, total_standard_uncertainty]
+          replace_with: 99
+
+      # Set the geography to EASE2 25km grid
+      - set-geography:
+          crs: "EPSG:6931"
+          resolution: "25p0km"

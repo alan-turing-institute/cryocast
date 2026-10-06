@@ -2,8 +2,8 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models import BaseModel
-from icenet_mp.types import Hemisphere, TensorNTCHW
+from cryocast.models import BaseModel
+from cryocast.types import Hemisphere, TensorNTCHW
 
 
 class IdentityModel(BaseModel):
@@ -19,7 +19,7 @@ def _make_model() -> IdentityModel:
         input_spaces=[DictConfig({"name": "input", "channels": 1, "shape": (2, 2)})],
         loss=DictConfig(
             {
-                "_target_": "icenet_mp.losses.UncertaintyWeightedLoss",
+                "_target_": "cryocast.losses.UncertaintyWeightedLoss",
                 "delta": 0.5,
             }
         ),

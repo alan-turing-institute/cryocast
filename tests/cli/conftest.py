@@ -4,17 +4,17 @@ from collections.abc import Sequence
 import pytest
 from typer.testing import CliRunner, Result
 
-from icenet_mp.cli.main import app
+from cryocast.cli.main import app
 
 
 class CustomCliRunner(CliRunner):
     def __init__(self) -> None:
-        """A custom CLI runner for IceNet-MP tests."""
+        """A custom CLI runner for CryoCast tests."""
         super().__init__(env={"COLUMNS": "120"})
         self.colorstrip = re.compile(r"\x1b\[[0-9;]*m")
 
     def call(self, commands: Sequence[str]) -> Result:
-        return super().invoke(app, commands, prog_name="imp")
+        return super().invoke(app, commands, prog_name="cryocast")
 
     def check_output(
         self, commands: Sequence[str], expected_patterns: Sequence[str]
@@ -38,5 +38,5 @@ class CustomCliRunner(CliRunner):
 
 @pytest.fixture
 def runner() -> CustomCliRunner:
-    """A custom CLI runner for IceNet-MP tests."""
+    """A custom CLI runner for CryoCast tests."""
     return CustomCliRunner()

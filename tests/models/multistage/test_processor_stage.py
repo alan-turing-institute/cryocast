@@ -4,9 +4,9 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import DataSpace, ProcessorOutput, TensorNTCHW
+from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
+from cryocast.models.processors import BaseProcessor
+from cryocast.types import DataSpace, ProcessorOutput, TensorNTCHW
 
 
 class _CaptureLatentLossProcessor(BaseProcessor):
@@ -268,7 +268,7 @@ class TestProcessorStage:
         decoder_stage = DecoderStage.from_template(
             decoder=DictConfig(
                 {
-                    "_target_": "icenet_mp.models.decoders.NaiveLinearDecoder",
+                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
                     "skip_connection": {"method": "additive"},
                 }
             ),

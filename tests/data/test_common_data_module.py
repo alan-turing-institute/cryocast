@@ -10,10 +10,10 @@ import zarr
 from omegaconf import DictConfig
 from torch.utils.data import RandomSampler, SequentialSampler
 
-from icenet_mp.data.calendar_day_climatology import CalendarDayClimatology
-from icenet_mp.data.common_data_module import CommonDataModule
-from icenet_mp.data.single_dataset import SingleDataset
-from icenet_mp.utils import mask_dir
+from cryocast.data.calendar_day_climatology import CalendarDayClimatology
+from cryocast.data.common_data_module import CommonDataModule
+from cryocast.data.single_dataset import SingleDataset
+from cryocast.utils import mask_dir
 from tests.conftest import (
     CLIMATOLOGY_END,
     CLIMATOLOGY_MISSING,
@@ -650,7 +650,7 @@ class TestDataLoaders:
         fake_dataset.variable_list.return_value = []
         combined_dataset = MagicMock(return_value=fake_dataset)
         monkeypatch.setattr(
-            "icenet_mp.data.common_data_module.CombinedDataset", combined_dataset
+            "cryocast.data.common_data_module.CombinedDataset", combined_dataset
         )
 
         getattr(dm, loader_name)()

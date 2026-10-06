@@ -4,8 +4,8 @@ import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.losses import LeadTimeWeightedLoss
-from icenet_mp.models import DDPM
+from cryocast.losses import LeadTimeWeightedLoss
+from cryocast.models import DDPM
 
 
 class TestDDPM:
@@ -136,7 +136,7 @@ class TestDDPM:
         test_lead_time_exponent: float | None,
         expect_warning: bool,
     ) -> None:
-        with caplog.at_level(logging.WARNING, logger="icenet_mp.models.ddpm"):
+        with caplog.at_level(logging.WARNING, logger="cryocast.models.ddpm"):
             self._make_model(
                 OmegaConf.create(
                     {

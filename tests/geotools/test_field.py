@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 import numpy as np
 from earthkit.data import Field
 
-from icenet_mp.geotools.geographic_field import GeographicField
-from icenet_mp.geotools.geographic_grid import GeographicGrid
-from icenet_mp.geotools.geographic_metadata import GeographicMetadata
+from cryocast.geotools.geographic_field import GeographicField
+from cryocast.geotools.geographic_grid import GeographicGrid
+from cryocast.geotools.geographic_metadata import GeographicMetadata
 
 
 class TestGeographicField:

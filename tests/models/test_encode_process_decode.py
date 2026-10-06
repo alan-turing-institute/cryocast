@@ -5,12 +5,12 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
-from icenet_mp.losses import LeadTimeWeightedLoss
-from icenet_mp.models import EncodeProcessDecode
-from icenet_mp.models.decoders import BaseDecoder
-from icenet_mp.models.encoders import BaseEncoder
-from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import (
+from cryocast.losses import LeadTimeWeightedLoss
+from cryocast.models import EncodeProcessDecode
+from cryocast.models.decoders import BaseDecoder
+from cryocast.models.encoders import BaseEncoder
+from cryocast.models.processors import BaseProcessor
+from cryocast.types import (
     DataSpace,
     Hemisphere,
     ProcessorOutput,
@@ -37,7 +37,7 @@ def test_uncertainty_loss_rejects_processor_owned_training_loss(
         hemisphere=Hemisphere.NORTH,
         input_spaces=[cfg_input_space],
         loss=DictConfig(
-            {"_target_": "icenet_mp.losses.UncertaintyWeightedLoss", "delta": 0.5}
+            {"_target_": "cryocast.losses.UncertaintyWeightedLoss", "delta": 0.5}
         ),
         n_forecast_steps=1,
         n_history_steps=1,
@@ -367,7 +367,7 @@ class TestEncodeProcessDecode:
         )
         processor = DictConfig(
             {
-                "_target_": "icenet_mp.models.processors.NullProcessor",
+                "_target_": "cryocast.models.processors.NullProcessor",
                 "computes_loss_in_latent_space": True,
             }
         )

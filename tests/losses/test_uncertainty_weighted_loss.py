@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch.nn import functional
 
-from icenet_mp.losses import UncertaintyWeightedLoss
+from cryocast.losses import UncertaintyWeightedLoss
 
 
 def test_lower_uncertainty_gives_more_weight() -> None:

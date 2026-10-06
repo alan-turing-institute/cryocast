@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
-WINDOW_DIR = Path(str(files("icenet_mp.config"))) / "window"
+WINDOW_DIR = Path(str(files("cryocast.config"))) / "window"
 WINDOW_CONFIGS = sorted(
     p.stem for p in WINDOW_DIR.glob("*.yaml") if not p.name.endswith(".local.yaml")
 )
@@ -14,7 +14,7 @@ FORECAST_HISTORY = re.compile(r"^forecast-(\d+)-history-(\d+)$")
 
 
 class TestWindowConfigs:
-    """Regression tests for icenet-mp window configs."""
+    """Regression tests for cryocast window configs."""
 
     @pytest.mark.parametrize("config_name", WINDOW_CONFIGS)
     def test_window_configs_compose(

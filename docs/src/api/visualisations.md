@@ -1,3 +1,3 @@
 # Visualisations
 
-::: icenet_mp.visualisations
+::: cryocast.visualisations

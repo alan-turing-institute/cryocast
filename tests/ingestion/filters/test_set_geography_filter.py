@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from earthkit.data import SimpleFieldList
 
-from icenet_mp.ingestion.filters import SetGeographyFilter
+from cryocast.ingestion.filters import SetGeographyFilter
 
 from .conftest import make_array_field
 
@@ -16,7 +16,7 @@ def mock_geo_filter(monkeypatch: pytest.MonkeyPatch) -> SetGeographyFilter:
     factory = MagicMock()
     factory.create.side_effect = lambda *_args, **_kwargs: MagicMock()
     monkeypatch.setattr(
-        "icenet_mp.ingestion.filters.set_geography_filter.grid_factory",
+        "cryocast.ingestion.filters.set_geography_filter.grid_factory",
         factory,
     )
     return SetGeographyFilter(crs="epsg:6931", resolution="25km")

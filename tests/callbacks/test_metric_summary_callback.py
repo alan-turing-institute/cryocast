@@ -8,8 +8,8 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.trainer.states import TrainerFn
 from torchmetrics import MeanAbsoluteError, Metric, MetricCollection
 
-from icenet_mp.callbacks.metric_summary_callback import MetricSummaryCallback
-from icenet_mp.metrics import (
+from cryocast.callbacks.metric_summary_callback import MetricSummaryCallback
+from cryocast.metrics import (
     DistanceAveragedIceEdgeErrorPerForecastDay,
     FractionalSkillScorePerForecastDay,
     IceNetAccuracyPerForecastDay,
@@ -70,9 +70,9 @@ def wandb_run(monkeypatch: pytest.MonkeyPatch) -> tuple[MagicMock, MockWandbRun]
     mock_wandb.Run = MockWandbRun
     mock_run = MockWandbRun()
     mock_get_wandb_run = MagicMock(return_value=mock_run)
-    monkeypatch.setattr("icenet_mp.callbacks.metric_summary_callback.wandb", mock_wandb)
+    monkeypatch.setattr("cryocast.callbacks.metric_summary_callback.wandb", mock_wandb)
     monkeypatch.setattr(
-        "icenet_mp.callbacks.metric_summary_callback.get_wandb_run",
+        "cryocast.callbacks.metric_summary_callback.get_wandb_run",
         mock_get_wandb_run,
     )
     return mock_wandb, mock_run

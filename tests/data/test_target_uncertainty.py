@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from icenet_mp.data.combined_dataset import CombinedDataset
-from icenet_mp.data.single_dataset import SingleDataset
+from cryocast.data.combined_dataset import CombinedDataset
+from cryocast.data.single_dataset import SingleDataset
 
 
 def test_combined_dataset_returns_physical_target_uncertainty(

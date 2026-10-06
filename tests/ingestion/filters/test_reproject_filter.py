@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from earthkit.data import SimpleFieldList
 
-from icenet_mp.ingestion.filters.reproject_filter import ReprojectFilter
+from cryocast.ingestion.filters.reproject_filter import ReprojectFilter
 
 from .conftest import make_array_field
 
@@ -29,7 +29,7 @@ def mock_reproject_filter(monkeypatch: pytest.MonkeyPatch) -> ReprojectFilter:
     mock_geo.latitudes.return_value = np.array([[0.0, 5.0], [10.0, 15.0]])
     mock_geo.longitudes.return_value = np.array([[0.0, 5.0], [10.0, 15.0]])
     monkeypatch.setattr(
-        "icenet_mp.ingestion.filters.reproject_filter.grid_factory",
+        "cryocast.ingestion.filters.reproject_filter.grid_factory",
         MagicMock(create=MagicMock(return_value=mock_geo)),
     )
     return ReprojectFilter(crs="epsg:6931", resolution="25km", shape=(2, 2))
@@ -39,14 +39,14 @@ def mock_reproject_filter(monkeypatch: pytest.MonkeyPatch) -> ReprojectFilter:
 def mock_nearest_neighbour_indices(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Patch Field with MockField and nearest_neighbour_indices with a dummy 2x2 stub."""
     monkeypatch.setattr(
-        "icenet_mp.ingestion.filters.reproject_filter.Field",
+        "cryocast.ingestion.filters.reproject_filter.Field",
         MockField,
     )
     mock_nn = MagicMock(
         return_value=(np.zeros((2, 2), dtype=int), np.zeros((2, 2), dtype=int))
     )
     monkeypatch.setattr(
-        "icenet_mp.ingestion.filters.reproject_filter.nearest_neighbour_indices",
+        "cryocast.ingestion.filters.reproject_filter.nearest_neighbour_indices",
         mock_nn,
     )
     return mock_nn
