@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-DATASETS_DIR = Path(__file__).parents[2] / "icenet_mp" / "config" / "data" / "datasets"
+DATASETS_DIR = Path(__file__).parents[2] / "cryocast" / "config" / "data" / "datasets"
 YAML_FILES = sorted(DATASETS_DIR.glob("*.yaml"))
 
 

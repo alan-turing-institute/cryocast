@@ -2,15 +2,15 @@ import logging
 
 import pytest
 
-from icenet_mp.cli.main import run
+from cryocast.cli.main import run
 
 from .conftest import CustomCliRunner
 
 
 class TestBaseCLI:
     expected_patterns_help = (
-        r"Usage: imp \[OPTIONS\] COMMAND \[ARGS\]...",
-        r"Entrypoint for imp CLI application.",
+        r"Usage: cryocast \[OPTIONS\] COMMAND \[ARGS\]...",
+        r"Entrypoint for CryoCast CLI application.",
         r"--install-completion\s+Install completion for the current shell.",
         r"--show-completion\s+Show completion for the current shell",
         r"--help\s+-h\s+Show this message and exit.",
@@ -41,7 +41,7 @@ class TestRunEntrypoint:
             msg = "aten::foo is not currently implemented for the MPS device."
             raise NotImplementedError(msg)
 
-        monkeypatch.setattr("icenet_mp.cli.main.app", _raise_app)
+        monkeypatch.setattr("cryocast.cli.main.app", _raise_app)
 
         with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as exc_info:
             run()
@@ -56,7 +56,7 @@ class TestRunEntrypoint:
             msg = "Some unrelated feature is not implemented."
             raise NotImplementedError(msg)
 
-        monkeypatch.setattr("icenet_mp.cli.main.app", _raise_app)
+        monkeypatch.setattr("cryocast.cli.main.app", _raise_app)
 
         with pytest.raises(NotImplementedError, match="Some unrelated feature"):
             run()

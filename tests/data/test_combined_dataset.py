@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from icenet_mp.data.calendar_day_climatology import CalendarDayClimatology
-from icenet_mp.data.combined_dataset import CombinedDataset
-from icenet_mp.data.single_dataset import SingleDataset
+from cryocast.data.calendar_day_climatology import CalendarDayClimatology
+from cryocast.data.combined_dataset import CombinedDataset
+from cryocast.data.single_dataset import SingleDataset
 
 N_DAYS = len(CalendarDayClimatology.DAY_INDEX)
 

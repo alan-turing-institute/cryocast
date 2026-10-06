@@ -2,8 +2,8 @@ from pathlib import Path
 
 import numpy as np
 
-from icenet_mp.data.combined_dataset import MISSING_INPUT_VALUE, CombinedDataset
-from icenet_mp.data.single_dataset import SingleDataset
+from cryocast.data.combined_dataset import MISSING_INPUT_VALUE, CombinedDataset
+from cryocast.data.single_dataset import SingleDataset
 
 
 def test_single_dataset_fills_unavailable_dates(

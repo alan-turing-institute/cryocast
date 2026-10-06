@@ -5,8 +5,8 @@ import datetime
 import numpy as np
 import pytest
 
-from icenet_mp.synthetic.shapes import GrowShrinkCircleConfig, MovingCircleConfig
-from icenet_mp.synthetic.trajectories import (
+from cryocast.synthetic.shapes import GrowShrinkCircleConfig, MovingCircleConfig
+from cryocast.synthetic.trajectories import (
     default_grow_shrink_configs,
     default_trajectory_configs,
     generate_frames,

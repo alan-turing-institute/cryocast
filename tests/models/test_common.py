@@ -4,9 +4,10 @@ import numpy as np
 import pytest
 import torch
 
-from icenet_mp.models.common import (
+from cryocast.models.common import (
     ChannelAdaptor,
     ConvBlockUpsample,
+    ConvLSTMCell,
     ConvNormActUpsample,
     Mask,
     NormalisedFold,
@@ -15,8 +16,8 @@ from icenet_mp.models.common import (
     ResidualUpsample,
     RestrictRange,
 )
-from icenet_mp.models.common.gated_attention import GatedAttention, GatedAttentionBlock
-from icenet_mp.types import RangeRestriction
+from cryocast.models.common.gated_attention import GatedAttention, GatedAttentionBlock
+from cryocast.types import RangeRestriction
 
 
 class TestChannelAdapt:
@@ -66,6 +67,51 @@ class TestConvBlockUpsample:
         x = torch.zeros(1, in_channels, height, width)
         y = layer(x)
         assert y.shape == (1, in_channels // 2, height * 2, width * 2)
+
+
+class TestConvLSTMCell:
+    @pytest.mark.parametrize(
+        ("test_in_channels", "test_hidden_channels", "test_kernel_size", "match"),
+        [
+            (0, 5, 3, r"in_channels must be greater than 0."),
+            (3, 0, 3, r"hidden_channels must be greater than 0."),
+            (3, 5, 0, r"kernel_size must be a positive odd integer."),
+            (3, 5, 2, r"kernel_size must be a positive odd integer."),
+        ],
+        ids=[
+            "in_channels-zero",
+            "hidden_channels-zero",
+            "kernel_size-zero",
+            "kernel_size-even",
+        ],
+    )
+    def test_rejects_invalid_hyperparameters(
+        self,
+        test_in_channels: int,
+        test_hidden_channels: int,
+        test_kernel_size: int,
+        match: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            ConvLSTMCell(
+                in_channels=test_in_channels,
+                hidden_channels=test_hidden_channels,
+                kernel_size=test_kernel_size,
+            )
+
+    def test_preserves_spatial_shape_and_backpropagates(self) -> None:
+        cell = ConvLSTMCell(in_channels=3, hidden_channels=5, kernel_size=3)
+        x = torch.randn(2, 3, 8, 10, requires_grad=True)
+        hidden = torch.zeros(2, 5, 8, 10)
+        state = torch.zeros(2, 5, 8, 10)
+
+        next_hidden, next_state = cell(x, (hidden, state))
+
+        assert next_hidden.shape == (2, 5, 8, 10)
+        assert next_state.shape == (2, 5, 8, 10)
+        next_hidden.sum().backward()
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
 
 
 class TestConvNormActUpsample:

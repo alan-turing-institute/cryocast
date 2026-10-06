@@ -5,9 +5,9 @@ import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.models import EncodeProcessDecode
-from icenet_mp.models.multistage import EncoderStage
-from icenet_mp.types import DataSpace
+from cryocast.models import EncodeProcessDecode
+from cryocast.models.multistage import EncoderStage
+from cryocast.types import DataSpace
 
 
 class TestEncoderStage:
@@ -27,7 +27,7 @@ class TestEncoderStage:
             encoder=cfg_encoders["test-input"],
             decoder=DictConfig(
                 {
-                    "_target_": "icenet_mp.models.decoders.NaiveLinearDecoder",
+                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
                     "skip_connection": {"method": "additive"},
                 }
             ),

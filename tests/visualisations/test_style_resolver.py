@@ -1,9 +1,9 @@
-"""Tests for icenet_mp/visualisations/variable_style_resolver.py."""
+"""Tests for cryocast/visualisations/variable_style_resolver.py."""
 
 from typing import Any
 
-from icenet_mp.types import PlotSpec
-from icenet_mp.visualisations.style_resolver import StyleResolver
+from cryocast.types import PlotSpec
+from cryocast.visualisations.style_resolver import StyleResolver
 
 DEFAULT_CMAP = "viridis"
 DEFAULT_VMIN = 3

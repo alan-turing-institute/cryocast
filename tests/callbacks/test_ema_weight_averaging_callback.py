@@ -5,7 +5,7 @@ import torch
 from lightning.pytorch import LightningModule
 from lightning.pytorch.callbacks import WeightAveraging
 
-from icenet_mp.callbacks.ema_weight_averaging_callback import EMAWeightAveragingCallback
+from cryocast.callbacks.ema_weight_averaging_callback import EMAWeightAveragingCallback
 
 
 class ParameterlessLightningModule(LightningModule):
