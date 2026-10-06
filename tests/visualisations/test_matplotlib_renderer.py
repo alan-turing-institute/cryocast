@@ -13,9 +13,9 @@ from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from PIL.ImageFile import ImageFile
 
-from icenet_mp.exceptions import VideoRenderError
-from icenet_mp.types import ArrayHW, ArrayTHW
-from icenet_mp.visualisations.matplotlib_renderer import MatplotlibRenderer
+from cryocast.exceptions import VideoRenderError
+from cryocast.types import ArrayHW, ArrayTHW
+from cryocast.visualisations.matplotlib_renderer import MatplotlibRenderer
 
 renderer = MatplotlibRenderer()
 

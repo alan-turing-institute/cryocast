@@ -1,14 +1,14 @@
 import pytest
 import torch
 
-from icenet_mp.models.encoders import (
+from cryocast.models.encoders import (
     BaseEncoder,
     CNNEncoder,
     DeepCompressionEncoder,
     NaiveLinearEncoder,
     PiecewiseEncoder,
 )
-from icenet_mp.types import DataSpace
+from cryocast.types import DataSpace
 
 
 class TestEncoders:

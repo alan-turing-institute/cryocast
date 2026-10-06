@@ -1351,6 +1351,140 @@ toml = [
 ]
 
 [[package]]
+name = "cryocast"
+version = "2026.post7"
+source = { editable = "." }
+dependencies = [
+    { name = "anemoi-datasets" },
+    { name = "anemoi-transform" },
+    { name = "anemoi-utils" },
+    { name = "argopy" },
+    { name = "cdsapi" },
+    { name = "earthkit-data" },
+    { name = "filelock" },
+    { name = "haversine" },
+    { name = "hydra-core" },
+    { name = "imageio-ffmpeg" },
+    { name = "jaxtyping" },
+    { name = "lightning" },
+    { name = "matplotlib" },
+    { name = "netcdf4" },
+    { name = "numpy" },
+    { name = "omegaconf" },
+    { name = "optuna" },
+    { name = "pandas" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "pyproj" },
+    { name = "pytorch-triton", version = "3.5.1", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux')" },
+    { name = "pytorch-triton", version = "3.5.1", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
+    { name = "pytorch-triton-xpu", marker = "platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
+    { name = "pyyaml" },
+    { name = "scikit-learn" },
+    { name = "torch", version = "2.9.1+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "python_full_version < '3.15' and platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine == 'aarch64' and 'nvidia' not in platform_release and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux')" },
+    { name = "torch", version = "2.14.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "python_full_version >= '3.15' and platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64') or sys_platform != 'linux'" },
+    { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and sys_platform == 'linux'" },
+    { name = "torchmetrics" },
+    { name = "tqdm" },
+    { name = "typer" },
+    { name = "typing-extensions" },
+    { name = "wandb" },
+    { name = "xarray" },
+    { name = "zarr" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pandas-stubs" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-xdist" },
+    { name = "types-cachetools" },
+    { name = "types-pyyaml" },
+]
+docs = [
+    { name = "mkdocstrings-python" },
+    { name = "zensical" },
+]
+notebooks = [
+    { name = "cartopy" },
+    { name = "cmocean" },
+    { name = "h5py" },
+    { name = "jupyter" },
+    { name = "s2sphere" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anemoi-datasets", specifier = ">=0.5.39,!=0.5.40" },
+    { name = "anemoi-transform", specifier = ">=0.4.1" },
+    { name = "anemoi-utils", specifier = ">=0.5.9" },
+    { name = "argopy", specifier = ">=1.4.0" },
+    { name = "cdsapi", specifier = ">=0.7.6" },
+    { name = "earthkit-data", specifier = ">=0.20.0" },
+    { name = "filelock", specifier = ">=3.32.2" },
+    { name = "haversine", specifier = ">=2.9.0" },
+    { name = "hydra-core", specifier = ">=1.3.3" },
+    { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
+    { name = "jaxtyping", specifier = ">=0.3.11" },
+    { name = "lightning", specifier = ">=2.6.0,!=2.6.2,!=2.6.3" },
+    { name = "matplotlib", specifier = ">=3.11.1" },
+    { name = "netcdf4", specifier = ">=1.7.0" },
+    { name = "numpy", specifier = ">=2.4.6,<2.5" },
+    { name = "omegaconf", specifier = ">=2.3.1" },
+    { name = "optuna", specifier = ">=4.9.0" },
+    { name = "pandas", specifier = ">=2.3.3" },
+    { name = "pillow", specifier = ">=11.3.0" },
+    { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pyproj", specifier = ">=3.7.2" },
+    { name = "pytorch-triton", marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "pytorch-triton", marker = "platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "pytorch-triton", marker = "platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "pytorch-triton-xpu", marker = "platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/xpu" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "scikit-learn", specifier = ">=1.9.0" },
+    { name = "torch", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64') or sys_platform != 'linux'", specifier = ">=2.8.0,!=2.10.0" },
+    { name = "torch", marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torch", marker = "platform_machine == 'aarch64' and 'nvidia' not in platform_release and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "torch", marker = "platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "torch", marker = "platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/xpu" },
+    { name = "torchmetrics", specifier = ">=1.9.0" },
+    { name = "tqdm", specifier = ">=4.68.0" },
+    { name = "typer", specifier = ">=0.27.1" },
+    { name = "typing-extensions", specifier = ">=4.16.0" },
+    { name = "wandb", specifier = ">=0.28.1" },
+    { name = "xarray", specifier = ">=2025.3.0" },
+    { name = "zarr", specifier = ">=2.18" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.17.0" },
+    { name = "pandas-stubs", specifier = ">=3.0.5.260730" },
+    { name = "pre-commit", specifier = ">=4.2.0" },
+    { name = "pytest", specifier = ">=8.4.1" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "types-cachetools", specifier = ">=7.0.0.20260518" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20260518" },
+]
+docs = [
+    { name = "mkdocstrings-python", specifier = ">=2.0.5" },
+    { name = "zensical", specifier = ">=0.0.53" },
+]
+notebooks = [
+    { name = "cartopy", specifier = ">=0.26.0" },
+    { name = "cmocean", specifier = ">=4.0.3" },
+    { name = "h5py", specifier = ">=3.16.0" },
+    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "s2sphere", specifier = ">=0.2.5" },
+]
+
+[[package]]
 name = "cuda-bindings"
 version = "12.9.9"
 source = { registry = "https://pypi.org/simple" }
@@ -2429,140 +2563,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5c/a9/fe2c936f36881e3197a8800f5bfba078d7846d54eb5d009b445eda1ee281/hydra_core-1.3.7.tar.gz", hash = "sha256:d4ff629c7e23b64a9db5fe5b027cf7c55b633b737f03be51ef41b77ed016f75e", size = 3278662, upload-time = "2026-09-14T18:02:55.528Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/25/0c/21890c10cc94da917c8e47efc1c55cd3e56a1d25ab5947bdd35abaf9fdc1/hydra_core-1.3.7-py3-none-any.whl", hash = "sha256:83606c4a05c770f1e026e0489875f28989829d151799eabd8cfa8cbe82164515", size = 168790, upload-time = "2026-09-14T18:02:53.661Z" },
-]
-
-[[package]]
-name = "icenet-mp"
-version = "2026.post7"
-source = { editable = "." }
-dependencies = [
-    { name = "anemoi-datasets" },
-    { name = "anemoi-transform" },
-    { name = "anemoi-utils" },
-    { name = "argopy" },
-    { name = "cdsapi" },
-    { name = "earthkit-data" },
-    { name = "filelock" },
-    { name = "haversine" },
-    { name = "hydra-core" },
-    { name = "imageio-ffmpeg" },
-    { name = "jaxtyping" },
-    { name = "lightning" },
-    { name = "matplotlib" },
-    { name = "netcdf4" },
-    { name = "numpy" },
-    { name = "omegaconf" },
-    { name = "optuna" },
-    { name = "pandas" },
-    { name = "pillow" },
-    { name = "pydantic" },
-    { name = "pyproj" },
-    { name = "pytorch-triton", version = "3.5.1", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux')" },
-    { name = "pytorch-triton", version = "3.5.1", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
-    { name = "pytorch-triton-xpu", marker = "platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
-    { name = "pyyaml" },
-    { name = "scikit-learn" },
-    { name = "torch", version = "2.9.1+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "python_full_version < '3.15' and platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
-    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine == 'aarch64' and 'nvidia' not in platform_release and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux')" },
-    { name = "torch", version = "2.14.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "python_full_version >= '3.15' and platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64') or sys_platform != 'linux'" },
-    { name = "torch", version = "2.14.1+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and sys_platform == 'linux'" },
-    { name = "torchmetrics" },
-    { name = "tqdm" },
-    { name = "typer" },
-    { name = "typing-extensions" },
-    { name = "wandb" },
-    { name = "xarray" },
-    { name = "zarr" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pandas-stubs" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-xdist" },
-    { name = "types-cachetools" },
-    { name = "types-pyyaml" },
-]
-docs = [
-    { name = "mkdocstrings-python" },
-    { name = "zensical" },
-]
-notebooks = [
-    { name = "cartopy" },
-    { name = "cmocean" },
-    { name = "h5py" },
-    { name = "jupyter" },
-    { name = "s2sphere" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anemoi-datasets", specifier = ">=0.5.39,!=0.5.40" },
-    { name = "anemoi-transform", specifier = ">=0.4.1" },
-    { name = "anemoi-utils", specifier = ">=0.5.9" },
-    { name = "argopy", specifier = ">=1.4.0" },
-    { name = "cdsapi", specifier = ">=0.7.6" },
-    { name = "earthkit-data", specifier = ">=0.20.0" },
-    { name = "filelock", specifier = ">=3.32.2" },
-    { name = "haversine", specifier = ">=2.9.0" },
-    { name = "hydra-core", specifier = ">=1.3.3" },
-    { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
-    { name = "jaxtyping", specifier = ">=0.3.11" },
-    { name = "lightning", specifier = ">=2.6.0,!=2.6.2,!=2.6.3" },
-    { name = "matplotlib", specifier = ">=3.11.1" },
-    { name = "netcdf4", specifier = ">=1.7.0" },
-    { name = "numpy", specifier = ">=2.4.6,<2.5" },
-    { name = "omegaconf", specifier = ">=2.3.1" },
-    { name = "optuna", specifier = ">=4.9.0" },
-    { name = "pandas", specifier = ">=2.3.3" },
-    { name = "pillow", specifier = ">=11.3.0" },
-    { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "pyproj", specifier = ">=3.7.2" },
-    { name = "pytorch-triton", marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "pytorch-triton", marker = "platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "pytorch-triton", marker = "platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "pytorch-triton-xpu", marker = "platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=0.0", index = "https://download.pytorch.org/whl/xpu" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "scikit-learn", specifier = ">=1.9.0" },
-    { name = "torch", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64') or sys_platform != 'linux'", specifier = ">=2.8.0,!=2.10.0" },
-    { name = "torch", marker = "platform_machine == 'aarch64' and 'nvidia' in platform_release and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "torch", marker = "platform_machine == 'aarch64' and 'nvidia' not in platform_release and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'", specifier = ">=2.8.0,!=2.10.0", index = "https://download.pytorch.org/whl/xpu" },
-    { name = "torchmetrics", specifier = ">=1.9.0" },
-    { name = "tqdm", specifier = ">=4.68.0" },
-    { name = "typer", specifier = ">=0.27.1" },
-    { name = "typing-extensions", specifier = ">=4.16.0" },
-    { name = "wandb", specifier = ">=0.28.1" },
-    { name = "xarray", specifier = ">=2025.3.0" },
-    { name = "zarr", specifier = ">=2.18" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.17.0" },
-    { name = "pandas-stubs", specifier = ">=3.0.5.260730" },
-    { name = "pre-commit", specifier = ">=4.2.0" },
-    { name = "pytest", specifier = ">=8.4.1" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "types-cachetools", specifier = ">=7.0.0.20260518" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20260518" },
-]
-docs = [
-    { name = "mkdocstrings-python", specifier = ">=2.0.5" },
-    { name = "zensical", specifier = ">=0.0.53" },
-]
-notebooks = [
-    { name = "cartopy", specifier = ">=0.26.0" },
-    { name = "cmocean", specifier = ">=4.0.3" },
-    { name = "h5py", specifier = ">=3.16.0" },
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "s2sphere", specifier = ">=0.2.5" },
 ]
 
 [[package]]

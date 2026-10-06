@@ -2,7 +2,7 @@
 
 ## Tensor format
 
-All IceNet-MP models operate on tensors in `NTCHW` format:
+All CryoCast models operate on tensors in `NTCHW` format:
 
 | Dimension | Meaning |
 |-----------|---------|
@@ -53,7 +53,7 @@ A residual forecast head is enabled by default so the processor learns a latent-
 
 ```yaml
 processor:
-  _target_: icenet_mp.models.processors.ConvLSTMProcessor
+  _target_: cryocast.models.processors.ConvLSTMProcessor
   hidden_channels: 128
   kernel_size: 3
   n_layers: 2

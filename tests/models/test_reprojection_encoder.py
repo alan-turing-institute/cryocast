@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import torch
 
-from icenet_mp.models.encoders import ReprojectionEncoder
-from icenet_mp.types import DataSpace
+from cryocast.models.encoders import ReprojectionEncoder
+from cryocast.types import DataSpace
 
 INPUT_NAME = "source"
 OUTPUT_NAME = "target"

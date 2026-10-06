@@ -7,8 +7,8 @@ import yaml
 from omegaconf import DictConfig, OmegaConf
 from omegaconf.errors import OmegaConfBaseException
 
-from icenet_mp.sweep import OptunaSweep
-from icenet_mp.sweep.parameters import CategoricalParameter, FloatParameter
+from cryocast.sweep import OptunaSweep
+from cryocast.sweep.parameters import CategoricalParameter, FloatParameter
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:QMCSampler is experimental:optuna.exceptions.ExperimentalWarning"

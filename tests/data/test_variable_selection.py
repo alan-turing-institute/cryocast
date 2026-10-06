@@ -1,6 +1,6 @@
 import pytest
 
-from icenet_mp.data.variable_selection import VariableSelection
+from cryocast.data.variable_selection import VariableSelection
 
 
 class TestTargetGroupName:

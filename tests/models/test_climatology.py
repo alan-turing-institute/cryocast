@@ -4,7 +4,7 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models import Climatology
+from cryocast.models import Climatology
 
 
 class TestClimatology:

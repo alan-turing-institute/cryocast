@@ -32,7 +32,7 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models import EncodeProcessDecode
+from cryocast.models import EncodeProcessDecode
 
 TARGET_GROUP = "sic-ssmis"
 SEED = 1234
@@ -44,7 +44,7 @@ ADDITIVE_SKIP_DECODER: dict[str, Any] = {
 }
 # A small ViT: unlike NullProcessor it reads the whole history window.
 VIT_PROCESSOR: dict[str, Any] = {
-    "_target_": "icenet_mp.models.processors.VitProcessor",
+    "_target_": "cryocast.models.processors.VitProcessor",
     "patch_size": 4,
     "emb_dim": 32,
     "depth": 1,
@@ -80,7 +80,7 @@ def _build_model(
             "latent_space": (latent, latent),
             **{
                 space["name"]: {
-                    "_target_": "icenet_mp.models.encoders.CNNEncoder",
+                    "_target_": "cryocast.models.encoders.CNNEncoder",
                     "n_layers": 1,
                 }
                 for space in input_spaces
@@ -88,7 +88,7 @@ def _build_model(
         }
     )
     decoder_payload: dict[str, Any] = {
-        "_target_": "icenet_mp.models.decoders.CNNDecoder",
+        "_target_": "cryocast.models.decoders.CNNDecoder",
         "n_layers": 1,
     }
     decoder_payload.update(decoder_extra or {})
@@ -100,7 +100,7 @@ def _build_model(
         name="cnn-null-cnn",
         encoders=encoders,
         processor=DictConfig(
-            processor or {"_target_": "icenet_mp.models.processors.NullProcessor"}
+            processor or {"_target_": "cryocast.models.processors.NullProcessor"}
         ),
         decoder=decoder,
         hemisphere="north",
@@ -120,9 +120,9 @@ def _build_model(
         metrics=[
             {
                 "name": "accuracy",
-                "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+                "_target_": "cryocast.metrics.IceNetAccuracyPerForecastDay",
             },
-            {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+            {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"},
         ],
         # Required since #405: which variable(s) of the target INPUT group are the
         # prediction target. output_space is single-channel throughout these tests,

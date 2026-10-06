@@ -13,7 +13,7 @@ from anemoi.datasets.create.recipe import Recipe
 from anemoi.datasets.create.recipe.dates import StartEndDates
 from anemoi.datasets.create.sources import source_registry
 
-from icenet_mp.ingestion.sources import (
+from cryocast.ingestion.sources import (
     ArgoSource,
     FTPSource,
     SyntheticSource,

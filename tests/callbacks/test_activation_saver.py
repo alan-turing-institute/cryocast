@@ -8,7 +8,7 @@ import torch
 from lightning import LightningModule
 from torch import nn
 
-from icenet_mp.callbacks import ActivationSaver
+from cryocast.callbacks import ActivationSaver
 
 
 class MinimalReusedLayerModel(nn.Module):

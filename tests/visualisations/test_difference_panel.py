@@ -1,4 +1,4 @@
-"""Tests for icenet_mp/visualisations/difference_calculator.py.
+"""Tests for cryocast/visualisations/difference_calculator.py.
 
 Covers the difference and standardised-difference computations for a
 ground-truth/prediction pair.
@@ -7,9 +7,9 @@ ground-truth/prediction pair.
 import numpy as np
 import pytest
 
-from icenet_mp.exceptions import InvalidArrayError
-from icenet_mp.types import DiffMode
-from icenet_mp.visualisations.difference_panel import (
+from cryocast.exceptions import InvalidArrayError
+from cryocast.types import DiffMode
+from cryocast.visualisations.difference_panel import (
     DifferencePanel,
 )
 

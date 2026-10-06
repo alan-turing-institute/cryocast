@@ -1,6 +1,6 @@
 # Create a release
 
-IceNet-MP uses [CalVer](https://calver.org/) of the format `YYYY.MM` (e.g. `2026.07`) for version numbers. Releases are made at least once per milestone, or sooner if there have been significant changes or improvements to the model.
+CryoCast uses [CalVer](https://calver.org/) of the format `YYYY.MM` (e.g. `2026.07`) for version numbers. Releases are made at least once per milestone, or sooner if there have been significant changes or improvements to the model.
 
 ## 1. Prepare the release
 

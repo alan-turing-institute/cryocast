@@ -179,9 +179,9 @@ def cfg_model_service() -> DictConfig:
                 "metrics": [
                     {
                         "name": "accuracy",
-                        "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+                        "_target_": "cryocast.metrics.IceNetAccuracyPerForecastDay",
                     },
-                    {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
+                    {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"},
                 ],
             },
             "train": {

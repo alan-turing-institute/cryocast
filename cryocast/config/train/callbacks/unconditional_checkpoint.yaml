@@ -1,0 +1,3 @@
+unconditional_checkpoint:
+  _target_: cryocast.callbacks.UnconditionalCheckpoint
+  on_train_end: true

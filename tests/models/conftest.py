@@ -7,7 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 @pytest.fixture
 def cfg_decoder() -> DictConfig:
     """Test configuration for a decoder."""
-    return DictConfig({"_target_": "icenet_mp.models.decoders.NaiveLinearDecoder"})
+    return DictConfig({"_target_": "cryocast.models.decoders.NaiveLinearDecoder"})
 
 
 @pytest.fixture
@@ -17,10 +17,10 @@ def cfg_encoders() -> DictConfig:
         {
             "latent_space": (64, 64),
             "test-input": {
-                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
+                "_target_": "cryocast.models.encoders.NaiveLinearEncoder",
             },
             "target": {
-                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
+                "_target_": "cryocast.models.encoders.NaiveLinearEncoder",
             },
         }
     )
@@ -56,42 +56,42 @@ def cfg_metrics() -> list[dict[str, Any]]:
     return [
         {
             "name": "accuracy",
-            "_target_": "icenet_mp.metrics.IceNetAccuracyPerForecastDay",
+            "_target_": "cryocast.metrics.IceNetAccuracyPerForecastDay",
         },
-        {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"},
-        {"name": "rmse", "_target_": "icenet_mp.metrics.RMSEPerForecastDay"},
+        {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"},
+        {"name": "rmse", "_target_": "cryocast.metrics.RMSEPerForecastDay"},
         {
             "name": "sieerror",
-            "_target_": "icenet_mp.metrics.SeaIceExtentErrorPerForecastDay",
+            "_target_": "cryocast.metrics.SeaIceExtentErrorPerForecastDay",
         },
         {
             "name": "iiee",
-            "_target_": "icenet_mp.metrics.IntegratedIceEdgeErrorPerForecastDay",
+            "_target_": "cryocast.metrics.IntegratedIceEdgeErrorPerForecastDay",
         },
         {
             "name": "diiee",
-            "_target_": "icenet_mp.metrics.DistanceAveragedIceEdgeErrorPerForecastDay",
+            "_target_": "cryocast.metrics.DistanceAveragedIceEdgeErrorPerForecastDay",
         },
         {
             "name": "centroid_error",
-            "_target_": "icenet_mp.metrics.CentroidErrorPerForecastDay",
+            "_target_": "cryocast.metrics.CentroidErrorPerForecastDay",
         },
         {
             "name": "fss_neighbourhood_size_1",
-            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "_target_": "cryocast.metrics.FractionalSkillScorePerForecastDay",
             "neighbourhood_size": 1,
         },
         {
             "name": "fss_neighbourhood_size_5",
-            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "_target_": "cryocast.metrics.FractionalSkillScorePerForecastDay",
             "neighbourhood_size": 5,
         },
         {
             "name": "fss_neighbourhood_size_15",
-            "_target_": "icenet_mp.metrics.FractionalSkillScorePerForecastDay",
+            "_target_": "cryocast.metrics.FractionalSkillScorePerForecastDay",
             "neighbourhood_size": 15,
         },
-        {"name": "ssim", "_target_": "icenet_mp.metrics.SSIMPerForecastDay"},
+        {"name": "ssim", "_target_": "cryocast.metrics.SSIMPerForecastDay"},
     ]
 
 
@@ -116,7 +116,7 @@ def cfg_output_space() -> DictConfig:
 @pytest.fixture
 def cfg_processor() -> DictConfig:
     """Test configuration for a processor."""
-    return DictConfig({"_target_": "icenet_mp.models.processors.NullProcessor"})
+    return DictConfig({"_target_": "cryocast.models.processors.NullProcessor"})
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from icenet_mp.visualisations.land_mask import LandMask
+from cryocast.visualisations.land_mask import LandMask
 
 
 class TestLandMaskConstruction:

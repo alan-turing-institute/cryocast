@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from anemoi.datasets.create.sources import source_registry
 
-from icenet_mp.ingestion.sources import CARRA2Source, register_sources
+from cryocast.ingestion.sources import CARRA2Source, register_sources
 
 
 def test_carra2_builds_request_for_exact_analysis_time() -> None:
@@ -61,10 +61,10 @@ def test_carra2_execute_downloads_each_requested_time(
     combine = MagicMock(return_value=combined_fields)
 
     monkeypatch.setattr(
-        "icenet_mp.ingestion.sources.carra2.cdsapi.Client", client_factory
+        "cryocast.ingestion.sources.carra2.cdsapi.Client", client_factory
     )
-    monkeypatch.setattr("icenet_mp.ingestion.sources.carra2.from_source", load_fields)
-    monkeypatch.setattr("icenet_mp.ingestion.sources.carra2.MultiFieldList", combine)
+    monkeypatch.setattr("cryocast.ingestion.sources.carra2.from_source", load_fields)
+    monkeypatch.setattr("cryocast.ingestion.sources.carra2.MultiFieldList", combine)
 
     result = source.execute(dates)
 
