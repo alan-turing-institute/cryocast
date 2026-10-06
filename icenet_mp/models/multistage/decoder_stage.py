@@ -138,25 +138,27 @@ class DecoderStage(BaseModel):
         self,
         batch: dict[str, TensorNTCHW],
     ) -> dict[str, TensorNTCHW]:
-        """Extract only the two time steps from each relevant batch element.
+        """Align decoder inputs with the physical timestamp they must decode.
 
-        Inputs use t=-2 (yesterday) while the target uses t=-1 (today). We also extract
-        a persistence entry using t=-2 but sliced to only the target variables.
+        Encoder inputs and the target both use t=-1. This makes decoder pretraining a
+        same-timestamp latent-to-physical mapping, matching how ProcessorStage later
+        supplies predicted future latents to the frozen decoder.
 
-        This is because we want the decoder to learn an NCHW -> NCHW mapping but also to
-        include the most recent target value as a skip connection for each forecast so
-        that the decoder will learn to predict residuals. If we use the same time step
-        for both input and target, the model will learn that these residuals are zero.
+        If a decoder skip connection is configured, persistence still comes from t=-2:
+        the decoder then learns the change from the previous physical state to the
+        t=-1 target while conditioning on the t=-1 latent. Without a skip connection,
+        persistence is unused and is kept at t=-1 for a consistent batch contract.
         """
+        persistence_t = -2 if self.decoder.skip_connection else -1
         return {
-            name: batch[name][:, -2, :, :, :].unsqueeze(1)
+            name: batch[name][:, -1, :, :, :].unsqueeze(1)
             for name in self.encoder_names
         } | {
             "target": batch[self.target_name][
                 :, -1, self.target_variable_indices, :, :
             ].unsqueeze(1),
             "persistence": batch[self.target_name][
-                :, -2, self.target_variable_indices, :, :
+                :, persistence_t, self.target_variable_indices, :, :
             ].unsqueeze(1),
         }
 

@@ -40,7 +40,7 @@ class TestDecoderStage:
             *cfg_output_space["shape"],
         )
 
-    def test_process_batch_extracts_expected_timesteps(
+    def test_process_batch_aligns_encoder_and_target_timesteps(
         self,
         encoder_stage: EncoderStage,
         *,
@@ -49,7 +49,7 @@ class TestDecoderStage:
         cfg_output_space: DictConfig,
     ) -> None:
         # Predict only channel 2 of a 3-channel target group, so that the selection of
-        # target variables is visible in the processed batch
+        # target variables is visible in the processed batch.
         decoder_stage = DecoderStage.from_template(
             decoder=cfg_decoder,
             encoders=[encoder_stage],
@@ -57,8 +57,6 @@ class TestDecoderStage:
             target_dataset_name="target",
             target_variable_indices=[2],
         )
-        # t=-2 feeds the encoders and the persistence skip connection; t=-1 is the
-        # forecast target. Using three history steps makes the -2/-1 split unambiguous.
         batch_size = 2
         n_history_steps = 3
         test_input = torch.rand(
@@ -73,7 +71,51 @@ class TestDecoderStage:
             {"test-input": test_input, "target": target}
         )
 
-        assert torch.equal(processed["test-input"], test_input[:, -2].unsqueeze(1))
+        # The latent input and physical target must represent the same timestamp. If the
+        # decoder is trained on t=-2 -> t=-1 instead, a future latent predicted by the
+        # processor is advanced by the decoder a second time (issue #562).
+        assert torch.equal(processed["test-input"], test_input[:, -1].unsqueeze(1))
+        assert torch.equal(processed["target"], target[:, -1, [2], :, :].unsqueeze(1))
+        assert torch.equal(
+            processed["persistence"], target[:, -1, [2], :, :].unsqueeze(1)
+        )
+
+    def test_process_batch_keeps_previous_state_as_skip_anchor(
+        self,
+        encoder_stage: EncoderStage,
+        *,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+    ) -> None:
+        decoder_stage = DecoderStage.from_template(
+            decoder=DictConfig(
+                {
+                    "_target_": "icenet_mp.models.decoders.NaiveLinearDecoder",
+                    "skip_connection": {"method": "additive"},
+                }
+            ),
+            encoders=[encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
+            target_dataset_name="target",
+            target_variable_indices=[2],
+        )
+        batch_size = 2
+        n_history_steps = 3
+        test_input = torch.rand(
+            batch_size,
+            n_history_steps,
+            cfg_input_space["channels"],
+            *cfg_input_space["shape"],
+        )
+        target = torch.rand(batch_size, n_history_steps, 3, *cfg_output_space["shape"])
+
+        processed = decoder_stage.process_batch(
+            {"test-input": test_input, "target": target}
+        )
+
+        # Residual decoders still anchor the physical increment to the previous state,
+        # while the encoded features remain aligned with the target timestamp.
+        assert torch.equal(processed["test-input"], test_input[:, -1].unsqueeze(1))
         assert torch.equal(processed["target"], target[:, -1, [2], :, :].unsqueeze(1))
         assert torch.equal(
             processed["persistence"], target[:, -2, [2], :, :].unsqueeze(1)
