@@ -46,3 +46,6 @@ eps: 1.0e-12 # Guard inside sqrt(P*T); keeps gradients finite for zero fields
 #                   magnitude, keeping spectral_weight and the lr comparable
 #                   with the unweighted arm.
 wavenumber_weight: null
+
+# Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.
+lead_time_exponent: null

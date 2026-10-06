@@ -33,3 +33,4 @@
 # =============================================================================
 
 _target_: icenet_mp.losses.rmse_loss.RMSELoss
+lead_time_exponent: null # Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.

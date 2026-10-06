@@ -93,14 +93,10 @@ class ReprojectFilter(Filter):
     def forward(self, data: ekd.FieldList | pd.DataFrame) -> ekd.FieldList:
         """Apply the forward regridding transformation.
 
-        Parameters
-        ----------
-        data : ekd.FieldList
-            The input data to be transformed.
+        Args:
+            data: The input data to be transformed.
 
-        Returns
-        -------
-        ekd.FieldList
+        Returns:
             The transformed data.
 
         """

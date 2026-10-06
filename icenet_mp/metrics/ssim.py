@@ -24,34 +24,30 @@ class SSIMPerForecastDay(BaseDailyMetric):
 
     def __init__(
         self,
-        max_val: float = 1.0,
-        filter_size: int = 11,
+        *,
         filter_sigma: float = 1.5,
+        filter_size: int = 11,
         k1: float = 0.01,
         k2: float = 0.03,
         land_mask: torch.Tensor | None = None,
+        max_val: float = 1.0,
     ) -> None:
-        """Initialize the SSIM metric.
+        """Initialise the SSIM metric.
 
-        Parameters
-        ----------
-        max_val: float, optional
-            The maximum magnitude that predictions or targets can have (default is 1.0).
-        filter_size: int, optional
-            Size (in pixels) of the square Gaussian filtering window. Must be a
-            positive odd integer (default is 11).
-        filter_sigma: float, optional
-            The bandwidth of the Gaussian used for filtering (> 0.) (default is 1.5).
-        k1: float, optional
-            One of the SSIM dampening parameters (> 0.) (default is 0.01).
-        k2: float, optional
-            One of the SSIM dampening parameters (> 0.) (default is 0.03).
-        land_mask: torch.Tensor, optional
-            Boolean tensor of shape (H, W), True for ocean cells and False for land.
-            When given, land cells are excluded from the final averaged score. Note
-            this does not prevent land values from influencing the SSIM of nearby
-            ocean cells via the Gaussian filter window, which is applied before
-            masking.
+        Args:
+            filter_sigma: The bandwidth of the Gaussian used for filtering (> 0.)
+                (default is 1.5).
+            filter_size: Size (in pixels) of the square Gaussian filtering window. Must
+                be a positive odd integer (default is 11).
+            k1: One of the SSIM dampening parameters (> 0.) (default is 0.01).
+            k2: One of the SSIM dampening parameters (> 0.) (default is 0.03).
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the final averaged
+                score. Note this does not prevent land values from influencing the SSIM
+                of nearby ocean cells via the Gaussian filter window, which is applied
+                before masking.
+            max_val: The maximum magnitude that predictions or targets can have (default
+                is 1.0).
 
         """
         super().__init__(land_mask=land_mask)
@@ -63,7 +59,10 @@ class SSIMPerForecastDay(BaseDailyMetric):
         self.padding = filter_size // 2
 
         kernel_1d = self._gaussian_kernel(filter_size, filter_sigma)
-        self.register_buffer("kernel", kernel_1d.outer(kernel_1d)[None, None])
+        # Non-persistent as we do not want to save metric state in checkpoints
+        self.register_buffer(
+            "kernel", kernel_1d.outer(kernel_1d)[None, None], persistent=False
+        )
 
     @staticmethod
     def _gaussian_kernel(filter_size: int, filter_sigma: float) -> torch.Tensor:

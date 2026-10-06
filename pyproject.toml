@@ -73,9 +73,9 @@ docs = [
     "zensical>=0.0.53",
 ]
 notebooks = [
+    "cartopy>=0.26.0",
     "cmocean>=4.0.3",
-    "download-toolbox>=0.0.6",
-    "gdal>=3.10.0", # PyPI only ships an sdist; requires a matching system GDAL install and build toolchain
+    "h5py>=3.16.0",
     "jupyter>=1.1.1",
     "s2sphere>=0.2.5",
 ]
@@ -162,7 +162,7 @@ max-args = 6
 [tool.uv]
 constraint-dependencies = [
     "eckitlib<=2.1.0.21", # required by anemoi-datasets
-    "erddapy!=3.3.0", # required by argopy
+    "erddapy!=3.3.0,!=3.3.1", # required by argopy. argopy<=1.4.0 requires erddapy.erddapy._quote_string_constraints which are removed in 3.3.0
     "odclib<=1.6.3.21", # required by anemoi-datasets
 ]
 

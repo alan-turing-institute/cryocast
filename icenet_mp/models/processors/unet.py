@@ -26,6 +26,7 @@ class UNetProcessor(BaseProcessor):
         self,
         *,
         kernel_size: int = 3,
+        norm_type: str = "batchnorm",
         start_out_channels: int = 128,
         **kwargs: Any,
     ) -> None:
@@ -33,6 +34,8 @@ class UNetProcessor(BaseProcessor):
 
         Args:
             kernel_size: Size of the convolutional filters.
+            norm_type: Type of normalization inside the blocks ("batchnorm",
+                "channelnorm", "groupnorm" or "none").
             start_out_channels: Number of output channels in the first layer.
             kwargs: Arguments to BaseProcessor.
 
@@ -57,29 +60,48 @@ class UNetProcessor(BaseProcessor):
             self.data_space.channels * self.n_history_steps,
             channels[0],
             kernel_size=kernel_size,
+            norm_type=norm_type,
         )
         self.maxpool1 = nn.MaxPool2d(kernel_size=2)
-        self.conv2 = CommonConvBlock(channels[0], channels[1], kernel_size=kernel_size)
+        self.conv2 = CommonConvBlock(
+            channels[0], channels[1], kernel_size=kernel_size, norm_type=norm_type
+        )
         self.maxpool2 = nn.MaxPool2d(kernel_size=2)
-        self.conv3 = CommonConvBlock(channels[1], channels[2], kernel_size=kernel_size)
+        self.conv3 = CommonConvBlock(
+            channels[1], channels[2], kernel_size=kernel_size, norm_type=norm_type
+        )
         self.maxpool3 = nn.MaxPool2d(kernel_size=2)
-        self.conv4 = CommonConvBlock(channels[2], channels[2], kernel_size=kernel_size)
+        self.conv4 = CommonConvBlock(
+            channels[2], channels[2], kernel_size=kernel_size, norm_type=norm_type
+        )
         self.maxpool4 = nn.MaxPool2d(kernel_size=2)
 
         # Bottleneck
-        self.conv5 = CommonConvBlock(channels[2], channels[3], kernel_size=kernel_size)
+        self.conv5 = CommonConvBlock(
+            channels[2], channels[3], kernel_size=kernel_size, norm_type=norm_type
+        )
 
         # Decoder
-        self.up6 = ConvNormActUpsample(channels[3], channels[2])
-        self.up7 = ConvNormActUpsample(channels[2], channels[2])
-        self.up8 = ConvNormActUpsample(channels[2], channels[1])
-        self.up9 = ConvNormActUpsample(channels[1], channels[0])
+        self.up6 = ConvNormActUpsample(channels[3], channels[2], norm_type=norm_type)
+        self.up7 = ConvNormActUpsample(channels[2], channels[2], norm_type=norm_type)
+        self.up8 = ConvNormActUpsample(channels[2], channels[1], norm_type=norm_type)
+        self.up9 = ConvNormActUpsample(channels[1], channels[0], norm_type=norm_type)
 
-        self.up6b = CommonConvBlock(channels[3], channels[2], kernel_size=kernel_size)
-        self.up7b = CommonConvBlock(channels[3], channels[2], kernel_size=kernel_size)
-        self.up8b = CommonConvBlock(channels[2], channels[1], kernel_size=kernel_size)
+        self.up6b = CommonConvBlock(
+            channels[3], channels[2], kernel_size=kernel_size, norm_type=norm_type
+        )
+        self.up7b = CommonConvBlock(
+            channels[3], channels[2], kernel_size=kernel_size, norm_type=norm_type
+        )
+        self.up8b = CommonConvBlock(
+            channels[2], channels[1], kernel_size=kernel_size, norm_type=norm_type
+        )
         self.up9b = CommonConvBlock(
-            channels[1], channels[0], kernel_size=kernel_size, n_subblocks=3
+            channels[1],
+            channels[0],
+            kernel_size=kernel_size,
+            n_subblocks=3,
+            norm_type=norm_type,
         )
 
         # Final layer

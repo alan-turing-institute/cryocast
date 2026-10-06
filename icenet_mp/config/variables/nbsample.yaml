@@ -1,0 +1,8 @@
+input:
+  sic-osisaf:
+    - ice_conc
+    - status_flag
+    - total_standard_uncertainty
+target:
+  sic-osisaf:
+    - ice_conc
