@@ -272,19 +272,9 @@ class EncodeProcessDecode(BaseModel):
         if target_input_encoder is None:
             return self.target_encoder.rollout(target)
 
+        # The forecast target may contain only a subset of variables from the target
+        # dataset. We persist omitted variables from the last observed frame.
         target_input = inputs[self.output_space.name]
-        if tuple(target_input.shape[2:]) != target_input_encoder.data_space_in.chw:
-            msg = (
-                f"Target input CHW {tuple(target_input.shape[2:])} does not match "
-                f"'{target_input_encoder.name}' encoder input (C, H, W)="
-                f"{target_input_encoder.data_space_in.chw}."
-            )
-            raise ValueError(msg)
-
-        # The forecast target may contain only a subset of the target dataset's
-        # physical variables. Persist omitted variables from the last observed
-        # frame so target supervision uses the same encoder/coordinate system as
-        # the history that the processor and decoder see.
         full_target = (
             target_input[:, -1:].expand(-1, target.shape[1], -1, -1, -1).clone()
         )
@@ -476,13 +466,6 @@ class EncodeProcessDecode(BaseModel):
 
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
-            if tuple(target.shape[2:]) != self.output_space.chw:
-                msg = (
-                    f"Target CHW {tuple(target.shape[2:])} does not match output space "
-                    f"(C, H, W)={self.output_space.chw}."
-                )
-                raise ValueError(msg)
-
             # Encode inputs and target into decoder-compatible latent space.
             latent_input_combined = self._encode_inputs(batch)
             target_latent = self.encode_target_latent(batch, target)
