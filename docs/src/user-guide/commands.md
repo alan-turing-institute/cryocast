@@ -24,7 +24,7 @@ To create the CARRA2 target for the initial Svalbard downscaling region
 (76-81°N, 15-35°E), use:
 
 ```bash
-uv run imp datasets create data=downscaling_north
+uv run cryocast datasets create data=downscaling_north
 ```
 
 The stored target is the smallest rectangular window on the native CARRA2 2.5 km
@@ -34,7 +34,7 @@ paired OSI SAF 25 km sea-ice concentration needed to train the downscaler.
 Train the downscaler with:
 
 ```bash
-uv run imp train --config-name downscaling_north
+uv run cryocast train --config-name downscaling_north
 ```
 
 The model starts from a coordinate-aligned bilinear interpolation baseline and learns a
@@ -166,6 +166,22 @@ uv run cryocast evaluate --checkpoint PATH_TO_A_CHECKPOINT --save-predictions
 ```
 
 Use `data.split.test` to control which dates are exported. NetCDF export currently requires single-process evaluation.
+
+## `evaluate-downscaling`
+
+For a trained CARRA2 downscaler, compare the learned result against the exact
+coordinate-aligned interpolation baseline on the same held-out samples:
+
+```bash
+uv run cryocast evaluate-downscaling --config-name downscaling_north \
+  --checkpoint PATH_TO_A_DOWNSCALER_CHECKPOINT \
+  --output carra2-comparison.json
+```
+
+The report includes valid-cell MAE/RMSE plus gradient and high-frequency spectral
+diagnostics, with percentage improvements relative to interpolation. Use
+`--max-batches` only for smoke tests; conclusions should use the complete configured
+test period.
 
 ### Visualisations
 

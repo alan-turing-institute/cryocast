@@ -1,11 +1,15 @@
+import json
 import logging
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from omegaconf import DictConfig
 
+from cryocast.evaluation import compare_downscaler
 from cryocast.model_service import ModelService
+from cryocast.models import Downscaler
 
 from .hydra import hydra_adaptor
 
@@ -87,6 +91,61 @@ def evaluate(
 
     model = ModelService.from_checkpoint(config, Path(checkpoint).resolve())
     model.evaluate()
+
+
+@evaluation_cli.command(name="evaluate-downscaling")
+@hydra_adaptor
+def evaluate_downscaling(
+    config: DictConfig,
+    checkpoint: Annotated[
+        str, typer.Option(help="Path of a trained downscaler checkpoint")
+    ],
+    output: Annotated[
+        str | None,
+        typer.Option(help="Optional path for the JSON comparison report"),
+    ] = None,
+    device: Annotated[
+        str,
+        typer.Option(help="Torch device used for the comparison"),
+    ] = "cpu",
+    high_frequency_cutoff: Annotated[
+        float,
+        typer.Option(
+            help=(
+                "Normalised radial-frequency cutoff used for the high-frequency "
+                "power diagnostic"
+            )
+        ),
+    ] = 0.5,
+    max_batches: Annotated[
+        int | None,
+        typer.Option(help="Optional maximum number of test batches"),
+    ] = None,
+) -> None:
+    """Compare a trained downscaler with its geographic interpolation baseline."""
+    service = ModelService.from_checkpoint(config, Path(checkpoint).resolve())
+    if not isinstance(service.model, Downscaler):
+        msg = (
+            "evaluate-downscaling requires a Downscaler checkpoint, got "
+            f"{type(service.model).__name__}."
+        )
+        raise TypeError(msg)
+
+    service.data_module.assign_workers(0)
+    comparison = compare_downscaler(
+        service.model,
+        service.data_module.test_dataloader(),
+        device=device,
+        high_frequency_cutoff=high_frequency_cutoff,
+        max_batches=max_batches,
+    )
+    rendered = json.dumps(asdict(comparison), indent=2, sort_keys=True)
+    typer.echo(rendered)
+
+    if output is not None:
+        output_path = Path(output).expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
