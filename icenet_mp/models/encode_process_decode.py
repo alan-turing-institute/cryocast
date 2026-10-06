@@ -208,6 +208,14 @@ class EncodeProcessDecode(BaseModel):
     def multistage_only(self) -> bool:
         return self.processor.computes_loss_in_latent_space
 
+    @property
+    def target_input_encoder(self) -> BaseEncoder | None:
+        """Return the input encoder whose dataset contains the forecast target."""
+        for encoder, input_space in zip(self.encoders, self.input_spaces, strict=True):
+            if input_space.name == self.output_space.name:
+                return encoder
+        return None
+
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all input datasets and concatenate along the channel dimension.
 
@@ -223,37 +231,6 @@ class EncodeProcessDecode(BaseModel):
             encoder.rollout(inputs[encoder.name]) for encoder in self.encoders
         ]
         return torch.cat(latent_inputs, dim=2)
-
-    def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
-        """Extract the last frame's target variables as the decoder skip-connection anchor.
-
-        Returns None if the decoder has no skip connection configured, in which case
-        the anchor is unused.
-
-        Args:
-            window: TensorNTCHW holding the target dataset, most recent frame last, e.g.
-                the model's own input window or an evolving physical rollout state.
-
-        """
-        if not self.decoder.skip_connection:
-            return None
-        return window[:, -1, self.target_variable_indices, :, :]
-
-    def _find_target_channel_offset(self) -> int | None:
-        """Find the channel offset of the target dataset within the combined latent space, if present."""
-        target_input_encoder = self.target_input_encoder
-        if target_input_encoder is None:
-            return None
-        idx = self.encoders.index(target_input_encoder)
-        return sum(encoder.data_space_out.channels for encoder in self.encoders[:idx])
-
-    @property
-    def target_input_encoder(self) -> BaseEncoder | None:
-        """Return the input encoder whose dataset contains the forecast target."""
-        for encoder, input_space in zip(self.encoders, self.input_spaces, strict=True):
-            if input_space.name == self.output_space.name:
-                return encoder
-        return None
 
     def _encode_target_latent(
         self, inputs: dict[str, TensorNTCHW], target: TensorNTCHW
@@ -281,6 +258,29 @@ class EncodeProcessDecode(BaseModel):
         # Detach so that the latent loss cannot move the shared input encoder away
         # from the latent space that the frozen decoder was trained on.
         return target_input_encoder.rollout(full_target).detach()
+
+    def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
+        """Extract the last frame's target variables as the decoder skip-connection anchor.
+
+        Returns None if the decoder has no skip connection configured, in which case
+        the anchor is unused.
+
+        Args:
+            window: TensorNTCHW holding the target dataset, most recent frame last, e.g.
+                the model's own input window or an evolving physical rollout state.
+
+        """
+        if not self.decoder.skip_connection:
+            return None
+        return window[:, -1, self.target_variable_indices, :, :]
+
+    def _find_target_channel_offset(self) -> int | None:
+        """Find the channel offset of the target dataset within the combined latent space, if present."""
+        target_input_encoder = self.target_input_encoder
+        if target_input_encoder is None:
+            return None
+        idx = self.encoders.index(target_input_encoder)
+        return sum(encoder.data_space_out.channels for encoder in self.encoders[:idx])
 
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.
