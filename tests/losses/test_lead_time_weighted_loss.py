@@ -4,8 +4,8 @@ import math
 import pytest
 import torch
 
-from icenet_mp.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
-from icenet_mp.types import SupportsPerLeadTimeLoss
+from cryocast.losses import AMSELoss, LeadTimeWeightedLoss, RMSELoss
+from cryocast.types import SupportsPerLeadTimeLoss
 
 from .conftest import make_fields
 

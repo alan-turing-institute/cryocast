@@ -4,8 +4,8 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
-from icenet_mp.losses import LeadTimeWeightedLoss
-from icenet_mp.losses.build_loss import build_loss
+from cryocast.losses import LeadTimeWeightedLoss
+from cryocast.losses.build_loss import build_loss
 
 
 class TestBuildLoss:
@@ -60,7 +60,7 @@ class TestBuildLoss:
     def test_rejects_double_wrap(self) -> None:
         cfg = OmegaConf.create(
             {
-                "_target_": "icenet_mp.losses.lead_time_weighted_loss.LeadTimeWeightedLoss",
+                "_target_": "cryocast.losses.lead_time_weighted_loss.LeadTimeWeightedLoss",
                 "wrapped_loss": {"_target_": "torch.nn.MSELoss"},
                 "lead_time_exponent": 2.0,
             }

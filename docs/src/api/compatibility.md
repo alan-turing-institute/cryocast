@@ -1,3 +1,3 @@
 # Compatibility
 
-::: icenet_mp.compatibility
+::: cryocast.compatibility

@@ -7,16 +7,18 @@ from typing import Any, ClassVar, cast
 from unittest.mock import MagicMock
 
 import pytest
+import torch
+from lightning import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.callbacks import MediaLoggingCallback, PredictionWriter
-from icenet_mp.model_service import ModelService
-from icenet_mp.models import EncodeProcessDecode
-from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from icenet_mp.types import DataSpace
+from cryocast.callbacks import MediaLoggingCallback, PredictionWriter
+from cryocast.model_service import ModelService
+from cryocast.models import EncodeProcessDecode
+from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
+from cryocast.types import DataSpace
 
-MAE_METRIC_CFG = {"name": "mae", "_target_": "icenet_mp.metrics.MAEPerForecastDay"}
+MAE_METRIC_CFG = {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"}
 
 
 class FakeCommonDataModule:
@@ -64,6 +66,91 @@ class FakeModel:
         return model
 
 
+def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
+    """Build a real full model and a pretrained ProcessorStage to hand over from.
+
+    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. As the
+    target dataset is also an input, the DiffusionProcessor's latent loss uses the
+    input encoder rather than the target encoder, which is only handed over here.
+    """
+    space = DictConfig({"name": "sic", "channels": 1, "shape": [16, 16]})
+    encoder = DictConfig(
+        {
+            "_target_": "cryocast.models.encoders.CNNEncoder",
+            "n_layers": 1,
+            "n_subblocks": 1,
+            "activation": "LeakyReLU",
+        }
+    )
+    decoder = DictConfig({"_target_": "cryocast.models.decoders.NaiveLinearDecoder"})
+    processor = DictConfig(
+        {
+            "_target_": "cryocast.models.processors.DiffusionProcessor",
+            "timesteps": 2,
+            "start_out_channels": 8,
+            "time_embed_dim": 256,
+            "normalization": "none",
+            "dropout_rate": 0.0,
+            "loss": {"_target_": "torch.nn.MSELoss"},
+        }
+    )
+    model = EncodeProcessDecode(
+        encoders=DictConfig({"latent_space": [16, 16], "sic": encoder}),
+        processor=processor,
+        decoder=decoder,
+        target_variable_indices=[0],
+        hemisphere="north",
+        input_spaces=[space],
+        output_space=space,
+        mask_dir=str(mask_dir),
+        n_history_steps=2,
+        n_forecast_steps=2,
+        name="finetune-handover",
+        metrics=[],
+        loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+        optimizer=DictConfig({"_target_": "torch.optim.Adam", "lr": 1e-3}),
+        scheduler=DictConfig({}),
+        lr_scheduler=DictConfig({}),
+    )
+    input_stage = EncoderStage.from_template(
+        channel_names=["sic"],
+        data_space_in=model.input_spaces[0],
+        dataset="sic",
+        decoder=decoder,
+        encoder=encoder,
+        template=model,
+    )
+    target_stage = EncoderStage.from_template(
+        channel_names=["sic"],
+        data_space_in=model.target_encoder.data_space_in,
+        dataset="target",
+        decoder=decoder,
+        encoder=encoder,
+        template=model,
+    )
+    decoder_stage = DecoderStage.from_template(
+        decoder=decoder,
+        encoders=[input_stage],
+        output_space=model.output_space,
+        target_dataset_name="sic",
+        target_variable_indices=[0],
+    )
+    pretrained = ProcessorStage.from_template(
+        processor=processor,
+        decoder_model=decoder_stage,
+        target_encoder=target_stage,
+    )
+    # Stand in for checkpoint contents without running an optimisation step
+    with torch.no_grad():
+        for parameter in pretrained.target_encoder.parameters():
+            parameter.add_(0.5)
+        for buffer in pretrained.target_encoder.buffers():
+            buffer.add_(2)
+    service = ModelService.__new__(ModelService)
+    service.model_ = model
+    return service, pretrained
+
+
 class TestModelService:
     def test_init_seeds_when_random_seed_configured(self) -> None:
         """Seed global RNGs and set reproducibility env vars when a seed is set."""
@@ -72,10 +159,10 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(os, "environ", os.environ.copy())
             mock_seed_everything = MagicMock()
-            mp.setattr("icenet_mp.model_service.seed_everything", mock_seed_everything)
-            mp.setattr("icenet_mp.model_service.patch_open_file_limit", MagicMock())
+            mp.setattr("cryocast.model_service.seed_everything", mock_seed_everything)
+            mp.setattr("cryocast.model_service.patch_open_file_limit", MagicMock())
             mp.setattr(
-                "icenet_mp.model_service.patch_interpolate_antialias", MagicMock()
+                "cryocast.model_service.patch_interpolate_antialias", MagicMock()
             )
             service = ModelService(config)
 
@@ -90,9 +177,9 @@ class TestModelService:
         mock_instantiate.return_value = FakeModel()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.instantiate", mock_instantiate
+                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
             )
             service = ModelService.from_config(cfg_model_service)
             assert isinstance(service.model, FakeModel)
@@ -124,13 +211,13 @@ class TestModelService:
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
             assert isinstance(service.model, FakeModel)
@@ -151,12 +238,12 @@ class TestModelService:
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
-            mp.setattr("icenet_mp.model_service.torch.load", lambda *_a, **_k: {})
+            mp.setattr("cryocast.model_service.torch.load", lambda *_a, **_k: {})
             service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
 
         assert service.model.checkpoint_epoch is None
@@ -175,13 +262,13 @@ class TestModelService:
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(
                 DictConfig(
@@ -219,13 +306,13 @@ class TestModelService:
         OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(
                 DictConfig(
@@ -266,13 +353,13 @@ class TestModelService:
         }
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(cli_config, checkpoint_path)
 
@@ -322,15 +409,15 @@ class TestModelService:
 
         with (
             pytest.MonkeyPatch.context() as mp,
-            caplog.at_level(logging.WARNING, logger="icenet_mp.model_service"),
+            caplog.at_level(logging.WARNING, logger="cryocast.model_service"),
         ):
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
 
@@ -366,13 +453,13 @@ class TestModelService:
         # Deliberately do not create a "files/model_config.yaml" alongside it.
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.get_class",
+                "cryocast.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
             service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
 
@@ -388,7 +475,7 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.model_service.get_wandb_run", lambda _trainer: wandb_run
+                "cryocast.model_service.get_wandb_run", lambda _trainer: wandb_run
             )
             result = service.build_run_directory(trainer)
 
@@ -403,11 +490,11 @@ class TestModelService:
         trainer = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("icenet_mp.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
             mp.setattr(
-                "icenet_mp.model_service.get_timestamp", lambda: "20260101-000000"
+                "cryocast.model_service.get_timestamp", lambda: "20260101-000000"
             )
-            mp.setattr("icenet_mp.model_service.generate_id", lambda: "abc123")
+            mp.setattr("cryocast.model_service.generate_id", lambda: "abc123")
             result = service.build_run_directory(trainer)
 
         expected = tmp_path / "training" / "local" / "run-20260101-000000-abc123"
@@ -429,15 +516,15 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: deterministic_enabled,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.is_deterministic_algorithms_warn_only_enabled",
+                "cryocast.model_service.torch.is_deterministic_algorithms_warn_only_enabled",
                 lambda: warn_only_enabled,
             )
             with pytest.raises(ValueError, match=match):
@@ -459,23 +546,21 @@ class TestModelService:
 
         with (
             pytest.MonkeyPatch.context() as mp,
-            caplog.at_level(logging.WARNING, logger="icenet_mp.model_service"),
+            caplog.at_level(logging.WARNING, logger="cryocast.model_service"),
         ):
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr(
-                "icenet_mp.model_service.suggested_max_num_workers", lambda _n: 1
-            )
+            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 1)
             mp.setattr(
                 service, "build_run_directory", lambda _trainer: tmp_path / "run"
             )
-            mp.setattr("icenet_mp.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
             service.build_trainer(config=config, project="train")
 
         assert "No callbacks have been set" in caplog.text
@@ -511,18 +596,16 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr(
-                "icenet_mp.model_service.suggested_max_num_workers", lambda _n: 4
-            )
+            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 4)
             mp.setattr(service, "build_run_directory", lambda _trainer: run_dir)
-            mp.setattr("icenet_mp.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
             result = service.build_trainer(
                 config=config, project="train", job_stage="processor"
             )
@@ -582,18 +665,16 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mock_instantiate = MagicMock(side_effect=fake_instantiate)
             mp.setattr(
-                "icenet_mp.model_service.hydra.utils.instantiate", mock_instantiate
+                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr(
-                "icenet_mp.model_service.suggested_max_num_workers", lambda _n: 1
-            )
+            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 1)
             mp.setattr(service, "build_run_directory", lambda _trainer: run_dir)
             mp.setattr(
-                "icenet_mp.model_service.get_wandb_run", lambda _trainer: wandb_run
+                "cryocast.model_service.get_wandb_run", lambda _trainer: wandb_run
             )
             service.build_trainer(config=config, project="train")
 
@@ -666,7 +747,7 @@ class TestModelService:
             mock_data_module_cls = MagicMock(
                 return_value=FakeCommonDataModule(cfg_model_service)
             )
-            mp.setattr("icenet_mp.model_service.CommonDataModule", mock_data_module_cls)
+            mp.setattr("cryocast.model_service.CommonDataModule", mock_data_module_cls)
             first = service.data_module
             second = service.data_module
 
@@ -720,9 +801,9 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mock_build_trainer = MagicMock(return_value=trainer)
             mp.setattr(service, "build_trainer", mock_build_trainer)
-            mp.setattr("icenet_mp.model_service.torch.cuda.is_available", lambda: False)
-            mp.setattr("icenet_mp.model_service.torch.mps.is_available", lambda: False)
-            mp.setattr("icenet_mp.model_service.torch.xpu.is_available", lambda: False)
+            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: False)
+            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: False)
+            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: False)
             result = service._fit(
                 config=config, job_stage="processor", ckpt_path=ckpt_path
             )
@@ -752,17 +833,15 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(service, "build_trainer", MagicMock(return_value=trainer))
-            mp.setattr("icenet_mp.model_service.torch.cuda.is_available", lambda: True)
-            mp.setattr("icenet_mp.model_service.torch.mps.is_available", lambda: True)
-            mp.setattr("icenet_mp.model_service.torch.xpu.is_available", lambda: True)
+            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: True)
+            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: True)
+            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: True)
             mock_cuda_empty = MagicMock()
             mock_mps_empty = MagicMock()
             mock_xpu_empty = MagicMock()
-            mp.setattr(
-                "icenet_mp.model_service.torch.cuda.empty_cache", mock_cuda_empty
-            )
-            mp.setattr("icenet_mp.model_service.torch.mps.empty_cache", mock_mps_empty)
-            mp.setattr("icenet_mp.model_service.torch.xpu.empty_cache", mock_xpu_empty)
+            mp.setattr("cryocast.model_service.torch.cuda.empty_cache", mock_cuda_empty)
+            mp.setattr("cryocast.model_service.torch.mps.empty_cache", mock_mps_empty)
+            mp.setattr("cryocast.model_service.torch.xpu.empty_cache", mock_xpu_empty)
             service._fit(config=config)
 
         mock_cuda_empty.assert_called_once_with()
@@ -977,7 +1056,7 @@ class TestModelService:
                 service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load",
+                "cryocast.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "decoder_state"},
             )
             result = service.train_stage_decoder(
@@ -1090,7 +1169,7 @@ class TestModelService:
                 service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load",
+                "cryocast.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "era5_state"},
             )
             result = service.train_stage_encoders(
@@ -1124,6 +1203,7 @@ class TestModelService:
         service.model_.encoders = [encoder]
         service.model_.processor = MagicMock()
         service.model_.decoder = MagicMock()
+        service.model_.target_encoder = MagicMock()
 
         pretrained_encoder = MagicMock()
         pretrained_encoder.name = "era5"
@@ -1132,6 +1212,7 @@ class TestModelService:
         processor_model.encoders = [pretrained_encoder]
         processor_model.processor.state_dict.return_value = "processor_state"
         processor_model.decoder.state_dict.return_value = "decoder_state"
+        processor_model.target_encoder.state_dict.return_value = "target_encoder_state"
 
         trainer = MagicMock()
 
@@ -1150,11 +1231,108 @@ class TestModelService:
             "processor_state"
         )
         service.model_.decoder.load_state_dict.assert_called_once_with("decoder_state")
+        service.model_.target_encoder.load_state_dict.assert_called_once_with(
+            "target_encoder_state"
+        )
         mock_fit.assert_called_once_with(
             config=DictConfig({"lr": 1}), job_stage="finetune"
         )
         mock_save.assert_called_once_with(trainer, "finetune")
         assert result is trainer
+
+    def test_train_stage_finetune_transfers_target_encoder_state(
+        self, tmp_path: Path
+    ) -> None:
+        """Copy parameters and buffers without swapping in the frozen pretrained module."""
+        service, pretrained = _build_pretrained_processor(tmp_path)
+        model = cast("EncodeProcessDecode", service.model)
+        target_encoder = model.target_encoder
+        buffer_names = dict(pretrained.target_encoder.named_buffers())
+        assert any(name.endswith("running_mean") for name in buffer_names)
+        assert any(name.endswith("running_var") for name in buffer_names)
+        assert any(name.endswith("num_batches_tracked") for name in buffer_names)
+        requires_grad = [p.requires_grad for p in target_encoder.parameters()]
+        training_mode = target_encoder.training
+        trainer = MagicMock(spec=Trainer)
+
+        def check_handover(*, config: DictConfig, job_stage: str) -> Trainer:
+            del config, job_stage
+            for actual, expected in zip(
+                (*model.encoders, model.processor, model.decoder, target_encoder),
+                (
+                    *pretrained.encoders,
+                    pretrained.processor,
+                    pretrained.decoder,
+                    pretrained.target_encoder,
+                ),
+                strict=True,
+            ):
+                torch.testing.assert_close(
+                    actual.state_dict(), expected.state_dict(), rtol=0, atol=0
+                )
+            assert model.target_encoder is target_encoder
+            assert [p.requires_grad for p in target_encoder.parameters()] == (
+                requires_grad
+            )
+            assert target_encoder.training == training_mode
+            for actual_tensor, expected_tensor in zip(
+                (*target_encoder.parameters(), *target_encoder.buffers()),
+                (
+                    *pretrained.target_encoder.parameters(),
+                    *pretrained.target_encoder.buffers(),
+                ),
+                strict=True,
+            ):
+                assert actual_tensor.data_ptr() != expected_tensor.data_ptr()
+            return trainer
+
+        with pytest.MonkeyPatch.context() as mp:
+            mock_fit = MagicMock(side_effect=check_handover)
+            mock_save = MagicMock()
+            mp.setattr(service, "_fit", mock_fit)
+            mp.setattr(service, "_save_stage_checkpoint", mock_save)
+            result = service.train_stage_finetune(
+                train_cfg=DictConfig({}), processor_model=pretrained
+            )
+
+        mock_fit.assert_called_once_with(config=DictConfig({}), job_stage="finetune")
+        mock_save.assert_called_once_with(trainer, "finetune")
+        assert result is trainer
+
+    @pytest.mark.parametrize("seed", [0, 99, 123], ids=lambda s: f"seed-{s}")
+    def test_train_stage_finetune_preserves_latent_loss(
+        self, tmp_path: Path, seed: int
+    ) -> None:
+        """The same diffusion randomness must give the same loss across the handover."""
+        service, pretrained = _build_pretrained_processor(tmp_path)
+        model = cast("EncodeProcessDecode", service.model)
+        model.eval()
+        pretrained.eval()
+        batch = {
+            "sic": torch.rand(2, 2, 1, 16, 16),
+            "target": torch.rand(2, 2, 1, 16, 16),
+        }
+
+        def loss(module: EncodeProcessDecode) -> torch.Tensor:
+            with (
+                pytest.MonkeyPatch.context() as mp,
+                torch.random.fork_rng(devices=[]),
+                torch.no_grad(),
+            ):
+                mp.setattr(module, "log", MagicMock())
+                torch.manual_seed(seed)
+                return module.training_step(batch, 0).loss
+
+        expected = loss(pretrained)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(service, "_fit", MagicMock())
+            mp.setattr(service, "_save_stage_checkpoint", MagicMock())
+            service.train_stage_finetune(
+                train_cfg=DictConfig({}), processor_model=pretrained
+            )
+
+        assert torch.isfinite(expected)
+        torch.testing.assert_close(loss(model), expected, rtol=0, atol=0)
 
     def test_train_stage_processor_trains_new_processor(self, tmp_path: Path) -> None:
         service = ModelService.__new__(ModelService)
@@ -1176,7 +1354,7 @@ class TestModelService:
                 service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
             )
             mp.setattr(
-                "icenet_mp.model_service.torch.load",
+                "cryocast.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "processor_state"},
             )
             result = service.train_stage_processor(

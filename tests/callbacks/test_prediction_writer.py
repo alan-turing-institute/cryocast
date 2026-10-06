@@ -8,9 +8,9 @@ import torch
 from lightning import LightningModule, Trainer
 from netCDF4 import Dataset as NetCDFDataset
 
-from icenet_mp.callbacks import PredictionWriter
-from icenet_mp.data import CombinedDataset
-from icenet_mp.types import DataSpace
+from cryocast.callbacks import PredictionWriter
+from cryocast.data import CombinedDataset
+from cryocast.types import DataSpace
 
 
 def _combined_dataset() -> CombinedDataset:
@@ -120,6 +120,17 @@ class TestPredictionWriter:
             assert np.allclose(prediction[:2], 0.5)
             assert np.allclose(prediction[2:], 0.8)
             assert netcdf.variables["ice_conc"].standard_name == "sea_ice_area_fraction"
+            assert (
+                netcdf.variables["ice_conc"].long_name
+                == "predicted sea ice concentration"
+            )
+            assert netcdf.variables["ice_conc"].units == "1"
+            for name in ("ice_conc", "ice_conc_observed"):
+                valid_min = netcdf.variables[name].valid_min
+                valid_max = netcdf.variables[name].valid_max
+                assert valid_min.dtype == np.float32
+                assert valid_max.dtype == np.float32
+                assert (valid_min, valid_max) == (0.0, 1.0)
 
             observed = np.asarray(netcdf.variables["ice_conc_observed"][:])
             assert observed.shape == (3, 2, 2, 2)
@@ -166,6 +177,69 @@ class TestPredictionWriter:
                 np.asarray(netcdf.variables["longitude"][:]),
                 np.asarray([[0.0, 1.0], [0.0, 1.0]]),
             )
+
+    def test_clips_values_to_valid_range(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        output_path = tmp_path / "predictions.nc"
+        dataset = _combined_dataset()
+        trainer = _trainer(dataset)
+        writer = PredictionWriter(enabled=True)
+        writer.output_path = output_path
+
+        writer.on_test_start(trainer, LightningModule())
+        # Denormalise to 1.4 (above valid_max) and -0.4 (below valid_min)
+        above = torch.full((1, 2, 1, 2, 2), 2.0, dtype=torch.float32)
+        below = torch.full((1, 2, 1, 2, 2), -1.0, dtype=torch.float32)
+        # Leave one value in range, and one NaN, which should not be counted
+        above[0, 0, 0, 0, 0] = 0.5
+        above[0, 0, 0, 0, 1] = float("nan")
+        writer.on_test_batch_end(
+            trainer,
+            LightningModule(),
+            {"prediction": above, "target": below},
+            None,
+            0,
+        )
+        with caplog.at_level("WARNING"):
+            writer.on_test_end(trainer, LightningModule())
+
+        assert "Clipped 6 value(s) of 'ice_conc'" in caplog.text
+        assert "Clipped 8 value(s) of 'ice_conc_observed'" in caplog.text
+
+        with NetCDFDataset(output_path) as netcdf:
+            prediction = netcdf.variables["ice_conc"][:1].flatten()
+            observed = netcdf.variables["ice_conc_observed"][:1]
+            # Out-of-range values would be auto-masked on read if not clipped, so
+            # only the NaN (the fill value) should be masked
+            assert np.ma.count_masked(prediction) == 1
+            assert np.ma.is_masked(prediction[1])
+            assert np.ma.count_masked(observed) == 0
+            assert np.isclose(prediction[0], 0.5)
+            assert np.allclose(prediction[2:], 1.0)
+            assert np.allclose(observed, 0.0)
+
+    def test_does_not_warn_without_clipping(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        dataset = _combined_dataset()
+        trainer = _trainer(dataset)
+        writer = PredictionWriter(enabled=True)
+        writer.output_path = tmp_path / "predictions.nc"
+
+        writer.on_test_start(trainer, LightningModule())
+        batch = torch.full((1, 2, 1, 2, 2), 0.5, dtype=torch.float32)
+        writer.on_test_batch_end(
+            trainer,
+            LightningModule(),
+            {"prediction": batch, "target": batch},
+            None,
+            0,
+        )
+        with caplog.at_level("WARNING"):
+            writer.on_test_end(trainer, LightningModule())
+
+        assert "Clipped" not in caplog.text
 
     def test_writes_available_masks(self, tmp_path: Path) -> None:
         output_path = tmp_path / "predictions.nc"

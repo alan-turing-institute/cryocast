@@ -1,0 +1,36 @@
+_target_: cryocast.models.EncodeProcessDecode
+
+name: cnn-vit-cnn
+
+encoders:
+  latent_space: [216, 216]
+  era5:
+    _target_: cryocast.models.encoders.CNNEncoder
+    n_layers: 1
+  float-argo:
+    _target_: cryocast.models.encoders.CNNEncoder
+    n_layers: 1
+  sic-osisaf:
+    _target_: cryocast.models.encoders.CNNEncoder
+    n_layers: 1
+  sic-ssmis:
+    _target_: cryocast.models.encoders.CNNEncoder
+    n_layers: 1
+
+processor:
+  _target_: cryocast.models.processors.VitProcessor
+  depth: 6
+  dropout: 0.1
+  emb_dim: 256
+  heads: 8
+  mlp_dim: 1024
+  patch_size: 24
+
+decoder:
+  _target_: cryocast.models.decoders.CNNDecoder
+  n_layers: 1
+  mask_type: active
+  norm_type: groupnorm
+  restrict_range: clamp
+  skip_connection:
+    method: none

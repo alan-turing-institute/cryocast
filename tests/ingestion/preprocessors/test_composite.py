@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import ClassVar
 
-from icenet_mp.ingestion.preprocessors import CompositePreprocessor
-from icenet_mp.ingestion.preprocessors.ipreprocessor import IPreprocessor
+from cryocast.ingestion.preprocessors import CompositePreprocessor
+from cryocast.ingestion.preprocessors.ipreprocessor import IPreprocessor
 
 
 class _RecordingPreprocessor(IPreprocessor):

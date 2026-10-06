@@ -6,7 +6,7 @@ It is the default and works for all model architectures.
 
 ## Prerequisites
 
-Make sure IceNet-MP is [installed](../user-guide/installation.md) before continuing.
+Make sure CryoCast is [installed](../user-guide/installation.md) before continuing.
 
 You will need a [Weights & Biases account](https://docs.wandb.ai/models/quickstart).
 Generate an API key, then authenticate before running any training command:
@@ -23,7 +23,7 @@ wandb login
 If you are working on Baskerville, DAWN, Isambard-AI, or JASMIN, the datasets are already available on shared storage. Add the matching `platform` override and skip ahead to [step 2](#2-create-a-local-config):
 
 ```bash
-uv run imp train --config-name <your-name>.local platform=isambardai  # or baskerville, dawn, or jasmin
+uv run cryocast train --config-name <your-name>.local platform=isambardai  # or baskerville, dawn, or jasmin
 ```
 
 ### Downloading data locally
@@ -32,7 +32,7 @@ See the [`datasets create` command reference](../user-guide/commands.md#datasets
 
 ## 2. Create a local config
 
-Create a file at `icenet_mp/config/<your-name>.local.yaml`. The base config you inherit from depends on where you are running.
+Create a file at `cryocast/config/<your-name>.local.yaml`. The base config you inherit from depends on where you are running.
 
 ### On Isambard-AI, Baskerville, DAWN, or JASMIN
 
@@ -62,13 +62,13 @@ See [Configuration](../user-guide/configuration.md) for how to switch datasets o
 
 ### Reusing a config from a previous W&B run
 
-To reproduce or extend a prior run, download its saved config from the W&B run page under **Files > `model_config.yaml`** and place it at `icenet_mp/config/<your-name>.local.yaml`.
+To reproduce or extend a prior run, download its saved config from the W&B run page under **Files > `model_config.yaml`** and place it at `cryocast/config/<your-name>.local.yaml`.
 The downloaded config is fully resolved, so update its `base_path` key to point at the right location for your machine.
 
 ## 3. Run training
 
 ```bash
-uv run imp train --config-name <your-name>.local
+uv run cryocast train --config-name <your-name>.local
 ```
 
 Add `platform=isambardai` (or `baskerville`/`dawn`/`jasmin`) if you are on one of those shared HPC systems.
@@ -125,7 +125,7 @@ As `save_last` is enabled by default in the checkpointing callback, a `last.ckpt
 If a run is killed before completion, it can be resumed with:
 
 ```bash
-uv run imp train --config-name <name> --checkpoint-dir <run-dir>/checkpoints [other overrides...]
+uv run cryocast train --config-name <name> --checkpoint-dir <run-dir>/checkpoints [other overrides...]
 ```
 
 This restores model, optimizer, scheduler and epoch/step state from `last.ckpt` and continues training.

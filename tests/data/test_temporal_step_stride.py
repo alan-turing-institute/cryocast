@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from omegaconf import DictConfig
 
-from icenet_mp.data.combined_dataset import CombinedDataset
-from icenet_mp.data.common_data_module import CommonDataModule
-from icenet_mp.data.single_dataset import SingleDataset
+from cryocast.data.combined_dataset import CombinedDataset
+from cryocast.data.common_data_module import CommonDataModule
+from cryocast.data.single_dataset import SingleDataset
 
 
 def test_weekly_stride_spaces_history_and_forecast_dates(

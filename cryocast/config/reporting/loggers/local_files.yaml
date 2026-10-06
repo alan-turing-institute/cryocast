@@ -1,0 +1,3 @@
+local_files:
+  _target_: cryocast.loggers.LocalFileLogger
+  save_dir: ${base_path}/report

@@ -5,14 +5,14 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
-VARIABLES_DIR = Path(str(files("icenet_mp.config"))) / "variables"
+VARIABLES_DIR = Path(str(files("cryocast.config"))) / "variables"
 VARIABLES_CONFIGS = sorted(
     p.stem for p in VARIABLES_DIR.glob("*.yaml") if not p.name.endswith(".local.yaml")
 )
 
 
 class TestVariablesConfigs:
-    """Regression tests for icenet-mp variables configs."""
+    """Regression tests for cryocast variables configs."""
 
     @pytest.mark.parametrize("config_name", VARIABLES_CONFIGS)
     def test_variables_configs_compose(

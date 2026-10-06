@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from anemoi.datasets.create.recipe import Recipe
 
-from icenet_mp.types import (
+from cryocast.types import (
     AnemoiCleanupArgs,
     AnemoiDatasetStatus,
     AnemoiFinaliseArgs,
@@ -14,7 +14,7 @@ from icenet_mp.types import (
     Metadata,
     ProcessorOutput,
 )
-from icenet_mp.types.protocols import (
+from cryocast.types.protocols import (
     SupportsMetadataFromDataset,
     SupportsMetadataInput,
 )

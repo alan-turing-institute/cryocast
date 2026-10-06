@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from icenet_mp.data import SingleDataset
-from icenet_mp.visualisations import DatasetMediaWriter
-from icenet_mp.visualisations.panel_renderer import PanelRenderer
+from cryocast.data import SingleDataset
+from cryocast.visualisations import DatasetMediaWriter
+from cryocast.visualisations.panel_renderer import PanelRenderer
 
 
 def fake_dataset() -> SingleDataset:
