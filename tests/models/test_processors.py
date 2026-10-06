@@ -11,6 +11,7 @@ from icenet_mp.losses import LeadTimeWeightedLoss
 from icenet_mp.models.common.normalisations import ChannelNorm2D
 from icenet_mp.models.processors import (
     BaseProcessor,
+    ConvLSTMProcessor,
     DiffusionProcessor,
     NullProcessor,
     UNetProcessor,
@@ -1003,3 +1004,132 @@ class TestDDIMProcessor:
             processor._ddim_timesteps,
             torch.tensor([9, 6, 4, 2, 0], dtype=torch.long),
         )
+
+
+class TestConvLSTMProcessor:
+    @pytest.mark.parametrize(
+        ("test_hidden_channels", "test_n_layers", "test_dropout", "match"),
+        [
+            (0, 2, 0.0, r"hidden_channels must be greater than 0."),
+            (4, 0, 0.0, r"n_layers must be greater than 0."),
+            (4, 2, -0.1, r"dropout must be in the range \[0, 1\)."),
+            (4, 2, 1.0, r"dropout must be in the range \[0, 1\)."),
+        ],
+        ids=[
+            "hidden_channels-zero",
+            "n_layers-zero",
+            "dropout-negative",
+            "dropout-one",
+        ],
+    )
+    def test_rejects_invalid_hyperparameters(
+        self,
+        test_hidden_channels: int,
+        test_n_layers: int,
+        test_dropout: float,
+        match: str,
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=2, shape=(4, 4))
+        with pytest.raises(ValueError, match=match):
+            ConvLSTMProcessor(
+                data_space=latent_space,
+                dropout=test_dropout,
+                hidden_channels=test_hidden_channels,
+                n_forecast_steps=2,
+                n_history_steps=2,
+                n_layers=test_n_layers,
+            )
+
+    def test_rejects_even_kernel_size(self) -> None:
+        latent_space = DataSpace(name="latent", channels=2, shape=(4, 4))
+        with pytest.raises(
+            ValueError, match=r"kernel_size must be a positive odd integer."
+        ):
+            ConvLSTMProcessor(
+                data_space=latent_space,
+                kernel_size=2,
+                n_forecast_steps=2,
+                n_history_steps=2,
+            )
+
+    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
+    @pytest.mark.parametrize(
+        "test_n_forecast_steps", [1, 4], ids=lambda n: f"forecast{n}"
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 3], ids=lambda n: f"history{n}"
+    )
+    @pytest.mark.parametrize("test_n_layers", [1, 2], ids=lambda n: f"layers{n}")
+    def test_forward_shape(
+        self,
+        test_batch_size: int,
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_n_layers: int,
+    ) -> None:
+        latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
+        processor = ConvLSTMProcessor(
+            data_space=latent_space,
+            hidden_channels=6,
+            n_forecast_steps=test_n_forecast_steps,
+            n_history_steps=test_n_history_steps,
+            n_layers=test_n_layers,
+        )
+        result = processor.rollout(
+            torch.randn(
+                test_batch_size,
+                test_n_history_steps,
+                latent_space.channels,
+                *latent_space.shape,
+            )
+        )
+        assert isinstance(result, ProcessorOutput)
+        assert result.loss is None
+        assert result.prediction.shape == (
+            test_batch_size,
+            test_n_forecast_steps,
+            latent_space.channels,
+            *latent_space.shape,
+        )
+
+    def test_backpropagates_through_history(self) -> None:
+        latent_space = DataSpace(name="latent", channels=2, shape=(6, 6))
+        processor = ConvLSTMProcessor(
+            data_space=latent_space,
+            hidden_channels=4,
+            n_forecast_steps=2,
+            n_history_steps=3,
+            n_layers=2,
+        )
+        x = torch.randn(
+            2, 3, latent_space.channels, *latent_space.shape, requires_grad=True
+        )
+
+        processor.rollout(x).prediction.square().mean().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        for name, parameter in processor.named_parameters():
+            assert parameter.grad is not None, f"{name} did not receive a gradient"
+            assert torch.isfinite(parameter.grad).all(), (
+                f"{name} has a non-finite gradient"
+            )
+
+    def test_zero_residual_head_reduces_to_persistence(self) -> None:
+        latent_space = DataSpace(name="latent", channels=2, shape=(5, 5))
+        processor = ConvLSTMProcessor(
+            data_space=latent_space,
+            hidden_channels=4,
+            n_forecast_steps=4,
+            n_history_steps=3,
+            n_layers=1,
+            residual=True,
+        )
+        nn.init.zeros_(processor.output_projection.weight)
+        assert processor.output_projection.bias is not None
+        nn.init.zeros_(processor.output_projection.bias)
+        x = torch.randn(1, 3, latent_space.channels, *latent_space.shape)
+
+        prediction = processor.rollout(x).prediction
+
+        torch.testing.assert_close(prediction, x[:, -1:].expand_as(prediction))
