@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -5,6 +7,7 @@ import xarray as xr
 from pyproj import Transformer
 
 from icenet_mp.geotools import regrid_forecast_run
+from icenet_mp.geotools.regrid_forecast import LAND_MASK
 
 # Small EASE-Grid 2.0 North grid centred on the Greenland Sea
 X_POINTS = np.arange(-1_000_000.0, -199_999.0, 25_000.0)
@@ -71,6 +74,33 @@ def make_predictions(
         },
         attrs=attrs,
     )
+
+
+def add_land(predictions: xr.Dataset, ocean_value: float = 0.8) -> xr.Dataset:
+    """Add a land mask with land east of EASE x = -587.5 km, as a masked model writes.
+
+    Ocean cells hold a constant `ocean_value` and land cells hold zero, so any
+    regridded value below `ocean_value` comes from mixing in land.
+    """
+    x2d, _ = np.meshgrid(X_POINTS, Y_POINTS)
+    ocean = x2d < -587_500.0
+    predictions[LAND_MASK] = (
+        ("y", "x"),
+        ocean.astype(np.int8),
+        # As written by the prediction writer
+        {
+            "long_name": "ocean mask (1 = ocean, 0 = land)",
+            "flag_values": np.array([0, 1], dtype=np.int8),
+            "flag_meanings": "land ocean",
+            "coordinates": "latitude longitude",
+        },
+    )
+    predictions["ice_conc"] = predictions["ice_conc"].copy(
+        data=np.broadcast_to(
+            np.where(ocean, ocean_value, 0.0), predictions["ice_conc"].shape
+        ).astype(np.float32)
+    )
+    return predictions
 
 
 @pytest.fixture
@@ -273,6 +303,89 @@ class TestRegridForecastRun:
         output = regrid_forecast_run(predictions, latitudes, longitudes, "2024-01-14")
 
         assert np.isnan(output["siconc"].to_numpy()).all()
+
+    def test_land_is_excluded_from_interpolation(
+        self,
+        predictions: xr.Dataset,
+        target_grid: tuple[xr.DataArray, xr.DataArray],
+    ) -> None:
+        """Coastal values are not pulled towards the zeros written on land."""
+        predictions = add_land(predictions)
+        values = regrid_forecast_run(predictions, *target_grid, "2024-01-14")[
+            "siconc"
+        ].to_numpy()
+
+        # The target grid covers both land and ocean, and every ocean value keeps the
+        # constant ocean concentration, including at the coast
+        assert np.isnan(values).any()
+        assert not np.isnan(values).all()
+        np.testing.assert_allclose(values[~np.isnan(values)], 0.8, atol=1e-6)
+
+        # Without the land mask, the same field is depressed at the coast
+        unmasked = regrid_forecast_run(
+            predictions.drop_vars(LAND_MASK), *target_grid, "2024-01-14"
+        )["siconc"].to_numpy()
+        assert ((unmasked > 0.0) & (unmasked < 0.8 - 1e-3)).any()
+
+    def test_land_mask_is_regridded(
+        self,
+        predictions: xr.Dataset,
+        target_grid: tuple[xr.DataArray, xr.DataArray],
+    ) -> None:
+        """The land mask is regridded and linked from the output variable."""
+        output = regrid_forecast_run(add_land(predictions), *target_grid, "2024-01-14")
+
+        land_mask = output[LAND_MASK]
+        assert land_mask.dims == ("latitude", "longitude")
+        # Land points have no value, and ocean points have one at every lead time
+        is_land = np.isnan(output["siconc"].to_numpy()).all(axis=0)
+        np.testing.assert_array_equal(land_mask.to_numpy(), np.where(is_land, 0, 1))
+        assert output["siconc"].attrs["ancillary_variables"] == LAND_MASK
+        assert land_mask.attrs["flag_meanings"] == "land ocean"
+        assert "coordinates" not in land_mask.attrs
+        assert output.attrs["history"].endswith(", excluding land")
+
+    def test_land_mask_is_missing_outside_source_grid(
+        self, predictions: xr.Dataset
+    ) -> None:
+        """Target points outside the prediction grid are neither land nor ocean."""
+        latitudes = xr.DataArray(np.array([40.0], dtype=np.float32), dims="latitude")
+        longitudes = xr.DataArray(np.array([0.0], dtype=np.float32), dims="longitude")
+        output = regrid_forecast_run(
+            add_land(predictions), latitudes, longitudes, "2024-01-14"
+        )
+
+        assert np.isnan(output[LAND_MASK].to_numpy()).all()
+        assert np.isnan(output["siconc"].to_numpy()).all()
+
+    def test_land_mask_is_written_as_int8(
+        self,
+        predictions: xr.Dataset,
+        target_grid: tuple[xr.DataArray, xr.DataArray],
+        tmp_path: Path,
+    ) -> None:
+        """The land mask is stored as int8 flags, and round trips through NetCDF."""
+        output = regrid_forecast_run(add_land(predictions), *target_grid, "2024-01-14")
+        path = tmp_path / "regridded.nc"
+        output.to_netcdf(path)
+
+        with xr.open_dataset(path) as reloaded:
+            assert reloaded[LAND_MASK].encoding["dtype"] == np.int8
+            np.testing.assert_array_equal(reloaded[LAND_MASK], output[LAND_MASK])
+
+    def test_warns_without_land_mask(
+        self,
+        predictions: xr.Dataset,
+        target_grid: tuple[xr.DataArray, xr.DataArray],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Predictions without a land mask are regridded as before, with a warning."""
+        with caplog.at_level("WARNING"):
+            output = regrid_forecast_run(predictions, *target_grid, "2024-01-14")
+
+        assert "no 'land_mask' variable" in caplog.text
+        assert LAND_MASK not in output
+        assert "ancillary_variables" not in output["siconc"].attrs
 
     def test_raises_value_error_for_missing_day(
         self,

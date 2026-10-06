@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -5,8 +7,17 @@ from pyproj import Transformer
 
 from icenet_mp.types import CF_VARIABLE_ATTRIBUTES
 
+logger = logging.getLogger(__name__)
+
 # Native CRS of the EASE-Grid 2.0 prediction grid for each hemisphere
 EASE2_CRS = {"north": "EPSG:6931", "south": "EPSG:6932"}
+
+# Name of the land mask (1 = ocean, 0 = land) written by the prediction writer, and
+# of the regridded land mask in the output
+LAND_MASK = "land_mask"
+
+# Smallest interpolated ocean fraction for a target point to count as ocean
+OCEAN_FRACTION_THRESHOLD = 0.5
 
 # Largest allowed distance between a projected source point and the 1-D axes
 # recovered from them, as a fraction of the grid spacing
@@ -71,11 +82,17 @@ def regrid_forecast_run(  # noqa: PLR0913
     output follows the CMEMS layout, with dimensions (time, latitude, longitude) and
     a daily (00:00) time axis.
 
+    If the predictions have a land mask, land cells are left out of the
+    interpolation, so that they do not pull coastal values towards zero. Target
+    points that are mostly land are set to NaN, and the land mask is regridded into
+    the output.
+
     Args:
         predictions: Predictions with dimensions (forecast_reference_time, lead_time,
             y, x), 2-D latitude/longitude coordinates and a valid_time coordinate, as
             written by the prediction writer. Unless `source_crs` is given, it must
-            also have a "hemisphere" attribute of "north" or "south".
+            also have a "hemisphere" attribute of "north" or "south". It may have a
+            (y, x) "land_mask" variable, with 1 for ocean and 0 for land.
         target_latitudes: 1-D latitudes of the target grid.
         target_longitudes: 1-D longitudes of the target grid.
         first_valid_day: Day on which the first lead time of the selected run is
@@ -90,7 +107,10 @@ def regrid_forecast_run(  # noqa: PLR0913
         longitude), where time holds the valid day of each lead time. The variable
         keeps the attributes of `variable` in `predictions`, plus the CF attributes
         in `CF_VARIABLE_ATTRIBUTES` for known variables, and is clipped to its valid
-        range where one is defined.
+        range where one is defined. If the predictions have a land mask, the
+        output also contains a (latitude, longitude) "land_mask" (1 for ocean, 0
+        for land, missing outside the prediction grid), linked from
+        `output_variable` as an ancillary variable.
 
     Raises:
         ValueError: If the target latitudes or longitudes are not 1-D, if no run has
@@ -128,22 +148,22 @@ def regrid_forecast_run(  # noqa: PLR0913
         run["longitude"].to_numpy(), run["latitude"].to_numpy()
     )
     x_axis, y_axis = regular_grid_axes(x_src, y_src, source_crs)
-    src = xr.DataArray(
-        run[variable].to_numpy(),
-        dims=("lead_time", "y", "x"),
-        coords={"lead_time": run["lead_time"].to_numpy(), "y": y_axis, "x": x_axis},
-    )
 
-    # Project the target grid into the source CRS and bilinearly interpolate
+    # Project the target grid into the source CRS, for bilinear interpolation
     lon2d, lat2d = np.meshgrid(
         target_longitudes.to_numpy(), target_latitudes.to_numpy()
     )
     x_tgt, y_tgt = to_source.transform(lon2d, lat2d)
-    regridded = src.interp(
-        x=xr.DataArray(x_tgt, dims=("latitude", "longitude")),
-        y=xr.DataArray(y_tgt, dims=("latitude", "longitude")),
-        method="linear",
-    )
+
+    def to_target(data: np.ndarray) -> np.ndarray:
+        """Bilinearly interpolate a (..., y, x) source array onto the target grid."""
+        dims = (*(f"dim_{i}" for i in range(data.ndim - 2)), "y", "x")
+        source = xr.DataArray(data, dims=dims, coords={"y": y_axis, "x": x_axis})
+        return source.interp(
+            x=xr.DataArray(x_tgt, dims=("latitude", "longitude")),
+            y=xr.DataArray(y_tgt, dims=("latitude", "longitude")),
+            method="linear",
+        ).to_numpy()
 
     # Keep the source variable's metadata (e.g. its "predicted ..." long_name),
     # filling any gaps from the CF attributes for known variables, such as the valid
@@ -154,9 +174,45 @@ def regrid_forecast_run(  # noqa: PLR0913
         if key not in SOURCE_ONLY_ATTRIBUTES
     }
 
+    values = run[variable].to_numpy()
+    data_vars = {}
+    if LAND_MASK in run:
+        # Land cells hold no real value (masked models write zero there), so leave
+        # them out of the interpolation by normalising by the interpolated ocean
+        # fraction, rather than letting them pull coastal values towards zero
+        ocean = run[LAND_MASK].to_numpy() == 1
+        ocean_fraction = to_target(ocean.astype(np.float64))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            regridded = to_target(np.where(ocean, values, 0.0)) / ocean_fraction
+        # Target points that are mostly land are land, and have no value. The mask
+        # is NaN outside the source grid, where land and ocean are unknown
+        is_ocean = ocean_fraction >= OCEAN_FRACTION_THRESHOLD
+        regridded = np.where(is_ocean, regridded, np.nan)
+        target_mask = np.where(np.isnan(ocean_fraction), np.nan, is_ocean)
+        data_vars[LAND_MASK] = xr.Variable(
+            ("latitude", "longitude"),
+            target_mask.astype(np.float32),
+            {
+                key: value
+                for key, value in run[LAND_MASK].attrs.items()
+                if key not in SOURCE_ONLY_ATTRIBUTES
+            },
+            encoding={"dtype": "int8", "_FillValue": np.int8(-1)},
+        )
+        attributes["ancillary_variables"] = LAND_MASK
+    else:
+        logger.warning(
+            "Predictions have no '%s' variable, so land cells cannot be excluded "
+            "from the regridding and coastal values of '%s' may be biased.",
+            LAND_MASK,
+            variable,
+        )
+        regridded = to_target(values)
+
     # Bilinear interpolation does not guarantee values stay within the valid range,
-    # so clip to it wherever one is defined (NaNs outside the source grid are kept)
-    values = regridded.to_numpy().astype(np.float32)
+    # so clip to it wherever one is defined (NaNs on land and outside the source grid
+    # are kept)
+    values = regridded.astype(np.float32)
     valid_min = attributes.get("valid_min")
     valid_max = attributes.get("valid_max")
     if valid_min is not None or valid_max is not None:
@@ -167,7 +223,10 @@ def regrid_forecast_run(  # noqa: PLR0913
 
     # Build a dataset in the CMEMS layout, with a daily-mean style (00:00) time axis
     output = xr.Dataset(
-        {output_variable: (("time", "latitude", "longitude"), values, attributes)},
+        {
+            output_variable: (("time", "latitude", "longitude"), values, attributes),
+            **data_vars,
+        },
         coords={
             "time": (
                 "time",
@@ -192,7 +251,11 @@ def regrid_forecast_run(  # noqa: PLR0913
             "title": f"IceNet-MP regridded forecast of {variable}",
             "source": "IceNet-MP",
             "forecast_reference_time": str(run["forecast_reference_time"].to_numpy()),
-            "history": f"Bilinearly regridded from a regular {source_crs} grid onto a regular lat/lon grid",
+            "history": (
+                f"Bilinearly regridded from a regular {source_crs} grid onto a "
+                "regular lat/lon grid"
+                + (", excluding land" if LAND_MASK in data_vars else "")
+            ),
         },
     )
     output["time"].encoding.update(units="hours since 1950-01-01", calendar="standard")
