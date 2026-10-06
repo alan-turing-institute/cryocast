@@ -1,4 +1,4 @@
-# CryoCast
+![CryoCast](docs/src/assets/logo/github-banner.png)
 
 [![Tests](https://github.com/alan-turing-institute/icenet-mp/actions/workflows/test_code.yaml/badge.svg)](https://github.com/alan-turing-institute/icenet-mp/actions/workflows/test_code.yaml)
 [![Docs](https://github.com/alan-turing-institute/icenet-mp/actions/workflows/build_docs.yml/badge.svg)](https://github.com/alan-turing-institute/icenet-mp/actions/workflows/build_docs.yml)
