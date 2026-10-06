@@ -124,7 +124,10 @@ class TestSamplerStoreTimeout:
         try:
             store = SamplerStore(tmp_path, "random", seed=0, timeout=0.05)
             study = create_study(sampler=RandomSampler(seed=0))
-            with pytest.raises(Timeout), store.lock(study):
+            with (
+                pytest.raises(Timeout, match="could not be acquired"),
+                store.lock(study),
+            ):
                 pass
         finally:
             stuck_lock.release()

@@ -11,13 +11,23 @@ Example forecasts are shown below.
 
 **Arctic**
 
-![Example IceNet-MP Arctic sea ice concentration forecast compared with observations](docs/src/assets/prediction-north-unet-v2026.07.png)
+![Example IceNet-MP Arctic sea ice concentration forecast compared with observations](docs/src/assets/prediction-fullnorth-ddpm-v2026.07.png)
 
 **Antarctic**
 
 ![Example IceNet-MP Antarctic sea ice concentration forecast compared with observations](docs/src/assets/prediction-fullsouth-ddpm-v2026.07.png)
 
 The encode-process-decode architecture translates each input dataset into a shared latent space, allowing new data sources and model components to be added without changing the full pipeline.
+
+## Key capabilities
+
+- Multimodal data fusion across satellite observations, reanalysis fields, and in-situ sensor data.
+- Extensible encode-process-decode design for adding new input sources and prediction targets.
+- Multiple model configurations, including UNet, vision transformer, diffusion, and persistence-baseline approaches.
+
+## Project context
+
+IceNet-MP is developed at [The Alan Turing Institute](https://www.turing.ac.uk/) as a research system for Arctic and Antarctic sea-ice forecasting. The current codebase supports research, benchmarking, sensitivity experiments, and case-study analysis; it is not intended for operational forecasting, safety-critical decision making, or public warnings. See the [model card](docs/MODEL_CARD.md) for intended use and scope.
 
 ## Quick start
 
@@ -53,10 +63,12 @@ uv run imp evaluate --checkpoint /path/to/checkpoint.ckpt --config-name my.local
 
 ## Documentation
 
-- [Installation](https://alan-turing-institute.github.io/icenet-mp/user-guide/installation/) — prerequisites, `uv` setup, HPC-specific steps
-- [Configuration](https://alan-turing-institute.github.io/icenet-mp/user-guide/configuration/) — local config files, model overrides, custom datasets
-- [Commands](https://alan-turing-institute.github.io/icenet-mp/user-guide/commands/) — `datasets create`, `datasets inspect`, `train`, `evaluate`
-- [Add a model](https://alan-turing-institute.github.io/icenet-mp/how-to/add-a-model/) — tensor format, standalone vs. processor model architectures
+See the [project documentation](https://alan-turing-institute.github.io/icenet-mp/) for the full user guide and reference material.
+
+- [Installation](https://alan-turing-institute.github.io/icenet-mp/user-guide/installation/) for prerequisites, `uv` setup, and HPC-specific steps
+- [Configuration](https://alan-turing-institute.github.io/icenet-mp/user-guide/configuration/) for local config files, model overrides, and custom datasets
+- [Commands](https://alan-turing-institute.github.io/icenet-mp/user-guide/commands/) for `datasets create`, `datasets inspect`, `train`, and `evaluate`
+- [Add a model](https://alan-turing-institute.github.io/icenet-mp/how-to/add-a-model/) for tensor format and model architecture guidance
 
 ## Jupyter notebooks
 
@@ -67,3 +79,11 @@ uv run --group notebooks jupyter notebook
 ```
 
 Start with `notebooks/demo_pipeline.ipynb` for a worked example of the full pipeline.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, coding conventions, and test instructions. For project questions, contact [SeaIce@turing.ac.uk](mailto:SeaIce@turing.ac.uk).
+
+## License
+
+IceNet-MP is released under the [MIT License](LICENSE).

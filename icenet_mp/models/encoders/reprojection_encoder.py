@@ -39,17 +39,26 @@ class ReprojectionEncoder(BaseEncoder):
 
         # Check details of the input data space
         self.project_from = self.data_space_in.name
-        if len(self.longitudes[self.project_from]) != self.data_space_in.area:
-            msg = f"Input dataset '{self.project_from}' has {len(self.longitudes[self.project_from])} lat/lons but {self.data_space_in.area} are needed."
+        input_lats = len(self.latitudes.get(self.project_from, []))
+        input_lons = len(self.longitudes.get(self.project_from, []))
+        input_area = self.data_space_in.area
+        if input_lats != input_area or input_lons != input_area:
+            msg = (
+                f"Input dataset '{self.project_from}' has {input_lats} latitudes and "
+                f"{input_lons} longitudes but {input_area} of each are needed."
+            )
             raise ValueError(msg)
 
         # Check details of the output data space to project to
         self.project_to = project_to
-        if self.project_to not in self.latitudes:
-            msg = f"Cannot reproject to unknown dataset '{self.project_to}'."
-            raise ValueError(msg)
-        if len(self.longitudes[self.project_to]) != self.data_space_out.area:
-            msg = f"Output dataset '{self.project_to}' has {len(self.longitudes[self.project_to])} lat/lons but {self.data_space_out.area} are needed."
+        output_lats = len(self.latitudes.get(self.project_to, []))
+        output_lons = len(self.longitudes.get(self.project_to, []))
+        output_area = self.data_space_out.area
+        if output_lats != output_area or output_lons != output_area:
+            msg = (
+                f"Output dataset '{self.project_to}' has {output_lats} latitudes and "
+                f"{output_lons} longitudes but {output_area} of each are needed."
+            )
             raise ValueError(msg)
 
         # Add a cached method for calculating nearest neighbours

@@ -3,11 +3,11 @@ from torchmetrics import Metric
 
 from icenet_mp.types import SEA_ICE_THRESHOLD
 
-from .helpers import AccumulatorMixin, LandMaskMixin, SicOnlyMetricMixin
+from .helpers import AccumulatorMixin, LandMaskMixin, SingleChannelMetricMixin
 
 
 class IceNetAccuracyPerForecastDay(
-    SicOnlyMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
+    SingleChannelMetricMixin, LandMaskMixin, AccumulatorMixin, Metric
 ):
     """Binary accuracy metric for use at multiple leadtimes.
 
@@ -16,19 +16,17 @@ class IceNetAccuracyPerForecastDay(
 
     """
 
-    def __init__(self, land_mask: torch.Tensor | None = None) -> None:
-        """Initialize the IceNetAccuracy metric.
+    def __init__(self, *, land_mask: torch.Tensor | None = None) -> None:
+        """Initialise the IceNetAccuracy metric.
 
-        Parameters
-        ----------
-        land_mask : torch.Tensor, optional
-            Boolean tensor of shape (H, W), True for ocean cells and False for land.
-            When given, land cells are excluded from the accuracy calculation
-            entirely, rather than counted as trivially-correct "no ice" agreements.
+        Args:
+            land_mask: Boolean tensor of shape (H, W), True for ocean cells and False
+                for land. When given, land cells are excluded from the accuracy
+                calculation entirely, rather than counted as trivially-correct "no ice"
+                agreements.
 
         """
-        super().__init__()
-        self._register_land_mask(land_mask)
+        super().__init__(land_mask=land_mask)
         self.add_state(
             "weighted_score",
             default=torch.tensor([], dtype=torch.float32),

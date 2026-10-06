@@ -158,7 +158,9 @@ class TestArgoSource:
             )
             mp.setattr("icenet_mp.ingestion.sources.argo.time.sleep", MagicMock())
 
-            with pytest.raises(LookupError):
+            with pytest.raises(
+                LookupError, match=r"^Argo float data for .* is unavailable\.$"
+            ):
                 _fetch_argo_dataframe_with_retry(
                     region=region,
                     time_window=list(self.dates.dates),
@@ -193,7 +195,7 @@ class TestArgoSource:
                 resolution="25p0km",
                 shape=(432, 432),
             )
-            with pytest.raises(LookupError):
+            with pytest.raises(LookupError, match="no data for region"):
                 source.execute(argument=self.dates)
 
     def test_argo_source_execute_with_load_one(self) -> None:

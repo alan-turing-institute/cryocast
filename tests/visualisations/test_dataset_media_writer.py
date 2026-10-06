@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pytest
@@ -86,7 +86,7 @@ class TestPlotDataset:
     ) -> None:
         """Save one PNG for each variable returned by the plotting helper."""
 
-        def fake_static_singlet(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
+        def fake_static_singlet(*_args: Any, **_kwargs: Any) -> Image.Image:
             return Image.new("RGB", (4, 4))
 
         monkeypatch.setattr(PanelRenderer, "static_singlet", fake_static_singlet)
@@ -121,7 +121,7 @@ class TestPlotDatasetVideo:
     ) -> None:
         """Save one video for each variable returned by the plotting helper."""
 
-        def fake_video_singlet(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
+        def fake_video_singlet(*_args: Any, **_kwargs: Any) -> io.BytesIO:
             return io.BytesIO(b"video data")
 
         monkeypatch.setattr(PanelRenderer, "video_singlet", fake_video_singlet)

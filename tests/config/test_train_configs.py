@@ -35,8 +35,8 @@ class TestTrainCallbacks:
     def test_persistence_overrides_callbacks(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
-        """00_persistence swaps in unconditional_checkpoint over best/early-stopping."""
-        config = compose_config("baseline/00_persistence")
+        """Baseline persistence swaps in unconditional_checkpoint over best/early-stopping."""
+        config = compose_config("baseline/persistence")
 
         assert set(config.train.callbacks.keys()) == set(PERSISTENCE_CALLBACK_TARGETS)
         for name, target in PERSISTENCE_CALLBACK_TARGETS.items():
