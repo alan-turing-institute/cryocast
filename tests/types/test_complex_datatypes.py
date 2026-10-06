@@ -49,7 +49,7 @@ class TestDataSpace:
     def test_equal_by_value(self) -> None:
         """Treat distinct DataSpaces with the same values as equal, with equal hashes."""
         space = DataSpace(channels=3, name="sic", shape=(16, 24))
-        other = DataSpace(channels="3", name="sic", shape=["16", "24"])  # type: ignore[arg-type]
+        other = DataSpace(channels="3", name="sic", shape=("16", "24"))  # type: ignore[arg-type]
 
         assert space is not other
         assert space == other

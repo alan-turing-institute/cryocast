@@ -123,33 +123,14 @@ class DDPM(BaseModel):
             mask_dir=mask_dir,
         )
 
-        era5_space = next(
-            space
-            for space in self.input_spaces
-            if (space["name"] if isinstance(space, dict) else space.name) == "era5"
-        )
-        osisaf_space = next(
-            space
-            for space in self.input_spaces
-            if (space["name"] if isinstance(space, dict) else space.name)
-            == self.osisaf_key
-        )
-
-        # Get channels from either dict or object
-        if isinstance(era5_space, dict):
-            self.era5_space = era5_space["channels"]
-        else:
-            self.era5_space = era5_space.channels
-        if isinstance(osisaf_space, dict):
-            self.osisaf_channels = osisaf_space["channels"]
-        else:
-            self.osisaf_channels = osisaf_space.channels
-
-        # Get the base output channels from output_space
-        if isinstance(self.output_space, dict):
-            self.base_output_channels = self.output_space["channels"]
-        else:
-            self.base_output_channels = self.output_space.channels
+        # Get channels from the input and output spaces
+        self.era5_space = next(
+            space for space in self.input_spaces if space.name == "era5"
+        ).channels
+        self.osisaf_channels = next(
+            space for space in self.input_spaces if space.name == self.osisaf_key
+        ).channels
+        self.base_output_channels = self.output_space.channels
 
         # For autoregressive, we predict one step at a time
         if self.use_autoregressive:
