@@ -1,6 +1,6 @@
 import pytest
 
-from icenet_mp.sweep.parameters import (
+from cryocast.sweep.parameters import (
     CategoricalParameter,
     FloatParameter,
     IntParameter,
@@ -21,7 +21,17 @@ class TestSanitisedName:
             ("train.scheduler.T_max", "scheduler.T_max"),
             ("train.optimizer", "optimizer"),
             ("loss.delta", "loss.delta"),
-            ("predict.n_forecast_steps", "predict.n_forecast_steps"),
+            ("window.n_forecast_steps", "window.n_forecast_steps"),
+        ],
+        ids=[
+            "model-decoder",
+            "model-encoders",
+            "model-processor",
+            "train-optimizer-nested",
+            "train-scheduler",
+            "train-optimizer-leaf",
+            "loss-unprefixed",
+            "window-unprefixed",
         ],
     )
     def test_strips_known_prefixes(self, name: str, expected: str) -> None:

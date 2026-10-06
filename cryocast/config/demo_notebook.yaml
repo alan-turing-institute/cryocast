@@ -1,0 +1,14 @@
+defaults:
+  - base
+  - _self_
+
+train:
+  trainer:
+    max_epochs: 2
+
+reporting:
+  loggers:
+    wandb:
+      entity: null
+
+base_path: ../my_data

@@ -2,19 +2,27 @@ import inspect
 from collections.abc import Callable
 
 import pytest
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.cli.hydra import hydra_adaptor
+from cryocast.cli.hydra import hydra_adaptor
 
 
 class TestHydraConfigLoading:
-    """Regression tests for icenet-mp config composition via hydra."""
+    """Regression tests for cryocast config composition via hydra."""
 
     def test_sample_config_has_expected_top_level_keys(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         cfg = compose_config()
-        for key in ("data", "model", "train", "loss", "predict", "evaluate"):
+        for key in (
+            "data",
+            "evaluate",
+            "loss",
+            "model",
+            "train",
+            "variables",
+            "window",
+        ):
             assert key in cfg, f"Key '{key}' missing from composed config"
 
     def test_model_group_overridden_by_sample(
@@ -23,13 +31,13 @@ class TestHydraConfigLoading:
         # sample.yaml uses `override /model: quick_test`, replacing the base default
         cfg = compose_config()
         assert cfg.model.name == "quick-test"
-        assert cfg.model._target_ == "icenet_mp.models.EncodeProcessDecode"
+        assert cfg.model._target_ == "cryocast.models.EncodeProcessDecode"
 
     def test_loss_defaults_resolved_from_base(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
         cfg = compose_config()
-        assert cfg.loss._target_ == "icenet_mp.losses.amse_loss.AMSELoss"
+        assert cfg.loss._target_ == "cryocast.losses.amse_loss.AMSELoss"
         assert cfg.loss.delta == pytest.approx(0.5)
 
     def test_scalar_override_applied(
@@ -64,11 +72,18 @@ class TestHydraConfigLoading:
         cfg = compose_config(overrides=["loss=mse"])
         assert cfg.loss._target_ == "torch.nn.MSELoss"
 
+    def test_lead_time_exponent_override_composes(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        cfg = compose_config(overrides=["loss=huber", "loss.lead_time_exponent=2"])
+        assert cfg.loss._target_ == "torch.nn.HuberLoss"
+        assert cfg.loss.lead_time_exponent == pytest.approx(2.0)
+
     def test_climatology_baseline_composes(
         self, compose_config: Callable[..., DictConfig]
     ) -> None:
-        cfg = compose_config(config_name="baseline/00_climatology")
-        assert cfg.model._target_ == "icenet_mp.models.Climatology"
+        cfg = compose_config(config_name="baseline/climatology")
+        assert cfg.model._target_ == "cryocast.models.Climatology"
         assert cfg.model.name == "climatology"
         assert cfg.train.trainer.max_epochs == 1
         assert cfg.train.trainer.gradient_clip_val is None
@@ -81,14 +96,43 @@ class TestHydraConfigLoading:
         assert "wandb" not in cfg.reporting.loggers
         assert (
             cfg.reporting.loggers.local_files._target_
-            == "icenet_mp.loggers.LocalFileLogger"
+            == "cryocast.loggers.LocalFileLogger"
         )
         assert "metric_summary" not in cfg.train.callbacks
         assert "metric_summary" not in cfg.evaluate.callbacks
 
+    def test_piecewise_baselines_are_matched_except_for_model_variant(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        overrides = ["random=deterministic"]
+        baseline_conv = compose_config(
+            config_name="baseline/piecewise_unet_piecewise_conv", overrides=overrides
+        )
+        baseline_linear = compose_config(
+            config_name="baseline/piecewise_unet_piecewise_linear",
+            overrides=overrides,
+        )
+
+        assert baseline_conv.model.name == "piecewise-unet-piecewise-conv"
+        assert baseline_linear.model.name == "piecewise-unet-piecewise-linear"
+        assert baseline_conv.random.seed == 123
+        assert baseline_conv.random.fully_deterministic is True
+        for key in (
+            "data",
+            "loss",
+            "train",
+            "evaluate",
+            "random",
+            "variables",
+            "window",
+        ):
+            key_conv = OmegaConf.to_container(baseline_conv[key], resolve=False)
+            key_linear = OmegaConf.to_container(baseline_linear[key], resolve=False)
+            assert key_conv == key_linear, f"Mismatch in config section '{key}'"
+
 
 class TestHydraAdaptor:
-    """Regression tests for icenet-mp's hydra_adaptor signature rewriter."""
+    """Regression tests for the hydra_adaptor signature rewriter."""
 
     def test_signature_rewriting(self) -> None:
         def fn(config: DictConfig) -> None:

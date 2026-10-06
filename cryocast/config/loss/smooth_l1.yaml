@@ -1,0 +1,31 @@
+# =============================================================================
+# Smooth L1 Loss
+# =============================================================================
+# Reference: https://pytorch.org/docs/stable/generated/torch.nn.SmoothL1Loss.html
+#
+# A robust regression loss that combines MSE and MAE:
+#   - Quadratic (MSE-like) for small errors  → smooth gradient near zero
+#   - Linear (MAE-like) for large errors     → robust to outliers
+#
+# Formula:
+#                  | 0.5 * e² / beta              if |e| < beta
+#   L(y, ŷ)    =   |
+#                  | |e| - 0.5 * beta             if |e| >= beta
+#
+#   where e    = y - ŷ (residual)
+#         beta = threshold controlling the quadratic→linear transition
+#
+# Parameters:
+#   beta : float
+#     - Smaller beta → transition sooner, more MAE-like (more robust to outliers)
+#     - Larger beta  → transition later,  more MSE-like (smoother near zero)
+#     - PyTorch default: 1.0
+#
+# When to use:
+#   - Regression where outliers would otherwise dominate an MSE loss
+#   - Popular in object detection (e.g. Fast R-CNN) for bounding-box regression
+# =============================================================================
+
+_target_: torch.nn.SmoothL1Loss
+beta: 0.5  # Controls the quadratic→linear transition; smaller positive values are more MAE-like, larger values are more MSE-like (delta must be > 0)
+lead_time_exponent: null # Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.

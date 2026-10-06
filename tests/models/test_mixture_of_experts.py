@@ -5,8 +5,8 @@ import torch
 import yaml
 from omegaconf import DictConfig
 
-from icenet_mp.models.processors import MixtureOfExpertsProcessor
-from icenet_mp.types import DataSpace
+from cryocast.models.processors import MixtureOfExpertsProcessor
+from cryocast.types import DataSpace
 
 
 def _processor(experts: list[dict[str, object]]) -> MixtureOfExpertsProcessor:
@@ -25,8 +25,8 @@ def test_moe_expert_weights_are_normalised_per_sample() -> None:
     """Return one softmax distribution over experts for each sample."""
     processor = _processor(
         [
-            {"_target_": "icenet_mp.models.processors.NullProcessor"},
-            {"_target_": "icenet_mp.models.processors.NullProcessor"},
+            {"_target_": "cryocast.models.processors.NullProcessor"},
+            {"_target_": "cryocast.models.processors.NullProcessor"},
         ]
     )
     x = torch.randn(3, 2, 2, 8, 8)
@@ -42,8 +42,8 @@ def test_moe_rollout_preserves_forecast_shape() -> None:
     """Blend expert forecasts without changing the processor tensor contract."""
     processor = _processor(
         [
-            {"_target_": "icenet_mp.models.processors.NullProcessor"},
-            {"_target_": "icenet_mp.models.processors.NullProcessor"},
+            {"_target_": "cryocast.models.processors.NullProcessor"},
+            {"_target_": "cryocast.models.processors.NullProcessor"},
         ]
     )
     x = torch.randn(3, 2, 2, 8, 8)
@@ -57,9 +57,9 @@ def test_moe_backpropagates_to_gate_and_trainable_expert() -> None:
     """Keep routing and expert parameters trainable end to end."""
     processor = _processor(
         [
-            {"_target_": "icenet_mp.models.processors.NullProcessor"},
+            {"_target_": "cryocast.models.processors.NullProcessor"},
             {
-                "_target_": "icenet_mp.models.processors.VitProcessor",
+                "_target_": "cryocast.models.processors.VitProcessor",
                 "depth": 1,
                 "dropout": 0.0,
                 "emb_dim": 8,
@@ -100,7 +100,7 @@ def test_moe_requires_at_least_one_expert() -> None:
 
 def test_moe_model_config_keeps_expert_configs_non_recursive() -> None:
     """Keep nested expert configs intact until shared processor arguments are known."""
-    config_path = files("icenet_mp.config") / "model" / "cnn_moe_cnn.yaml"
+    config_path = files("cryocast.config") / "model" / "cnn_moe_cnn.yaml"
     config = yaml.safe_load(config_path.read_text())
 
     processor = config["processor"]

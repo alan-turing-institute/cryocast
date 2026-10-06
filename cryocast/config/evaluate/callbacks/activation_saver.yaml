@@ -1,0 +1,4 @@
+activation_saver:
+  _target_: cryocast.callbacks.ActivationSaver
+  layer_paths: []
+  output_dir: ${base_path}/evaluation/activations/

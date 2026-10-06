@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 from PIL.ImageFile import ImageFile
 
-from icenet_mp.exceptions import InvalidArrayError
-from icenet_mp.types import ArrayHW, ArrayTHW, Metadata, PlotSpec, Timespan
-from icenet_mp.visualisations.land_mask import LandMask
-from icenet_mp.visualisations.matplotlib_renderer import MatplotlibRenderer
-from icenet_mp.visualisations.panel_renderer import PanelRenderer
+from cryocast.exceptions import InvalidArrayError
+from cryocast.types import ArrayHW, ArrayTHW, Metadata, PlotSpec, Timespan
+from cryocast.visualisations.land_mask import LandMask
+from cryocast.visualisations.matplotlib_renderer import MatplotlibRenderer
+from cryocast.visualisations.panel_renderer import PanelRenderer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -120,7 +120,7 @@ class TestRenderVideoSinglet:
         dates = [datetime.combine(d, datetime.min.time()) for d in test_dates_short]
         renderer = PanelRenderer(no_land_mask, Metadata(), base_plot_spec)
 
-        with pytest.raises(InvalidArrayError):
+        with pytest.raises(InvalidArrayError, match=r"Expected a 3D \[T, H, W\] array"):
             renderer.video_singlet(
                 era5_temperature_2d,  # type: ignore[arg-type]
                 dates=Timespan(dates),
@@ -139,7 +139,7 @@ class TestRenderVideoSinglet:
         ]
         renderer = PanelRenderer(no_land_mask, Metadata(), base_plot_spec)
 
-        with pytest.raises(InvalidArrayError):
+        with pytest.raises(InvalidArrayError, match=r"Expected a 3D \[T, H, W\] array"):
             renderer.video_singlet(
                 era5_temperature_thw,
                 dates=Timespan(dates),

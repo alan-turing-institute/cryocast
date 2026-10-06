@@ -33,13 +33,13 @@ Pretrained weights are loaded into the full `EncodeProcessDecode` model and the 
 ## Running staged training
 
 ```bash
-uv run imp train --multistage
+uv run cryocast train --multistage
 ```
 
 A checkpoint is saved at the end of each stage. To resume a partially completed run, pass `--checkpoint-dir` pointing at the checkpoint directory from the original run - any stage whose checkpoint already exists there will be skipped:
 
 ```bash
-uv run imp train --multistage --checkpoint-dir ${BASE_DIR}/training/wandb/run-<date>-<id>/checkpoints
+uv run cryocast train --multistage --checkpoint-dir ${BASE_DIR}/training/wandb/run-<date>-<id>/checkpoints
 ```
 
 ## Per-stage config overrides

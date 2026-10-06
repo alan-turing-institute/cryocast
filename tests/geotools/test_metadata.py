@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 from earthkit.data.core.metadata import Metadata
 
-from icenet_mp.geotools.geographic_grid import GeographicGrid
-from icenet_mp.geotools.geographic_metadata import GeographicMetadata
+from cryocast.geotools.geographic_grid import GeographicGrid
+from cryocast.geotools.geographic_metadata import GeographicMetadata
 
 DELEGATING_METHODS = [
     ("base_datetime", datetime(2020, 1, 1)),
@@ -215,7 +215,9 @@ class TestGeographicMetadata:
         assert geo_metadata.as_namespace("mars") == {"foo": "bar"}
         mock_metadata.as_namespace.assert_called_once_with("mars")
 
-    @pytest.mark.parametrize("namespace", [None, "", "default"])
+    @pytest.mark.parametrize(
+        "namespace", [None, "", "default"], ids=["none", "empty", "default"]
+    )
     def test_as_namespace_falls_back_to_all_keys_for_default_namespace(
         self, namespace: str | None, minimal_grid: GeographicGrid
     ) -> None:

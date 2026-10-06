@@ -1,3 +1,3 @@
 # Losses
 
-::: icenet_mp.losses
+::: cryocast.losses
