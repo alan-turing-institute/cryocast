@@ -155,18 +155,17 @@ class EncodeProcessDecode(BaseModel):
             shape=latent_shapes.pop(),
         )
         target_input_encoder = self.target_input_encoder
-        target_latent_space = (
-            target_input_encoder.data_space_out
-            if target_input_encoder is not None
-            else self.target_encoder.data_space_out
-        )
         self.processor: BaseProcessor = (
             processor
             if isinstance(processor, BaseProcessor)
             else hydra.utils.instantiate(
                 processor,
                 data_space=combined_latent_space,
-                data_space_target=target_latent_space,
+                data_space_target=(
+                    self.target_encoder
+                    if target_input_encoder is None
+                    else target_input_encoder
+                ).data_space_out,
                 n_forecast_steps=self.n_forecast_steps,
                 n_history_steps=self.n_history_steps,
                 target_channel_offset=self._find_target_channel_offset(),
@@ -242,12 +241,11 @@ class EncodeProcessDecode(BaseModel):
 
     def _find_target_channel_offset(self) -> int | None:
         """Find the channel offset of the target dataset within the combined latent space, if present."""
-        offset = 0
-        for encoder, input_space in zip(self.encoders, self.input_spaces, strict=True):
-            if input_space.name == self.output_space.name:
-                return offset
-            offset += encoder.data_space_out.channels
-        return None
+        target_input_encoder = self.target_input_encoder
+        if target_input_encoder is None:
+            return None
+        idx = self.encoders.index(target_input_encoder)
+        return sum(encoder.data_space_out.channels for encoder in self.encoders[:idx])
 
     @property
     def target_input_encoder(self) -> BaseEncoder | None:
