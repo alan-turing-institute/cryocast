@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 from PIL.ImageFile import ImageFile
 
-from icenet_mp.exceptions import InvalidArrayError
-from icenet_mp.types import ArrayHW, ArrayTHW, Metadata, PlotSpec, Timespan
-from icenet_mp.visualisations.land_mask import LandMask
-from icenet_mp.visualisations.matplotlib_renderer import MatplotlibRenderer
-from icenet_mp.visualisations.panel_renderer import PanelRenderer
+from cryocast.exceptions import InvalidArrayError
+from cryocast.types import ArrayHW, ArrayTHW, Metadata, PlotSpec, Timespan
+from cryocast.visualisations.land_mask import LandMask
+from cryocast.visualisations.matplotlib_renderer import MatplotlibRenderer
+from cryocast.visualisations.panel_renderer import PanelRenderer
 
 if TYPE_CHECKING:
     from collections.abc import Callable

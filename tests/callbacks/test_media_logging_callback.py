@@ -8,10 +8,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from icenet_mp.callbacks.media_logging_callback import MediaLoggingCallback
-from icenet_mp.data import CombinedDataset
-from icenet_mp.models import BaseModel
-from icenet_mp.types import ModelStepOutput, PlotSpec
+from cryocast.callbacks.media_logging_callback import MediaLoggingCallback
+from cryocast.data import CombinedDataset
+from cryocast.models import BaseModel
+from cryocast.types import ModelStepOutput, PlotSpec
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def _stub_media_publisher(
     publisher_class = MagicMock()
     publisher = publisher_class.return_value
     monkeypatch.setattr(
-        "icenet_mp.callbacks.media_logging_callback.MediaPublisher", publisher_class
+        "cryocast.callbacks.media_logging_callback.MediaPublisher", publisher_class
     )
     mocks = {
         "load_target_uncertainties": MagicMock(return_value={}),

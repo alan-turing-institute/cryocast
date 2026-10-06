@@ -11,8 +11,8 @@ from anemoi.datasets.create.recipe.dates import StartEndDates
 from anemoi.datasets.dates.groups import GroupOfDates
 from anemoi.utils.registry import Registry
 
-from icenet_mp.ingestion.sources import ArgoSource, register_sources
-from icenet_mp.ingestion.sources.argo import _fetch_argo_dataframe_with_retry
+from cryocast.ingestion.sources import ArgoSource, register_sources
+from cryocast.ingestion.sources.argo import _fetch_argo_dataframe_with_retry
 
 
 class TestArgoSource:
@@ -46,7 +46,7 @@ class TestArgoSource:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.ingestion.sources.source_registry",
+                "cryocast.ingestion.sources.source_registry",
                 mock_registry,
             )
             assert "argo" not in mock_registry.registered
@@ -81,11 +81,11 @@ class TestArgoSource:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.ingestion.sources.lazy_argopy.DataFetcher",
+                "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
                 mock_datafetcher_cls,
                 raising=False,
             )
-            mp.setattr("icenet_mp.ingestion.sources.argo.load_one", mock_load_one)
+            mp.setattr("cryocast.ingestion.sources.argo.load_one", mock_load_one)
 
             source = ArgoSource(
                 area="20/30/0/40",
@@ -124,11 +124,11 @@ class TestArgoSource:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.ingestion.sources.lazy_argopy.DataFetcher",
+                "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
                 datafetcher_cls,
                 raising=False,
             )
-            mp.setattr("icenet_mp.ingestion.sources.argo.time.sleep", MagicMock())
+            mp.setattr("cryocast.ingestion.sources.argo.time.sleep", MagicMock())
 
             df = _fetch_argo_dataframe_with_retry(
                 region=region,
@@ -152,11 +152,11 @@ class TestArgoSource:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.ingestion.sources.lazy_argopy.DataFetcher",
+                "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
                 datafetcher_cls,
                 raising=False,
             )
-            mp.setattr("icenet_mp.ingestion.sources.argo.time.sleep", MagicMock())
+            mp.setattr("cryocast.ingestion.sources.argo.time.sleep", MagicMock())
 
             with pytest.raises(
                 LookupError, match=r"^Argo float data for .* is unavailable\.$"
@@ -181,11 +181,11 @@ class TestArgoSource:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.ingestion.sources.lazy_argopy.DataFetcher",
+                "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
                 mock_datafetcher_cls,
                 raising=False,
             )
-            mp.setattr("icenet_mp.ingestion.sources.argo.load_one", MagicMock())
+            mp.setattr("cryocast.ingestion.sources.argo.load_one", MagicMock())
 
             source = ArgoSource(
                 context=self.mock_context,
@@ -217,7 +217,7 @@ class TestArgoSource:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "icenet_mp.ingestion.sources.lazy_argopy.DataFetcher",
+                "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
                 mock_datafetcher_cls,
                 raising=False,
             )

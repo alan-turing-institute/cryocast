@@ -5,12 +5,12 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
-from icenet_mp.losses import LeadTimeWeightedLoss
-from icenet_mp.models import EncodeProcessDecode
-from icenet_mp.models.decoders import BaseDecoder
-from icenet_mp.models.encoders import BaseEncoder
-from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
+from cryocast.losses import LeadTimeWeightedLoss
+from cryocast.models import EncodeProcessDecode
+from cryocast.models.decoders import BaseDecoder
+from cryocast.models.encoders import BaseEncoder
+from cryocast.models.processors import BaseProcessor
+from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 
 class _ScaledEncoder(BaseEncoder):
@@ -300,7 +300,7 @@ class TestEncodeProcessDecode:
         )
         processor = DictConfig(
             {
-                "_target_": "icenet_mp.models.processors.NullProcessor",
+                "_target_": "cryocast.models.processors.NullProcessor",
                 "computes_loss_in_latent_space": True,
             }
         )

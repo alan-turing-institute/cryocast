@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from icenet_mp.models.encoders import SetConvEncoder
-from icenet_mp.types import DataSpace
+from cryocast.models.encoders import SetConvEncoder
+from cryocast.types import DataSpace
 
 
 def _coords() -> tuple[dict[str, list[float]], dict[str, list[float]]]:

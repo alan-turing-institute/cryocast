@@ -6,7 +6,7 @@ from filelock import FileLock, Timeout
 from optuna import create_study
 from optuna.samplers import RandomSampler
 
-from icenet_mp.sweep.sampler_store import SamplerStore
+from cryocast.sweep.sampler_store import SamplerStore
 
 
 def build_store(tmp_path: Path, *, seed: int = 0) -> SamplerStore:

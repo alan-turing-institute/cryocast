@@ -1,6 +1,6 @@
 import pytest
 
-from icenet_mp.sweep.parameters import (
+from cryocast.sweep.parameters import (
     CategoricalParameter,
     FloatParameter,
     IntParameter,

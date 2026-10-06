@@ -12,7 +12,7 @@ from lightning import Trainer
 from lightning.pytorch.loggers import WandbLogger
 from wandb.wandb_run import Run
 
-from icenet_mp.utils import (
+from cryocast.utils import (
     datetime_from_npdatetime,
     get_device_name,
     get_timestamp,

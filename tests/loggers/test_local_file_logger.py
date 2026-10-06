@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from icenet_mp.loggers import LocalFileLogger
+from cryocast.loggers import LocalFileLogger
 
 
 class TestLocalFileLogger:

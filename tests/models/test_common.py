@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from icenet_mp.models.common import (
+from cryocast.models.common import (
     ChannelAdaptor,
     ConvBlockUpsample,
     ConvLSTMCell,
@@ -16,8 +16,8 @@ from icenet_mp.models.common import (
     ResidualUpsample,
     RestrictRange,
 )
-from icenet_mp.models.common.gated_attention import GatedAttention, GatedAttentionBlock
-from icenet_mp.types import RangeRestriction
+from cryocast.models.common.gated_attention import GatedAttention, GatedAttentionBlock
+from cryocast.types import RangeRestriction
 
 
 class TestChannelAdapt:
