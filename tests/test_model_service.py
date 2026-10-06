@@ -69,8 +69,9 @@ class FakeModel:
 def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
     """Build a real full model and a pretrained ProcessorStage to hand over from.
 
-    The CNNEncoder carries BatchNorm buffers and the DiffusionProcessor computes its
-    loss in latent space, so the target encoder is stateful and used by the objective.
+    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. As the
+    target dataset is also an input, the DiffusionProcessor's latent loss uses the
+    input encoder rather than the target encoder, which is only handed over here.
     """
     space = DictConfig({"name": "sic", "channels": 1, "shape": [16, 16]})
     encoder = DictConfig(
@@ -1258,7 +1259,7 @@ class TestModelService:
         assert any(name.endswith("running_mean") for name in buffer_names)
         assert any(name.endswith("running_var") for name in buffer_names)
         assert any(name.endswith("num_batches_tracked") for name in buffer_names)
-        assert all(p.requires_grad for p in target_encoder.parameters())
+        requires_grad = [p.requires_grad for p in target_encoder.parameters()]
         training_mode = target_encoder.training
         trainer = MagicMock(spec=Trainer)
 
@@ -1278,7 +1279,9 @@ class TestModelService:
                     actual.state_dict(), expected.state_dict(), rtol=0, atol=0
                 )
             assert model.target_encoder is target_encoder
-            assert all(p.requires_grad for p in target_encoder.parameters())
+            assert [p.requires_grad for p in target_encoder.parameters()] == (
+                requires_grad
+            )
             assert target_encoder.training == training_mode
             for actual_tensor, expected_tensor in zip(
                 (*target_encoder.parameters(), *target_encoder.buffers()),
