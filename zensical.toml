@@ -1,5 +1,5 @@
 [project]
-site_name = "IceNet-MP"
+site_name = "CryoCast"
 docs_dir = "docs/src"
 repo_name = "alan-turing-institute/icenet-mp"
 repo_url = "https://github.com/alan-turing-institute/icenet-mp"
@@ -14,6 +14,7 @@ nav = [
         { "Configuration" = "user-guide/configuration.md" },
         { "Data" = "user-guide/data.md" },
         { "Commands" = "user-guide/commands.md" },
+        { "Notebooks" = "user-guide/notebooks.md" },
         { "Loss functions" = "user-guide/loss-functions.md" },
         { "Metrics" = "user-guide/metrics.md" },
     ] },
@@ -60,7 +61,7 @@ accent = "indigo"
 # mkdocstrings configuration
 [project.plugins.mkdocstrings.handlers.python]
 inventories = ["https://docs.python.org/3/objects.inv"]
-paths = ["icenet_mp"]
+paths = ["cryocast"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
 docstring_style = "google"

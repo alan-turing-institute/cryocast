@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from icenet_mp.geotools.geographic_grid import GeographicGrid
+from cryocast.geotools.geographic_grid import GeographicGrid
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@
 
 ## Tensor format
 
-All IceNet-MP models operate on tensors in `NTCHW` format:
+All CryoCast models operate on tensors in `NTCHW` format:
 
 | Dimension | Meaning |
 |-----------|---------|
@@ -53,7 +53,7 @@ To make fusion data-dependent, configure attention mode:
 
 ```yaml
 fusion:
-  _target_: icenet_mp.models.common.LatentFusion
+  _target_: cryocast.models.common.LatentFusion
   mode: attention
   temperature: 1.0
 ```
@@ -63,3 +63,21 @@ Attention fusion spatially pools each encoded input stream for every sample and 
 The attention score heads are zero-initialised. The initial stream weights are therefore all `1`, making the first forward pass exactly equal to ordinary concatenation. This also makes the option compatible with multistage pretraining: encoder, decoder, and processor stages can use the existing concatenated latent representation, then end-to-end finetuning starts from the same representation while the attention weights become trainable.
 
 A ready-to-run example is available as `model=cnn_unet_cnn_attention`.
+
+### ConvLSTM processor
+
+`ConvLSTMProcessor` keeps the time dimension explicit instead of flattening the history window into channels. It consumes encoded history frames sequentially, maintains spatial hidden and cell states, and then generates forecast frames autoregressively by feeding each prediction back into the recurrent state.
+
+A residual forecast head is enabled by default so the processor learns a latent-space tendency around persistence. Set `residual: false` to predict the next latent frame directly.
+
+```yaml
+processor:
+  _target_: cryocast.models.processors.ConvLSTMProcessor
+  hidden_channels: 128
+  kernel_size: 3
+  n_layers: 2
+  dropout: 0.1
+  residual: true
+```
+
+A complete example is available as `model=cnn_convlstm_cnn`.

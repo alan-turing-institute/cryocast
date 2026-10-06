@@ -1,0 +1,8 @@
+# How many samples to process in a single batch
+batch_size: 1
+
+# Number of future steps to predict
+n_forecast_steps: 21
+
+# Number of history steps to use when predicting
+n_history_steps: 4

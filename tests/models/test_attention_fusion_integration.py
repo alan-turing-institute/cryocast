@@ -1,8 +1,8 @@
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models import EncodeProcessDecode
-from icenet_mp.models.common import LatentFusion
+from cryocast.models import EncodeProcessDecode
+from cryocast.models.common import LatentFusion
 
 
 def test_encode_process_decode_uses_attention_fusion() -> None:
@@ -16,16 +16,16 @@ def test_encode_process_decode_uses_attention_fusion() -> None:
         {
             "latent_space": (16, 16),
             "input-a": {
-                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
+                "_target_": "cryocast.models.encoders.NaiveLinearEncoder",
             },
             "target": {
-                "_target_": "icenet_mp.models.encoders.NaiveLinearEncoder",
+                "_target_": "cryocast.models.encoders.NaiveLinearEncoder",
             },
         }
     )
     fusion = DictConfig(
         {
-            "_target_": "icenet_mp.models.common.LatentFusion",
+            "_target_": "cryocast.models.common.LatentFusion",
             "mode": "attention",
             "temperature": 1.0,
         }
@@ -34,9 +34,9 @@ def test_encode_process_decode_uses_attention_fusion() -> None:
         name="attention-fusion-test",
         encoders=encoders,
         fusion=fusion,
-        processor=DictConfig({"_target_": "icenet_mp.models.processors.NullProcessor"}),
+        processor=DictConfig({"_target_": "cryocast.models.processors.NullProcessor"}),
         decoder=DictConfig(
-            {"_target_": "icenet_mp.models.decoders.NaiveLinearDecoder"}
+            {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
         ),
         hemisphere="north",
         input_spaces=input_spaces,

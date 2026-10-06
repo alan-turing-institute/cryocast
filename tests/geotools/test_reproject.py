@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from icenet_mp.geotools.reproject import nearest_neighbour_indices
+from cryocast.geotools.reproject import nearest_neighbour_indices
 
 
 class TestNearestNeighbourIndices:

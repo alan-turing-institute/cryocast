@@ -1,0 +1,47 @@
+_target_: cryocast.models.EncodeProcessDecode
+
+name: cnn-ddpm-cnn
+
+encoders:
+  latent_space: [144, 144]
+  sic-osisaf:
+    _target_: cryocast.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  sic-ssmis:
+    _target_: cryocast.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  era5:
+    _target_: cryocast.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+  float-argo:
+    _target_: cryocast.models.encoders.CNNEncoder
+    kernel_size: 5
+    n_layers: 1
+    scale_factor: 3
+
+processor:
+  _target_: cryocast.models.processors.DiffusionProcessor
+  timesteps: 150
+  ddim_steps: null   # null = all 150 timesteps -> DDPM sampling
+  eta: 1.0           # with ddim_steps=null, gives standard DDPM
+  beta_schedule: cosine
+  start_out_channels: 64
+  time_embed_dim: 256
+  dropout_rate: 0.05
+  use_autoregressive: true
+  loss: ${loss}
+
+decoder:
+  _target_: cryocast.models.decoders.CNNDecoder
+  kernel_size: 5
+  mask_type: active
+  n_layers: 1
+  norm_type: groupnorm
+  restrict_range: sigmoid
+  scale_factor: 3

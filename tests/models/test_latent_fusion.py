@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from icenet_mp.models.common import LatentFusion
+from cryocast.models.common import LatentFusion
 
 
 def _inputs() -> list[torch.Tensor]:

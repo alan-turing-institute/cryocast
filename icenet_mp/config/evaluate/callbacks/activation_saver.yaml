@@ -1,4 +1,0 @@
-activation_saver:
-  _target_: icenet_mp.callbacks.ActivationSaver
-  layer_paths: []
-  output_dir: ${base_path}/evaluation/activations/

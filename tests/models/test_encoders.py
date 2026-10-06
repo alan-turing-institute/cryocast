@@ -1,28 +1,38 @@
 import pytest
 import torch
 
-from icenet_mp.models.encoders import (
+from cryocast.models.encoders import (
     BaseEncoder,
     CNNEncoder,
     DeepCompressionEncoder,
     NaiveLinearEncoder,
     PiecewiseEncoder,
 )
-from icenet_mp.types import DataSpace
+from cryocast.types import DataSpace
 
 
 class TestEncoders:
-    @pytest.mark.parametrize("test_batch_size", [1, 2])
+    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=["batch1", "batch2"])
     @pytest.mark.parametrize(
-        "test_encoder_cls", ["CNNEncoder", "NaiveLinearEncoder", "PiecewiseEncoder"]
+        "test_encoder_cls",
+        [CNNEncoder, NaiveLinearEncoder, PiecewiseEncoder],
+        ids=["CNNEncoder", "NaiveLinearEncoder", "PiecewiseEncoder"],
     )
-    @pytest.mark.parametrize("test_input_chw", [(4, 64, 64), (1, 20, 200)])
-    @pytest.mark.parametrize("test_latent_hw", [(32, 32), (40, 73)])
-    @pytest.mark.parametrize("test_n_history_steps", [1, 5])
+    @pytest.mark.parametrize(
+        "test_input_chw",
+        [(4, 64, 64), (1, 20, 200)],
+        ids=["input4x64x64", "input1x20x200"],
+    )
+    @pytest.mark.parametrize(
+        "test_latent_hw", [(32, 32), (40, 73)], ids=["latent32x32", "latent40x73"]
+    )
+    @pytest.mark.parametrize(
+        "test_n_history_steps", [1, 5], ids=["history1", "history5"]
+    )
     def test_forward_shape(
         self,
         test_batch_size: int,
-        test_encoder_cls: str,
+        test_encoder_cls: type[CNNEncoder | NaiveLinearEncoder | PiecewiseEncoder],
         test_input_chw: tuple[int, int, int],
         test_latent_hw: tuple[int, int],
         test_n_history_steps: int,
@@ -30,20 +40,10 @@ class TestEncoders:
         input_space = DataSpace(
             name="input", channels=test_input_chw[0], shape=test_input_chw[1:]
         )
-        encoder: BaseEncoder = {
-            "CNNEncoder": CNNEncoder(
-                data_space_in=input_space,
-                latent_space=test_latent_hw,
-            ),
-            "NaiveLinearEncoder": NaiveLinearEncoder(
-                data_space_in=input_space,
-                latent_space=test_latent_hw,
-            ),
-            "PiecewiseEncoder": PiecewiseEncoder(
-                data_space_in=input_space,
-                latent_space=test_latent_hw,
-            ),
-        }[test_encoder_cls]
+        encoder: BaseEncoder = test_encoder_cls(
+            data_space_in=input_space,
+            latent_space=test_latent_hw,
+        )
         encoder.verify_output_channels()
         result: torch.Tensor = encoder.rollout(
             torch.randn(
@@ -62,7 +62,9 @@ class TestEncoders:
 
 
 class TestDeepCompressionEncoder:
-    @pytest.mark.parametrize("pixel_shuffle", [True, False])
+    @pytest.mark.parametrize(
+        "pixel_shuffle", [True, False], ids=["pixel_shuffle", "no_pixel_shuffle"]
+    )
     @pytest.mark.parametrize(
         ("patch_size", "stride", "hid_channels"),
         [
@@ -71,8 +73,18 @@ class TestDeepCompressionEncoder:
             (1, 3, (4, 8)),
             (2, 1, (4,)),
         ],
+        ids=[
+            "patch1-stride2-hid4x8x16",
+            "patch2-stride2-hid4x8x16",
+            "patch1-stride3-hid4x8",
+            "patch2-stride1-hid4",
+        ],
     )
-    @pytest.mark.parametrize("latent_hw", [(4, 4), (2, 6), (5, 3)])
+    @pytest.mark.parametrize(
+        "latent_hw",
+        [(4, 4), (2, 6), (5, 3)],
+        ids=["latent4x4", "latent2x6", "latent5x3"],
+    )
     def test_forward_shape(
         self,
         *,
@@ -128,8 +140,14 @@ class TestDeepCompressionEncoder:
 
 
 class TestPiecewiseEncoder:
-    @pytest.mark.parametrize("test_input_chw", [(4, 64, 64), (1, 20, 200)])
-    @pytest.mark.parametrize("test_latent_hw", [(32, 32), (40, 73)])
+    @pytest.mark.parametrize(
+        "test_input_chw",
+        [(4, 64, 64), (1, 20, 200)],
+        ids=["input4x64x64", "input1x20x200"],
+    )
+    @pytest.mark.parametrize(
+        "test_latent_hw", [(32, 32), (40, 73)], ids=["latent32x32", "latent40x73"]
+    )
     def test_ones_are_encoded_to_zero_or_one(
         self,
         test_input_chw: tuple[int, int, int],
@@ -166,6 +184,7 @@ class TestPiecewiseEncoder:
                 [(1, 2, 3, 6, 7, 8, 11, 12, 13), (7, 8, 9, 12, 13, 14, 17, 18, 19)],
             ),
         ],
+        ids=["patch2x2", "patch3x3"],
     )
     def test_patches_are_extracted(
         self, test_patches: tuple[tuple[int, int], list[tuple[int, int, int, int]]]
@@ -212,12 +231,12 @@ class TestVerifyOutputChannels:
         input_space = DataSpace(name=name, channels=actual_channels, shape=(8, 8))
         encoder = NaiveLinearEncoder(data_space_in=input_space, latent_space=(4, 4))
         # Override the declared output channels to simulate a mismatch with reality
-        encoder.data_space_out.channels = declared_channels
+        encoder.data_space_out = DataSpace(
+            channels=declared_channels,
+            name=encoder.data_space_out.name,
+            shape=encoder.data_space_out.shape,
+        )
         return encoder
-
-    def test_passes_when_declaration_matches_forward(self) -> None:
-        encoder = self._make_encoder(declared_channels=5, actual_channels=5)
-        encoder.verify_output_channels()
 
     def test_raises_with_channel_counts_and_encoder_name(self) -> None:
         encoder = self._make_encoder(
@@ -230,14 +249,18 @@ class TestVerifyOutputChannels:
         )
         assert "NaiveLinearEncoder ('my-dataset')" in str(excinfo.value)
 
-    @pytest.mark.parametrize("initial_training_mode", [True, False])
+    @pytest.mark.parametrize(
+        "initial_training_mode", [True, False], ids=["train", "eval"]
+    )
     def test_restores_training_mode(self, *, initial_training_mode: bool) -> None:
         encoder = self._make_encoder(declared_channels=5, actual_channels=5)
         encoder.train(initial_training_mode)
         encoder.verify_output_channels()
         assert encoder.training is initial_training_mode
 
-    @pytest.mark.parametrize("initial_training_mode", [True, False])
+    @pytest.mark.parametrize(
+        "initial_training_mode", [True, False], ids=["train", "eval"]
+    )
     def test_restores_training_mode_even_when_it_raises(
         self, *, initial_training_mode: bool
     ) -> None:

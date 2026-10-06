@@ -1,0 +1,3 @@
+prediction_writer:
+  _target_: cryocast.callbacks.PredictionWriter
+  enabled: false

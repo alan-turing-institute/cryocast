@@ -1,8 +1,11 @@
+import logging
+
 import pytest
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
-from icenet_mp.models import DDPM
+from cryocast.losses import LeadTimeWeightedLoss
+from cryocast.models import DDPM
 
 
 class TestDDPM:
@@ -76,6 +79,75 @@ class TestDDPM:
         assert result.prediction.shape == (2, expected_steps, 1, 16, 16)
         assert result.target.shape == result.prediction.shape
         assert result.loss.ndim == 0
+
+    @pytest.mark.parametrize("use_autoregressive", [True, False])
+    def test_training_supports_lead_time_weighted_loss(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        use_autoregressive: bool,
+    ) -> None:
+        """DDPM restores forecast time before a lead-time weighted loss call."""
+        loss_cfg = OmegaConf.create(
+            {"_target_": "torch.nn.MSELoss", "lead_time_exponent": 1.0}
+        )
+        model = self._make_model(loss_cfg, use_autoregressive=use_autoregressive)
+        assert isinstance(model.loss_fn, LeadTimeWeightedLoss)
+        monkeypatch.setattr(
+            model.model,
+            "forward",
+            lambda noisy, _timesteps, _conditioning: torch.zeros_like(noisy),
+        )
+        # Record the per-step NCHW slices that the wrapped loss receives
+        wrapped_loss = model.loss_fn._wrapped_loss
+        original_forward = wrapped_loss.forward
+        calls: list[tuple[torch.Size, torch.Size]] = []
+
+        def recording_forward(
+            prediction: torch.Tensor, target: torch.Tensor
+        ) -> torch.Tensor:
+            calls.append((prediction.shape, target.shape))
+            return original_forward(prediction, target)
+
+        monkeypatch.setattr(wrapped_loss, "forward", recording_forward)
+
+        result = model.training_step(self._make_batch(), 0)
+
+        # The wrapped loss is called once per lead time, so a swapped (C, T)
+        # unflatten would show up as the wrong number of calls
+        expected_steps = 1 if use_autoregressive else model.n_forecast_steps
+        assert len(calls) == expected_steps
+        assert all(
+            shapes == ((2, model.base_output_channels, 16, 16),) * 2 for shapes in calls
+        )
+        assert result.loss.ndim == 0
+        assert torch.isfinite(result.loss)
+
+    @pytest.mark.parametrize(
+        ("test_use_autoregressive", "test_lead_time_exponent", "expect_warning"),
+        [(True, 2.0, True), (False, 2.0, False), (True, None, False)],
+        ids=["autoregressive-weighted", "direct-weighted", "autoregressive-unweighted"],
+    )
+    def test_warns_when_lead_time_weighting_ignored(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        *,
+        test_use_autoregressive: bool,
+        test_lead_time_exponent: float | None,
+        expect_warning: bool,
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="cryocast.models.ddpm"):
+            self._make_model(
+                OmegaConf.create(
+                    {
+                        "_target_": "torch.nn.MSELoss",
+                        "lead_time_exponent": test_lead_time_exponent,
+                    }
+                ),
+                use_autoregressive=test_use_autoregressive,
+            )
+        warned = any("has no effect" in r.getMessage() for r in caplog.records)
+        assert warned is expect_warning
 
     def test_parallel_sample_runs_reverse_diffusion_loop(
         self,
