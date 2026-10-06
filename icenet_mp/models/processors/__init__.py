@@ -1,5 +1,5 @@
 from .base_processor import BaseProcessor
-from .convlstm import ConvLSTMCell, ConvLSTMProcessor
+from .conv_lstm import ConvLSTMProcessor
 from .diffusion import DiffusionProcessor
 from .gsta import GSTAProcessor
 from .null import NullProcessor
@@ -8,7 +8,6 @@ from .vit import VitProcessor
 
 __all__ = [
     "BaseProcessor",
-    "ConvLSTMCell",
     "ConvLSTMProcessor",
     "DiffusionProcessor",
     "GSTAProcessor",
