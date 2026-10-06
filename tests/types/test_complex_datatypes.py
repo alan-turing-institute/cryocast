@@ -4,7 +4,7 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.types import (
+from cryocast.types import (
     ColourScale,
     DataSpace,
     Hemisphere,

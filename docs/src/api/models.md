@@ -1,3 +1,3 @@
 # Models
 
-::: icenet_mp.models
+::: cryocast.models

@@ -7,9 +7,9 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
-from icenet_mp.losses import LeadTimeWeightedLoss
-from icenet_mp.models.common.normalisations import ChannelNorm2D
-from icenet_mp.models.processors import (
+from cryocast.losses import LeadTimeWeightedLoss
+from cryocast.models.common.normalisations import ChannelNorm2D
+from cryocast.models.processors import (
     BaseProcessor,
     ConvLSTMProcessor,
     DiffusionProcessor,
@@ -17,7 +17,7 @@ from icenet_mp.models.processors import (
     UNetProcessor,
     VitProcessor,
 )
-from icenet_mp.types import DataSpace, ProcessorOutput
+from cryocast.types import DataSpace, ProcessorOutput
 
 
 class TestBaseProcessor:
@@ -560,7 +560,7 @@ class TestDDPMProcessor:
         test_lead_time_exponent: float | None,
         expect_warning: bool,
     ) -> None:
-        with caplog.at_level(logging.WARNING, logger="icenet_mp.models.processors"):
+        with caplog.at_level(logging.WARNING, logger="cryocast.models.processors"):
             self._make_processor(
                 n_forecast_steps=2,
                 n_history_steps=1,

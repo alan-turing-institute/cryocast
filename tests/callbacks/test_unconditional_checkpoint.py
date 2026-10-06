@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from icenet_mp.callbacks.unconditional_checkpoint import UnconditionalCheckpoint
+from cryocast.callbacks.unconditional_checkpoint import UnconditionalCheckpoint
 
 
 class TestDirpath:

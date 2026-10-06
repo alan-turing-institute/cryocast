@@ -5,7 +5,7 @@ It receives the concatenated latent representations of all inputs and produces a
 
 ## The processor interface
 
-All IceNet-MP processors extend `BaseProcessor` from `icenet_mp.models.processors`.
+All CryoCast processors extend `BaseProcessor` from `cryocast.models.processors`.
 They operate on tensors in `NTCHW` format, taking in a tensor with a number of history steps and returning a tensor with a number of forecast steps.
 For example, with 3 history steps, and 4 forecast steps, a processor will convert a tensor of shape `(N, 3, C, H, W)` to `(N, 4, C, H, W)`
 
@@ -23,8 +23,8 @@ If your architecture works on one timestep at a time and uses the same logic dur
 
 ```python
 from typing import Any
-from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import TensorNCHW
+from cryocast.models.processors import BaseProcessor
+from cryocast.types import TensorNCHW
 
 
 class MyProcessor(BaseProcessor):
@@ -54,8 +54,8 @@ The `rollout` signature allows the processor to handle both training and inferen
 - if `y` is `None` then this is **inference**
 
 ```python
-from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import ProcessorOutput, TensorNTCHW
+from cryocast.models.processors import BaseProcessor
+from cryocast.types import ProcessorOutput, TensorNTCHW
 
 
 class MyDiffusionProcessor(BaseProcessor):
@@ -78,32 +78,32 @@ This allows the decoder to still produce output for metrics and callbacks withou
 
 ## Register the processor in config
 
-Add a model config under `icenet_mp/config/model/` that points `processor._target_` at your class:
+Add a model config under `cryocast/config/model/` that points `processor._target_` at your class:
 
 ```yaml
-# icenet_mp/config/model/cnn_mydiffusion_cnn.yaml
-_target_: icenet_mp.models.EncodeProcessDecode
+# cryocast/config/model/cnn_mydiffusion_cnn.yaml
+_target_: cryocast.models.EncodeProcessDecode
 
 name: cnn-ddpm-cnn
 
 encoders:
   latent_space: [144, 144]
   era5:
-    _target_: icenet_mp.models.encoders.CNNEncoder
+    _target_: cryocast.models.encoders.CNNEncoder
   sic-osisaf:
-    _target_: icenet_mp.models.encoders.CNNEncoder
+    _target_: cryocast.models.encoders.CNNEncoder
 
 processor:
-  _target_: icenet_mp.models.processors.MyDiffusionProcessor
+  _target_: cryocast.models.processors.MyDiffusionProcessor
   timesteps: 1000
 
 decoder:
-  _target_: icenet_mp.models.decoders.CNNDecoder
+  _target_: cryocast.models.decoders.CNNDecoder
   bounded: false
 ```
 
 Then run training with:
 
 ```bash
-uv run imp train model=cnn_mydiffusion_cnn
+uv run cryocast train model=cnn_mydiffusion_cnn
 ```

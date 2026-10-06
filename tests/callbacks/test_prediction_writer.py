@@ -8,9 +8,9 @@ import torch
 from lightning import LightningModule, Trainer
 from netCDF4 import Dataset as NetCDFDataset
 
-from icenet_mp.callbacks import PredictionWriter
-from icenet_mp.data import CombinedDataset
-from icenet_mp.types import DataSpace
+from cryocast.callbacks import PredictionWriter
+from cryocast.data import CombinedDataset
+from cryocast.types import DataSpace
 
 
 def _combined_dataset() -> CombinedDataset:

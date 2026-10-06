@@ -6,8 +6,8 @@ import pytest
 import xarray as xr
 from pyproj import Transformer
 
-from icenet_mp.geotools import regrid_forecast_run
-from icenet_mp.geotools.regrid_forecast import LAND_MASK
+from cryocast.geotools import regrid_forecast_run
+from cryocast.geotools.regrid_forecast import LAND_MASK
 
 # Small EASE-Grid 2.0 North grid centred on the Greenland Sea
 X_POINTS = np.arange(-1_000_000.0, -199_999.0, 25_000.0)
@@ -293,7 +293,7 @@ class TestRegridForecastRun:
         assert attrs["valid_min"] == np.float32(0.0)
         assert attrs["valid_max"] == np.float32(1.0)
         assert "ancillary_variables" not in attrs
-        assert output.attrs["title"] == "IceNet-MP regridded forecast of ice_conc"
+        assert output.attrs["title"] == "CryoCast regridded forecast of ice_conc"
 
     def test_other_variable_keeps_its_own_attributes(
         self,

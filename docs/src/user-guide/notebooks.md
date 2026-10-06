@@ -1,10 +1,10 @@
 # Notebooks
 
-The [`notebooks`](https://github.com/alan-turing-institute/icenet-mp/tree/main/notebooks) directory contains supplementary examples and research artifacts for IceNet-MP. They are not required to use the package.
+The [`notebooks`](https://github.com/alan-turing-institute/icenet-mp/tree/main/notebooks) directory contains supplementary examples and research artifacts for CryoCast. They are not required to use the package.
 
 ## Setup
 
-Start with the IceNet-MP CLI `demo_pipeline.ipynb` notebook, using the `notebooks` environment:
+Start with the CryoCast CLI `demo_pipeline.ipynb` notebook, using the `notebooks` environment:
 
 ```bash
 uv sync --group notebooks
@@ -18,7 +18,7 @@ Some of these notebooks will not run immediately as they require you to set up c
 
 | Notebook | Purpose | Prerequisite |
 | --- | --- | --- |
-| [`demo_pipeline.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/demo_pipeline.ipynb) | **CLI walk through.** IceNet-MP walkthrough covering account-free synthetic data, training/evaluation artifacts, model architecture and persistence, Hydra configuration, multimodality, and an optional real-data route. | The default route uses generated synthetic data and local-file logging; there is also an option to use CDS/W&B for real data. |
+| [`demo_pipeline.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/demo_pipeline.ipynb) | **CLI walk through.** CryoCast walkthrough covering account-free synthetic data, training/evaluation artifacts, model architecture and persistence, Hydra configuration, multimodality, and an optional real-data route. | The default route uses generated synthetic data and local-file logging; there is also an option to use CDS/W&B for real data. |
 | [`layer_diagnostics.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/layer_diagnostics.ipynb) | **Model exploration.** Activation-capture investigation for the current UNet/`quick_test` model and multimodal real-data path. | Supply a compatible checkpoint and existing real datasets; the notebook uses local-file logging for evaluation. |
 | [`ARGO_data.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/ARGO_data.ipynb) | **Data exploration.** Download, inspect and grid ARGO float observations for the non-gridded data path. | Independent of the demo pipeline; requires network access and its geospatial/data dependencies. |
 | [`case_study_whale_corridors.ipynb`](https://github.com/alan-turing-institute/icenet-mp/blob/main/notebooks/case_study_whale_corridors.ipynb) | **Demo videos.** Produce whale-corridor and shipping visualisations. | Requires the case-study data/configuration and is not part of the default CLI walkthrough. |

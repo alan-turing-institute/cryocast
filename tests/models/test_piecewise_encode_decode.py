@@ -1,9 +1,9 @@
 import pytest
 import torch
 
-from icenet_mp.models.decoders import PiecewiseDecoder
-from icenet_mp.models.encoders import PiecewiseEncoder
-from icenet_mp.types import DataSpace
+from cryocast.models.decoders import PiecewiseDecoder
+from cryocast.models.encoders import PiecewiseEncoder
+from cryocast.types import DataSpace
 
 
 class TestPiecewiseEncodeDecode:

@@ -7,14 +7,14 @@ import pytest
 import torch
 from torch import nn
 
-from icenet_mp.models.decoders import (
+from cryocast.models.decoders import (
     BaseDecoder,
     CNNDecoder,
     DeepCompressionDecoder,
     NaiveLinearDecoder,
     PiecewiseDecoder,
 )
-from icenet_mp.types import DataSpace
+from cryocast.types import DataSpace
 
 
 class TestDecoders:
