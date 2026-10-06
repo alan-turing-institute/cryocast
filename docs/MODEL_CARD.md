@@ -7,7 +7,7 @@ Sophie Arana, Isabel Fenton, Maria Novitasari, Erin Quan, James Robinson, Shaerd
 
 
 ### Model/System Name
-IceNet Multimodal Pipeline (shorthand: CryoCast)
+CryoCast
 
 ### Version
 Release 2026.07
@@ -42,7 +42,7 @@ MIT Licensed codebase
 ### References
 
 ### Citation
-The Alan Turing Institute. (2026). IceNet Multimodal Pipeline [Source code]. Github. https://github.com/alan-turing-institute/icenet-mp
+The Alan Turing Institute. (2026). CryoCast [Source code]. Github. https://github.com/alan-turing-institute/icenet-mp
 
 ## Model/System Details
 
@@ -97,4 +97,4 @@ The CryoCast system has made substantial progress through TRL 2, with optimised 
 To complete TRL 2, there are two outstanding requirements: formal documentation of baseline model performance metrics and fully validated focused experiments confirming model behaviours and goals. For progress towards TRL 3, the sea ice team is actively looking for partners to narrow initial use cases for the CryoCast pipeline and develop tests that are grounded in real world use.
 
 ### Ethical Considerations
-The IceNet Multimodal Pipeline is a research product and currently operates on publicly accessible data so there are no known ethical considerations.
+CryoCast is a research product and currently operates on publicly accessible data so there are no known ethical considerations.
