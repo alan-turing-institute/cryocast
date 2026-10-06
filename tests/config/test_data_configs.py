@@ -5,16 +5,16 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
-DATA_DIR = Path(str(files("icenet_mp.config"))) / "data"
+DATA_DIR = Path(str(files("cryocast.config"))) / "data"
 DATA_GROUP_CONFIGS = sorted(
     p.stem for p in DATA_DIR.glob("*.yaml") if not p.name.endswith(".local.yaml")
 )
 
 
 class TestDataConfigs:
-    """Regression tests for icenet-mp's top-level data= config groups."""
+    """Regression tests for the top-level CryoCast 'data=' config groups."""
 
-    @pytest.mark.parametrize("config_name", DATA_GROUP_CONFIGS)
+    @pytest.mark.parametrize("config_name", DATA_GROUP_CONFIGS, ids=DATA_GROUP_CONFIGS)
     def test_data_groups_compose(
         self, compose_config: Callable[..., DictConfig], config_name: str
     ) -> None:
@@ -26,7 +26,9 @@ class TestDataConfigs:
         assert config.data.split.validate
 
     @pytest.mark.parametrize(
-        "config_name", ["full_north", "full_south", "sample_north", "sample_south"]
+        "config_name",
+        ["full_north", "full_south", "sample_north", "sample_south"],
+        ids=["full_north", "full_south", "sample_north", "sample_south"],
     )
     def test_dataset_statistics_stop_at_training_boundary(
         self, compose_config: Callable[..., DictConfig], config_name: str

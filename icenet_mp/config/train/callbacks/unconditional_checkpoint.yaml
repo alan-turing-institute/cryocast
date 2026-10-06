@@ -1,3 +1,0 @@
-unconditional_checkpoint:
-  _target_: icenet_mp.callbacks.UnconditionalCheckpoint
-  on_train_end: true

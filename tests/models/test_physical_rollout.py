@@ -32,15 +32,31 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models import EncodeProcessDecode
+from cryocast.models import EncodeProcessDecode
 
 TARGET_GROUP = "sic-ssmis"
 SEED = 1234
+# Residual (tendency) decoder: unbounded output plus an additive skip connection.
+# _build_model copies this into a fresh payload, so sharing it between tests is safe.
+ADDITIVE_SKIP_DECODER: dict[str, Any] = {
+    "restrict_range": "none",
+    "skip_connection": {"method": "additive"},
+}
+# A small ViT: unlike NullProcessor it reads the whole history window.
+VIT_PROCESSOR: dict[str, Any] = {
+    "_target_": "cryocast.models.processors.VitProcessor",
+    "patch_size": 4,
+    "emb_dim": 32,
+    "depth": 1,
+    "heads": 2,
+    "mlp_dim": 32,
+    "dropout": 0.0,
+}
 
 
 def _build_model(
     *,
-    rollout_space: str = "latent",
+    rollout_space: str | None = None,
     decoder_extra: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
@@ -64,7 +80,7 @@ def _build_model(
             "latent_space": (latent, latent),
             **{
                 space["name"]: {
-                    "_target_": "icenet_mp.models.encoders.CNNEncoder",
+                    "_target_": "cryocast.models.encoders.CNNEncoder",
                     "n_layers": 1,
                 }
                 for space in input_spaces
@@ -72,20 +88,21 @@ def _build_model(
         }
     )
     decoder_payload: dict[str, Any] = {
-        "_target_": "icenet_mp.models.decoders.CNNDecoder",
+        "_target_": "cryocast.models.decoders.CNNDecoder",
         "n_layers": 1,
     }
     decoder_payload.update(decoder_extra or {})
     decoder = DictConfig(decoder_payload)
+    # Omit rollout_space when unset so the tests exercise the model's own default.
+    rollout_kwargs = {} if rollout_space is None else {"rollout_space": rollout_space}
     torch.manual_seed(seed)
     return EncodeProcessDecode(
         name="cnn-null-cnn",
         encoders=encoders,
         processor=DictConfig(
-            processor or {"_target_": "icenet_mp.models.processors.NullProcessor"}
+            processor or {"_target_": "cryocast.models.processors.NullProcessor"}
         ),
         decoder=decoder,
-        rollout_space=rollout_space,
         hemisphere="north",
         input_spaces=input_spaces,
         n_forecast_steps=n_forecast_steps,
@@ -96,10 +113,17 @@ def _build_model(
         optimizer=DictConfig({}),
         scheduler=DictConfig({}),
         lr_scheduler=DictConfig({}),
+        **rollout_kwargs,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
-        metrics=["accuracy", "mae"],
+        metrics=[
+            {
+                "name": "accuracy",
+                "_target_": "cryocast.metrics.IceNetAccuracyPerForecastDay",
+            },
+            {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"},
+        ],
         # Required since #405: which variable(s) of the target INPUT group are the
         # prediction target. output_space is single-channel throughout these tests,
         # so [0] satisfies the channel-count check; the feedback-channel tests pass
@@ -146,13 +170,9 @@ def _zero_decoder_output(model: EncodeProcessDecode) -> None:
 class TestDefaultsOff:
     """Neither option may change anything unless explicitly switched on."""
 
-    def test_defaults(self) -> None:
-        model = _build_model()
-        assert model.rollout_space == "latent"
-        assert model.target_variable_indices == [0]
-
     def test_off_is_identical_to_absent(self) -> None:
         absent = _build_model()
+        assert absent.rollout_space == "latent"
         explicit = _build_model(rollout_space="latent")
         inputs = _inputs(absent)
         absent.eval()
@@ -165,10 +185,7 @@ class TestDefaultsOff:
         latent = _build_model()
         physical = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         assert set(latent.state_dict()) == set(physical.state_dict())
         assert sum(p.numel() for p in latent.parameters()) == sum(
@@ -182,10 +199,7 @@ class TestResidualIsExactlyPersistence:
     def test_zero_tendency_reproduces_persistence_at_every_lead(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         _zero_decoder_output(model)
         inputs = _inputs(model)
@@ -217,10 +231,7 @@ class TestResidualIsExactlyPersistence:
     def test_residual_output_is_bounded(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         # a large positive bias would drive the sum far above 1 without the clamp
         bias = _final_conv(model).bias
@@ -255,19 +266,8 @@ class TestPhysicalRolloutAdvancesTheState:
         """A non-zero tendency must produce a moving trajectory, not one field."""
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
-            processor={
-                "_target_": "icenet_mp.models.processors.VitProcessor",
-                "patch_size": 4,
-                "emb_dim": 32,
-                "depth": 1,
-                "heads": 2,
-                "mlp_dim": 32,
-                "dropout": 0.0,
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+            processor=VIT_PROCESSOR,
         )
         _small_tendency(model)
         model.eval()
@@ -276,24 +276,6 @@ class TestPhysicalRolloutAdvancesTheState:
         assert float(prediction.max()) < 1.0, "clamp saturated; not a valid test regime"
         for lead in range(1, model.n_forecast_steps):
             assert not torch.equal(prediction[:, lead], prediction[:, lead - 1])
-
-    def test_zero_init_starts_at_persistence(self) -> None:
-        """zero_init_output must place the whole trajectory exactly on persistence."""
-        model = _build_model(
-            rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "zero_init_output": True,
-                "skip_connection": {"method": "additive"},
-            },
-        )
-        inputs = _inputs(model)
-        model.eval()
-        with torch.no_grad():
-            prediction = model(inputs)
-        persistence = inputs[TARGET_GROUP][:, -1]
-        for lead in range(model.n_forecast_steps):
-            assert torch.equal(prediction[:, lead], persistence)
 
     def test_later_leads_depend_on_the_previous_prediction(self) -> None:
         """Lead k+1 must be a function of the lead-k prediction, not of stale history.
@@ -305,19 +287,8 @@ class TestPhysicalRolloutAdvancesTheState:
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
-            processor={
-                "_target_": "icenet_mp.models.processors.VitProcessor",
-                "patch_size": 4,
-                "emb_dim": 32,
-                "depth": 1,
-                "heads": 2,
-                "mlp_dim": 32,
-                "dropout": 0.0,
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+            processor=VIT_PROCESSOR,
         )
         _small_tendency(model)
         model.eval()
@@ -330,65 +301,59 @@ class TestPhysicalRolloutAdvancesTheState:
         assert not torch.equal(out_first[:, -1], out_second[:, -1])
 
     def test_non_target_groups_are_held_at_last_observation(self) -> None:
-        """An extra input group must not be hallucinated forward."""
+        """An extra input group must be held at its newest observed frame.
+
+        Only the newest era5 frame may reach the forecast: changing an older frame
+        must leave it unchanged, while changing the newest must not. Needs a
+        processor that reads the whole window (NullProcessor does not), hence the ViT.
+        """
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+            processor=VIT_PROCESSOR,
             extra_inputs=[extra],
         )
+        _small_tendency(model)
         model.eval()
         inputs = _inputs(model)
-        baseline = {key: value.clone() for key, value in inputs.items()}
-        # Changing an OLDER era5 frame changes the encoding of the window, so the
-        # forecast may move; changing nothing must be reproducible.
+        older_changed = {key: value.clone() for key, value in inputs.items()}
+        older_changed["era5"][:, :-1] = 0.0
+        newest_changed = {key: value.clone() for key, value in inputs.items()}
+        newest_changed["era5"][:, -1] = 0.0
         with torch.no_grad():
-            assert torch.equal(model(inputs), model(baseline))
+            baseline = model(inputs)
+            assert torch.equal(model(older_changed), baseline)
+            assert not torch.equal(model(newest_changed), baseline)
 
-    def test_feedback_writes_only_the_target_variable(self) -> None:
-        """A multi-channel target group: the prediction is fed back into channel 1 only."""
+    @pytest.mark.parametrize(
+        "target_variable_indices",
+        [[1], [0, 2]],
+        ids=["single-middle-channel", "non-contiguous-channels"],
+    )
+    def test_feedback_writes_only_the_target_variables(
+        self, target_variable_indices: list[int]
+    ) -> None:
+        """A multi-channel target group: the prediction is fed back into its targets only.
+
+        Target variables need not be neighbours: channels 0 and 2 of a 3-channel group
+        behave exactly like the single channel 1.
+        """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
             input_channels=3,
-            target_variable_indices=[1],
+            output_channels=len(target_variable_indices),
+            target_variable_indices=target_variable_indices,
         )
         _zero_decoder_output(model)
         inputs = _inputs(model)
         model.eval()
         with torch.no_grad():
             prediction = model(inputs)
-        # zero tendency anchored on channel 1 => persistence of channel 1 at every lead
-        expected = inputs[TARGET_GROUP][:, -1, 1:2]
-        for lead in range(model.n_forecast_steps):
-            assert torch.equal(prediction[:, lead], expected)
-
-    def test_feedback_supports_non_contiguous_target_variables(self) -> None:
-        """Target variables need not be neighbours: channels 0 and 2 of a 3-channel group."""
-        model = _build_model(
-            rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
-            input_channels=3,
-            output_channels=2,
-            target_variable_indices=[0, 2],
-        )
-        _zero_decoder_output(model)
-        inputs = _inputs(model)
-        model.eval()
-        with torch.no_grad():
-            prediction = model(inputs)
-        # zero tendency anchored on channels [0, 2] => persistence of those channels
-        # at every lead, exactly as in the contiguous case above.
-        expected = inputs[TARGET_GROUP][:, -1, [0, 2]]
+        # zero tendency anchored on the target channels => persistence of those
+        # channels at every lead
+        expected = inputs[TARGET_GROUP][:, -1, target_variable_indices]
         for lead in range(model.n_forecast_steps):
             assert torch.equal(prediction[:, lead], expected)
 
@@ -397,10 +362,7 @@ class TestNoFutureLeak:
     def test_target_key_is_never_read(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         model.eval()
         inputs = _inputs(model)
@@ -419,18 +381,26 @@ class TestConfigValidation:
         """A bounded decoder works for a residual (additive-skip) physical model.
 
         With an additive skip connection BaseDecoder bounds SIGNED values
-        symmetrically, so the tendency is never squashed into [0, 1].
+        symmetrically, so the tendency is never squashed into [0, 1]: a negative
+        tendency must lower the forecast below persistence.
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "clamp",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra={**ADDITIVE_SKIP_DECODER, "restrict_range": "clamp"},
         )
+        # Force a constant tendency of -0.1 everywhere
+        _zero_decoder_output(model)
+        final = _final_conv(model)
+        assert final.bias is not None
+        with torch.no_grad():
+            final.bias.fill_(-0.1)
+        inputs = _inputs(model)
         model.eval()
         with torch.no_grad():
-            prediction = model(_inputs(model))
+            prediction = model(inputs)
+        persistence = inputs[TARGET_GROUP][:, -1]
+        expected = (persistence - 0.1).clamp(0.0, 1.0)
+        assert torch.allclose(prediction[:, 0], expected)
         assert float(prediction.min()) >= 0.0
         assert float(prediction.max()) <= 1.0
 
@@ -441,7 +411,7 @@ class TestAnchorSemantics:
     The static anchor (#405) and the moving anchor (#410) are the same additive skip
     connection; only the frame supplied as the anchor differs.
 
-    Both tests below drive the decoder to emit a CONSTANT tendency c, which makes the
+    Both cases below drive the decoder to emit a CONSTANT tendency c, which makes the
     two anchor choices analytically separable:
         static anchor  ->  output_k = clamp(observation + c)      (same for every lead)
         moving anchor  ->  output_k = clamp(output_{k-1} + c)     (accumulates with k)
@@ -456,14 +426,21 @@ class TestAnchorSemantics:
             assert final.bias is not None, "decoder's final conv needs a bias"
             final.bias.fill_(value)
 
-    def test_moving_anchor_accumulates_across_leads(self) -> None:
-        """rollout_space='physical': each lead corrects the PREVIOUS lead."""
+    @pytest.mark.parametrize(
+        ("rollout_space", "accumulates"),
+        [("physical", True), ("latent", False)],
+        ids=["moving-anchor-accumulates", "static-anchor-does-not-accumulate"],
+    )
+    def test_anchor_accumulation(self, rollout_space: str, accumulates: bool) -> None:  # noqa: FBT001
+        """Moving vs static anchor under a constant tendency.
+
+        rollout_space='physical': each lead corrects the PREVIOUS lead, so the
+        tendency accumulates. The default latent path anchors EVERY lead on the newest
+        observation, so it does not.
+        """
         model = _build_model(
-            rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            rollout_space=rollout_space,
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         step = 0.05
         self._constant_tendency(model, step)
@@ -474,28 +451,9 @@ class TestAnchorSemantics:
 
         newest = inputs[TARGET_GROUP][:, -1]
         for lead in range(model.n_forecast_steps):
-            expected = (newest + step * (lead + 1)).clamp(0.0, 1.0)
-            torch.testing.assert_close(prediction[:, lead], expected)
-
-    def test_static_anchor_does_not_accumulate(self) -> None:
-        """The default latent path anchors EVERY lead on the newest observation."""
-        model = _build_model(
-            rollout_space="latent",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
-        )
-        step = 0.05
-        self._constant_tendency(model, step)
-        model.eval()
-        inputs = _inputs(model, seed=5)
-        with torch.no_grad():
-            prediction = model(inputs)
-
-        expected = (inputs[TARGET_GROUP][:, -1] + step).clamp(0.0, 1.0)
-        for lead in range(model.n_forecast_steps):
-            torch.testing.assert_close(prediction[:, lead], expected)
+            increment = step * (lead + 1) if accumulates else step
+            expected = (newest + increment).clamp(0.0, 1.0)
+            assert torch.allclose(prediction[:, lead], expected)
 
 
 class TestTrainEvalParity:
@@ -522,13 +480,11 @@ class TestTrainEvalParity:
         )
         return batch
 
-    def test_training_step_prediction_matches_forward_physical(self) -> None:
+    def test_training_step_matches_forward_physical(self) -> None:
+        """Both the prediction and the loss come from the physical forward pass."""
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         _small_tendency(model)
         model.eval()  # kill dropout so the two passes are deterministic
@@ -536,23 +492,9 @@ class TestTrainEvalParity:
         with torch.no_grad():
             out = model.training_step(dict(batch), 0)
             expected = model(dict(batch))
-        torch.testing.assert_close(out.prediction, expected)
-
-    def test_training_step_loss_is_computed_on_the_physical_prediction(self) -> None:
-        model = _build_model(
-            rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
-        )
-        _small_tendency(model)
-        model.eval()
-        batch = self._batch(model)
-        with torch.no_grad():
-            out = model.training_step(dict(batch), 0)
-            expected_loss = model.loss(model(dict(batch)), batch["target"])
-        torch.testing.assert_close(out.loss, expected_loss)
+            expected_loss = model.loss(expected, batch["target"])
+        assert torch.allclose(out.prediction, expected)
+        assert torch.allclose(out.loss, expected_loss)
 
     def test_latent_path_is_unchanged_by_the_routing(self) -> None:
         """The default (latent) model still takes main's training_step path."""
@@ -562,7 +504,7 @@ class TestTrainEvalParity:
         with torch.no_grad():
             out = model.training_step(dict(batch), 0)
             expected = model(dict(batch))
-        torch.testing.assert_close(out.prediction, expected)
+        assert torch.allclose(out.prediction, expected)
 
 
 class TestDecoderZeroInitOutput:
@@ -571,11 +513,7 @@ class TestDecoderZeroInitOutput:
     def test_zero_init_output_makes_residual_exactly_persistence(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "zero_init_output": True,
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra={**ADDITIVE_SKIP_DECODER, "zero_init_output": True},
         )
         inputs = _inputs(model)
         persistence = inputs[TARGET_GROUP][:, -1]
@@ -588,10 +526,7 @@ class TestDecoderZeroInitOutput:
     def test_default_is_off(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={
-                "restrict_range": "none",
-                "skip_connection": {"method": "additive"},
-            },
+            decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         final = _final_conv(model)
         assert final.weight.abs().max() > 0

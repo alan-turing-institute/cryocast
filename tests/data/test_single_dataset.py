@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-from icenet_mp.data.single_dataset import SingleDataset
-from icenet_mp.types import DataSpace
+from cryocast.data.single_dataset import SingleDataset
+from cryocast.types import DataSpace
 
 
 class TestSingleDataset:
@@ -267,6 +268,38 @@ class TestSingleDataset:
         data_array = subset_dataset[0]
         assert data_array.shape == (1, 2, 2)
 
+    def test_subset_variable_order_follows_storage_not_request_order(
+        self, mock_dataset: Path
+    ) -> None:
+        """`subset` selects the requested variables while keeping on-disk order.
+
+        `mock_dataset` stores variables as (ice_conc, ice_thickness, temperature).
+        Variables are requested here in the opposite order, but the subset's
+        `variable_names` still comes back in storage order: `variables` is turned
+        into a `set` internally so anemoi does not reorder the underlying data, so
+        any caller that needs a specific channel by index must read it back from
+        `variable_names` rather than assuming it matches the requested order.
+        """
+        original_dataset = SingleDataset(
+            name="mock_dataset", input_files=[mock_dataset]
+        )
+        subset_dataset = original_dataset.subset(variables=["temperature", "ice_conc"])
+        assert subset_dataset.variable_names == ["ice_conc", "temperature"]
+
+    def test_variable_names_on_disk_ignores_variable_selection(
+        self, mock_dataset: Path
+    ) -> None:
+        """`variable_names_on_disk` lists every stored variable, even after `subset`."""
+        subset_dataset = SingleDataset(
+            name="mock_dataset", input_files=[mock_dataset]
+        ).subset(variables=["ice_conc"])
+        assert subset_dataset.variable_names == ["ice_conc"]
+        assert subset_dataset.variable_names_on_disk == [
+            "ice_conc",
+            "ice_thickness",
+            "temperature",
+        ]
+
     def test_subset_preserves_date_ranges(
         self,
         mock_dataset: Path,
@@ -436,14 +469,16 @@ class TestSingleDataset:
         )
         assert np.all(np.isnan(dataset[0]))
 
-    def test_subset_preserves_normalise_flag(self, mock_dataset: Path) -> None:
+    @pytest.mark.parametrize("flag", [True, False], ids=["normalise", "raw"])
+    def test_subset_preserves_normalise_flag(
+        self, mock_dataset: Path, *, flag: bool
+    ) -> None:
         """subset() propagates the normalise flag to the child dataset."""
-        for flag in (True, False):
-            dataset = SingleDataset(
-                name="mock_dataset", input_files=[mock_dataset], normalise=flag
-            )
-            subset = dataset.subset(variables=["ice_conc"])
-            assert subset._normalise is flag
+        dataset = SingleDataset(
+            name="mock_dataset", input_files=[mock_dataset], normalise=flag
+        )
+        subset = dataset.subset(variables=["ice_conc"])
+        assert subset._normalise is flag
 
     def test_normalise_date_sets_time_to_noon(self) -> None:
         """Normalize dates to noon while preserving the calendar date."""
@@ -563,3 +598,60 @@ class TestSingleDataset:
         assert not [
             record for record in caplog.records if record.levelno == logging.WARNING
         ]
+
+
+class TestSingleDatasetDateLookupNormalization:
+    def test_date_lookups_normalise_to_noon(
+        self, mock_dataset_non_normalized_times: Path
+    ) -> None:
+        """Confirm that a midnight datetime is normalised during lookup."""
+        dataset = SingleDataset(
+            name="test_normalized",
+            input_files=[mock_dataset_non_normalized_times],
+        )
+        midnight = np.datetime64("2020-01-01")
+
+        assert dataset.to_index(midnight) == 0
+        np.testing.assert_array_equal(
+            dataset.get_tchw_slice(midnight, 1),
+            dataset.get_tchw([dataset.dates[0]]),
+        )
+
+
+class TestSingleDatasetCache:
+    """Anemoi datasets are opened once per fileset and shared via a class-level cache."""
+
+    def test_anemoi_dataset_is_loaded_once_per_fileset(
+        self, mock_dataset: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Repeated reads of one fileset should reuse the class-level dataset cache."""
+        mock_open_dataset = MagicMock()
+        monkeypatch.setattr(
+            "cryocast.data.single_dataset.open_dataset", mock_open_dataset
+        )
+        monkeypatch.setattr(SingleDataset, "anemoi_cache", {})
+        input_files = (mock_dataset,)
+
+        first = SingleDataset.load_dataset(input_files)
+        second = SingleDataset.load_dataset(input_files)
+
+        assert first is second
+        mock_open_dataset.assert_called_once_with(input_files)
+
+    def test_subsets_share_cached_anemoi_dataset(
+        self, mock_dataset: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """SingleDataset subsets should not reopen their shared source files."""
+        mock_open_dataset = MagicMock()
+        monkeypatch.setattr(
+            "cryocast.data.single_dataset.open_dataset", mock_open_dataset
+        )
+        monkeypatch.setattr(SingleDataset, "anemoi_cache", {})
+        dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
+        subset = dataset.subset(variables=["ice_conc"])
+
+        first = dataset.load_dataset(dataset._input_files)
+        second = subset.load_dataset(subset._input_files)
+
+        assert first is second
+        mock_open_dataset.assert_called_once_with((mock_dataset,))

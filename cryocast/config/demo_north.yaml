@@ -1,0 +1,6 @@
+defaults:
+  - base
+  - override /data: demo
+  - override /variables: demo
+  - override /window: forecast-3-history-2
+  - _self_

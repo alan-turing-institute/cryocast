@@ -1,3 +1,3 @@
 # Geotools
 
-::: icenet_mp.geotools
+::: cryocast.geotools

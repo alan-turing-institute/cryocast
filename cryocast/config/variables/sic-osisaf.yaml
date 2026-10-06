@@ -1,0 +1,40 @@
+input:
+  era5:
+    - 10u
+    - 10v
+    - 2t
+    - cos_julian_day
+    - insolation
+    - msl
+    - q_10
+    - q_1000
+    - q_250
+    - q_500
+    - sin_julian_day
+    - sp
+    - t_10
+    - t_1000
+    - t_250
+    - t_500
+    - u_10
+    - u_1000
+    - u_250
+    - u_500
+    - v_10
+    - v_1000
+    - v_250
+    - v_500
+    - z_10
+    - z_1000
+    - z_250
+    - z_500
+  float-argo:
+    - PSAL
+    - TEMP
+  sic-osisaf:
+    - ice_conc
+    - status_flag
+    - total_standard_uncertainty
+target:
+  sic-osisaf:
+    - ice_conc

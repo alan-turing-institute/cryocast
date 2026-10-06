@@ -4,7 +4,7 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.types import (
+from cryocast.types import (
     ColourScale,
     DataSpace,
     Hemisphere,
@@ -16,13 +16,6 @@ from icenet_mp.types import (
 
 class TestDataSpace:
     """Tests for DataSpace."""
-
-    def test_coerces_numeric_values_to_ints(self) -> None:
-        """Coerce numeric string values to integer dimensions."""
-        space = DataSpace(channels="2", name="sic", shape=("8", "12"))  # type: ignore[arg-type]
-
-        assert space.channels == 2
-        assert space.shape == (8, 12)
 
     def test_properties(self) -> None:
         """Expose the expected DataSpace helper properties."""
@@ -41,10 +34,47 @@ class TestDataSpace:
         space = DataSpace.from_dict(config)
         result = space.to_dict()
 
+        assert space == DataSpace(channels=4, name="weather", shape=(32, 48))
         assert isinstance(result, DictConfig)
-        assert result.channels == 4
-        assert result.name == "weather"
-        assert tuple(result.shape) == (32, 48)
+        assert DataSpace.from_dict(result) == space
+
+    def test_equal_by_value(self) -> None:
+        """Treat distinct DataSpaces with the same values as equal, with equal hashes."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+        other = DataSpace(channels="3", name="sic", shape=("16", "24"))  # type: ignore[arg-type]
+
+        assert space is not other
+        assert space == other
+        assert hash(space) == hash(other)
+        assert len({space, other}) == 1
+
+    @pytest.mark.parametrize("field", ["channels", "name", "shape"])
+    def test_immutable(self, field: str) -> None:
+        """Reject assignment to any field, so that the hash cannot change."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+
+        with pytest.raises(AttributeError):
+            setattr(space, field, getattr(space, field))
+
+    @pytest.mark.parametrize(
+        ("channels", "name", "shape"),
+        [(4, "sic", (16, 24)), (3, "era5", (16, 24)), (3, "sic", (24, 16))],
+        ids=["channels", "name", "shape"],
+    )
+    def test_not_equal_when_any_field_differs(
+        self, channels: int, name: str, shape: tuple[int, int]
+    ) -> None:
+        """Treat DataSpaces that differ in any one field as unequal."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+
+        assert space != DataSpace(channels=channels, name=name, shape=shape)
+
+    def test_not_equal_to_other_types(self) -> None:
+        """Do not treat a DataSpace as equal to an object of another type."""
+        space = DataSpace(channels=3, name="sic", shape=(16, 24))
+
+        assert space != (3, "sic", (16, 24))
+        assert space != space.to_dict()
 
 
 class TestColourScale:

@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from icenet_mp.models.processors import SpaceTimeVitProcessor
-from icenet_mp.types import DataSpace, ProcessorOutput
+from cryocast.models.processors import SpaceTimeVitProcessor
+from cryocast.types import DataSpace, ProcessorOutput
 
 
 def _make_processor(

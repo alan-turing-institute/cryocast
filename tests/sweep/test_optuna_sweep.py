@@ -7,8 +7,8 @@ import yaml
 from omegaconf import DictConfig, OmegaConf
 from omegaconf.errors import OmegaConfBaseException
 
-from icenet_mp.sweep import OptunaSweep
-from icenet_mp.sweep.parameters import CategoricalParameter, FloatParameter
+from cryocast.sweep import OptunaSweep
+from cryocast.sweep.parameters import CategoricalParameter, FloatParameter
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:QMCSampler is experimental:optuna.exceptions.ExperimentalWarning"
@@ -105,6 +105,7 @@ class TestUnsetProperties:
             ("study_name", "Study name has not been set"),
             ("study_path", "Study path has not been set"),
         ],
+        ids=["entity", "study_name", "study_path"],
     )
     def test_raises_when_unset(self, attr: str, message: str) -> None:
         with pytest.raises(ValueError, match=message):

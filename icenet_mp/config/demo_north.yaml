@@ -1,5 +1,0 @@
-defaults:
-  - base
-  - override /data: demo
-  - override /predict: sic-osisaf-2d
-  - _self_

@@ -4,33 +4,22 @@ import pytest
 import torch
 from omegaconf import DictConfig
 
-from icenet_mp.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from icenet_mp.models.processors import BaseProcessor
-from icenet_mp.types import DataSpace, ProcessorOutput, TensorNTCHW
+from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
+from cryocast.models.processors import BaseProcessor
+from cryocast.types import DataSpace, ProcessorOutput, TensorNTCHW
 
 
-class _FixedLossProcessor(BaseProcessor):
-    """Test double whose rollout reports a fixed loss.
+class _CaptureLatentLossProcessor(BaseProcessor):
+    """Test double that records latent supervision passed to the processor."""
 
-    Declares ``computes_loss_in_latent_space=True``, as any real processor returning a
-    loss must: ``training_step`` only honours ``ProcessorOutput.loss`` for a processor
-    that declares this, otherwise it goes through ``self(batch)`` and is silently
-    dropped.
-    """
-
-    def __init__(self, *, loss: torch.Tensor, **kwargs: Any) -> None:
-        kwargs.pop("computes_loss_in_latent_space", None)
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
-        self._loss = loss
+        self.target: TensorNTCHW | None = None
 
-    def rollout(
-        self,
-        x: TensorNTCHW,
-        y: TensorNTCHW | None = None,  # noqa: ARG002
-    ) -> ProcessorOutput:
-        return ProcessorOutput(
-            prediction=x[:, -self.n_forecast_steps :], loss=self._loss
-        )
+    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
+        self.target = y
+        prediction = x[:, -1:].expand(-1, self.n_forecast_steps, -1, -1, -1)
+        return ProcessorOutput(prediction=prediction, loss=torch.tensor(0.0))
 
 
 class TestProcessorStage:
@@ -39,13 +28,12 @@ class TestProcessorStage:
         self,
         *,
         cfg_encoders: DictConfig,
-        cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
         cfg_optimizer: DictConfig,
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
         cfg_decoder: DictConfig,
     ) -> EncoderStage:
         # The target encoder encodes the forecast target itself, not a raw input
@@ -62,12 +50,12 @@ class TestProcessorStage:
             decoder=cfg_decoder,
             latent_space=cfg_encoders["latent_space"],
             hemisphere="north",
-            input_spaces=[cfg_input_space],
+            input_spaces=[target_space.to_dict()],
             n_forecast_steps=1,
             n_history_steps=1,
             name="target_encoder",
             optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
+            output_space=target_space.to_dict(),
             scheduler=cfg_scheduler,
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
@@ -87,7 +75,7 @@ class TestProcessorStage:
         cfg_scheduler: DictConfig,
         cfg_lr_scheduler: DictConfig,
         cfg_loss: DictConfig,
-        cfg_metrics: list[str],
+        cfg_metrics: list[dict[str, Any]],
     ) -> ProcessorStage:
         return ProcessorStage(
             processor=cfg_processor,
@@ -104,36 +92,6 @@ class TestProcessorStage:
             lr_scheduler=cfg_lr_scheduler,
             loss=cfg_loss,
             metrics=cfg_metrics,
-        )
-
-    def test_forward_shape(
-        self,
-        processor_stage: ProcessorStage,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-    ) -> None:
-        batch_size = 2
-        result = processor_stage(
-            {
-                "test-input": torch.rand(
-                    batch_size,
-                    2,
-                    cfg_input_space["channels"],
-                    *cfg_input_space["shape"],
-                ),
-                "target": torch.rand(
-                    batch_size,
-                    1,
-                    cfg_output_space["channels"],
-                    *cfg_output_space["shape"],
-                ),
-            }
-        )
-        assert result.shape == (
-            batch_size,
-            1,
-            cfg_output_space["channels"],
-            *cfg_output_space["shape"],
         )
 
     def test_training_step_returns_prediction_target_and_loss(
@@ -174,15 +132,12 @@ class TestProcessorStage:
         processor_stage: ProcessorStage,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # The shape check only guards the custom loss path, which is the only one that
         # feeds the target through target_encoder; the standard path never touches it.
-        processor_stage.processor = _FixedLossProcessor(
-            data_space=processor_stage.processor.data_space,
-            data_space_target=processor_stage.processor.data_space_target,
-            n_forecast_steps=processor_stage.n_forecast_steps,
-            n_history_steps=processor_stage.n_history_steps,
-            loss=torch.tensor(0.5),
+        monkeypatch.setattr(
+            processor_stage.processor, "computes_loss_in_latent_space", True
         )
         batch_size = 2
         batch = {
@@ -208,15 +163,22 @@ class TestProcessorStage:
         processor_stage: ProcessorStage,
         cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # training_step only honours ProcessorOutput.loss for a processor that declares
+        # computes_loss_in_latent_space=True; otherwise it goes through self(batch).
         fixed_loss = torch.tensor(0.5)
-        processor_stage.processor = _FixedLossProcessor(
-            data_space=processor_stage.processor.data_space,
-            data_space_target=processor_stage.processor.data_space_target,
-            n_forecast_steps=processor_stage.n_forecast_steps,
-            n_history_steps=processor_stage.n_history_steps,
-            loss=fixed_loss,
-        )
+        processor = processor_stage.processor
+        n_forecast_steps = processor_stage.n_forecast_steps
+
+        def fixed_loss_rollout(
+            x: TensorNTCHW,
+            _y: TensorNTCHW | None = None,
+        ) -> ProcessorOutput:
+            return ProcessorOutput(prediction=x[:, -n_forecast_steps:], loss=fixed_loss)
+
+        monkeypatch.setattr(processor, "computes_loss_in_latent_space", True)
+        monkeypatch.setattr(processor, "rollout", fixed_loss_rollout)
         batch_size = 2
         batch = {
             "test-input": torch.rand(
@@ -243,78 +205,91 @@ class TestProcessorStage:
             *cfg_output_space["shape"],
         )
 
-    def test_get_persistence_returns_tensor_when_decoder_has_skip_connection(
+    def test_latent_target_uses_decoder_target_input_encoder(
+        self,
+        encoder_stage: EncoderStage,
+        target_encoder_stage: EncoderStage,
+        *,
+        cfg_decoder: DictConfig,
+        cfg_input_space: DictConfig,
+    ) -> None:
+        decoder_stage = DecoderStage.from_template(
+            decoder=cfg_decoder,
+            encoders=[encoder_stage],
+            output_space=DataSpace(
+                channels=1, name=cfg_input_space["name"], shape=cfg_input_space["shape"]
+            ),
+            target_dataset_name=cfg_input_space["name"],
+            target_variable_indices=[2],
+        )
+        processor_stage = ProcessorStage.from_template(
+            processor=DictConfig(
+                {"_target_": f"{__name__}.{_CaptureLatentLossProcessor.__name__}"}
+            ),
+            decoder_model=decoder_stage,
+            target_encoder=target_encoder_stage,
+        )
+
+        target_input_encoder = processor_stage.encoders[0]
+        assert processor_stage.target_input_encoder is target_input_encoder
+        assert (
+            processor_stage.processor.data_space_target
+            == target_input_encoder.data_space_out
+        )
+        assert (
+            processor_stage.processor.data_space_target
+            != processor_stage.target_encoder.data_space_out
+        )
+
+        history = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
+        target = torch.rand(2, 1, 1, 16, 16)
+        full_target = history[:, -1:].clone()
+        full_target[:, :, 2:3] = target
+        expected_target_latent = target_input_encoder.rollout(full_target)
+
+        processor_stage.training_step(
+            {cfg_input_space["name"]: history, "target": target}, 0
+        )
+
+        capture = processor_stage.processor
+        assert isinstance(capture, _CaptureLatentLossProcessor)
+        assert capture.target is not None
+        torch.testing.assert_close(capture.target, expected_target_latent)
+        assert capture.target.shape[2] == target_input_encoder.data_space_out.channels
+
+    def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
         self,
         encoder_stage: EncoderStage,
         target_encoder_stage: EncoderStage,
         *,
         cfg_processor: DictConfig,
-        cfg_input_space: DictConfig,
         cfg_output_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[str],
     ) -> None:
-        skip_connection_decoder = DictConfig(
-            {
-                "_target_": "icenet_mp.models.decoders.NaiveLinearDecoder",
-                "skip_connection": {"method": "additive"},
-            }
-        )
-        decoder_stage = DecoderStage(
-            decoder=skip_connection_decoder,
+        decoder_stage = DecoderStage.from_template(
+            decoder=DictConfig(
+                {
+                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
+                    "skip_connection": {"method": "additive"},
+                }
+            ),
             encoders=[encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
             target_dataset_name="target",
             target_variable_indices=[0],
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=1,
-            n_history_steps=2,
-            name="test-target_decoder",
-            optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
-            scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
-            loss=cfg_loss,
-            metrics=cfg_metrics,
         )
-        processor_stage = ProcessorStage(
+        processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
             target_encoder=target_encoder_stage,
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=1,
-            n_history_steps=2,
-            name="test-target_processor",
-            optimizer=cfg_optimizer,
-            output_space=cfg_output_space,
-            scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
-            loss=cfg_loss,
-            metrics=cfg_metrics,
+        )
+        target = torch.rand(
+            2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]
         )
 
-        batch_size = 2
-        inputs = {
-            "target": torch.rand(
-                batch_size,
-                1,
-                cfg_output_space["channels"],
-                *cfg_output_space["shape"],
-            ),
-        }
+        anchor = processor_stage._extract_anchor(target)
 
-        persistence = processor_stage._extract_anchor(inputs["target"])
-
-        assert persistence is not None
-        assert persistence.shape == (
-            batch_size,
-            len(decoder_stage.target_variable_indices),
-            *cfg_output_space["shape"],
-        )
+        assert anchor is not None
+        assert torch.equal(anchor, target[:, -1, [0]])
 
     def test_encoders_and_decoder_parameters_are_frozen(
         self, processor_stage: ProcessorStage

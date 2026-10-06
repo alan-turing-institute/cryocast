@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 
 def _compose_spacetime_vit_config() -> DictConfig:
     """Compose the space-time ViT model through the normal Hydra config path."""
-    config_dir = str(files("icenet_mp.config"))
+    config_dir = str(files("cryocast.config"))
     GlobalHydra.instance().clear()
     try:
         with initialize_config_dir(config_dir=config_dir, version_base=None):
@@ -29,11 +29,11 @@ def test_spacetime_vit_model_config_enables_missing_argo_strategy() -> None:
     assert config.model.name == "cnn-spacetime-vit-cnn"
     assert (
         config.model.processor._target_
-        == "icenet_mp.models.processors.SpaceTimeVitProcessor"
+        == "cryocast.models.processors.SpaceTimeVitProcessor"
     )
     assert (
         config.model.encoders["float-argo"]._target_
-        == "icenet_mp.models.encoders.MissingDataCNNEncoder"
+        == "cryocast.models.encoders.MissingDataCNNEncoder"
     )
     assert config.model.encoders[
         "float-argo"

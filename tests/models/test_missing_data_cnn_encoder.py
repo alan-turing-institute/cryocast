@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from icenet_mp.models.encoders import MissingDataCNNEncoder
-from icenet_mp.types import DataSpace
+from cryocast.models.encoders import MissingDataCNNEncoder
+from cryocast.types import DataSpace
 
 
 def _make_encoder(

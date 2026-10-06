@@ -1,3 +1,3 @@
 # Metrics
 
-::: icenet_mp.metrics
+::: cryocast.metrics

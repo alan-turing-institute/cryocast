@@ -1,0 +1,36 @@
+# =============================================================================
+# RMSE Loss (Root Mean Squared Error)
+# =============================================================================
+# Reference: https://pytorch.org/docs/stable/generated/torch.nn.MSELoss.html
+#            (RMSE is not native to PyTorch; implemented as sqrt(MSELoss + eps))
+#
+# RMSE is the square root of MSE. This one change has a useful consequence:
+# the loss is in the same units as the target (e.g. metres, °C), so the
+# number seen during training is directly interpretable as an average error
+# magnitude.
+#
+# Formula:
+#   L(y, ŷ) = sqrt( mean(e²) + eps )   where e = y - ŷ
+#
+# Gradient (w.r.t. a single residual e_i):
+#   dL/de_i = e_i / (N * L)
+#
+# How it behaves vs. MSE:
+# - Same optimum: minimising RMSE is mathematically equivalent to minimising
+#   MSE, so the same best model is reached either way
+# - Same relative weighting as MSE: residuals are still squared, so large
+#   errors remain disproportionately influential. RMSE simply rescales the
+#   overall gradient magnitude by 1 / (2 * RMSE)
+# - Unstable near convergence: as L → 0 the denominator shrinks to zero and
+#   gradients blow up. eps is added under the sqrt to prevent this.
+#
+# When to use:
+# - When the loss value needs to be interpretable in the target's own units
+#
+# When NOT to use:
+# - Data with outliers: squaring is still involved, so large residuals still
+#   dominate. Use HuberLoss or SmoothL1Loss instead.
+# =============================================================================
+
+_target_: cryocast.losses.rmse_loss.RMSELoss
+lead_time_exponent: null # Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.

@@ -1,0 +1,28 @@
+# =============================================================================
+# L1 Loss (Mean Absolute Error)
+# =============================================================================
+# Reference: https://pytorch.org/docs/stable/generated/torch.nn.L1Loss.html
+#
+# The simplest robust regression loss: the absolute residual.
+#   - Constant-magnitude gradient everywhere except at zero
+#   - Fully robust to outliers (no quadratic blow-up)
+#   - Non-smooth at e = 0 (gradient flips sign discontinuously)
+#
+# Formula:
+#   L(y, ŷ) = |e|         where  e = y - ŷ  (residual)
+#
+# Parameters:
+#   (none — L1Loss has no shape/threshold knob; only `reduction` is configurable)
+#
+# When to use:
+#   - Regression with heavy-tailed noise or outliers
+#   - When you want the loss in the same units as the target
+#   - Encourages median-like predictions (vs. MSE which encourages the mean)
+#
+# When NOT to use:
+#   - If you need a smooth gradient near zero, use HuberLoss or SmoothL1Loss
+#     instead, which behave like L1 for large errors but quadratic near zero.
+# =============================================================================
+
+_target_: torch.nn.L1Loss
+lead_time_exponent: null # Enable lead-time weighting of `(t + 1)^exponent` by setting this to a float.

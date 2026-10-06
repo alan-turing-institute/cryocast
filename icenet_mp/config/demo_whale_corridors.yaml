@@ -1,6 +1,0 @@
-defaults:
-  - base
-  - notebooks/whale_telemetry_csv
-  - notebooks/whale_visualisation
-  - override /data: nbsample
-  - _self_

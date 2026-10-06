@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from icenet_mp.synthetic.shapes import (
+from cryocast.synthetic.shapes import (
     GrowShrinkCircleConfig,
     MovingCircleConfig,
     _apply_morphology,

@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 import torch
 
-from icenet_mp.data import CombinedDataset, SingleDataset
-from icenet_mp.exceptions import InvalidArrayError, VideoRenderError
-from icenet_mp.types import Hemisphere, ModelStepOutput, PlotSpec
-from icenet_mp.visualisations.land_mask import LandMask
-from icenet_mp.visualisations.matplotlib_renderer import MatplotlibRenderer
-from icenet_mp.visualisations.media_publisher import MediaPublisher
+from cryocast.data import CombinedDataset, SingleDataset
+from cryocast.exceptions import InvalidArrayError, VideoRenderError
+from cryocast.types import Hemisphere, ModelStepOutput, PlotSpec
+from cryocast.visualisations.land_mask import LandMask
+from cryocast.visualisations.matplotlib_renderer import MatplotlibRenderer
+from cryocast.visualisations.media_publisher import MediaPublisher
 
 if TYPE_CHECKING:
     from PIL.ImageFile import ImageFile
