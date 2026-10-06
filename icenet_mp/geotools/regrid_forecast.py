@@ -19,6 +19,21 @@ LAND_MASK = "land_mask"
 # Smallest interpolated ocean fraction for a target point to count as ocean
 OCEAN_FRACTION_THRESHOLD = 0.5
 
+# CF attributes for the output coordinates, as in CMEMS files. Any attributes on the
+# target coordinates override these
+LATITUDE_ATTRIBUTES = {
+    "standard_name": "latitude",
+    "long_name": "Latitude",
+    "units": "degrees_north",
+    "axis": "Y",
+}
+LONGITUDE_ATTRIBUTES = {
+    "standard_name": "longitude",
+    "long_name": "Longitude",
+    "units": "degrees_east",
+    "axis": "X",
+}
+
 # Largest allowed distance between a projected source point and the 1-D axes
 # recovered from them, as a fraction of the grid spacing
 REGULAR_GRID_TOLERANCE = 0.01
@@ -104,7 +119,9 @@ def regrid_forecast_run(  # noqa: PLR0913
 
     Returns:
         Dataset containing `output_variable` with dimensions (time, latitude,
-        longitude), where time holds the valid day of each lead time. The variable
+        longitude), where time holds the valid day of each lead time. The latitude
+        and longitude coordinates have CF attributes, overridden by any attributes
+        of `target_latitudes` and `target_longitudes`. The variable
         keeps the attributes of `variable` in `predictions`, plus the CF attributes
         in `CF_VARIABLE_ATTRIBUTES` for known variables, and is clipped to its valid
         range where one is defined. If the predictions have a land mask, the
@@ -234,16 +251,17 @@ def regrid_forecast_run(  # noqa: PLR0913
                 {"axis": "T", "standard_name": "time", "long_name": "Time"},
             ),
             # Use the target values on the CMEMS dimension names, whatever the
-            # dimensions of the target coordinates are called
+            # dimensions of the target coordinates are called, with CF attributes
+            # so that they are recognised as the horizontal axes
             "latitude": (
                 "latitude",
                 target_latitudes.to_numpy(),
-                target_latitudes.attrs,
+                LATITUDE_ATTRIBUTES | target_latitudes.attrs,
             ),
             "longitude": (
                 "longitude",
                 target_longitudes.to_numpy(),
-                target_longitudes.attrs,
+                LONGITUDE_ATTRIBUTES | target_longitudes.attrs,
             ),
         },
         attrs={

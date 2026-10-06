@@ -161,6 +161,41 @@ class TestRegridForecastRun:
         np.testing.assert_array_equal(output["longitude"], longitudes)
         assert output["latitude"].attrs["units"] == "degrees_north"
 
+    def test_coordinates_have_cf_attributes(
+        self,
+        predictions: xr.Dataset,
+        target_grid: tuple[xr.DataArray, xr.DataArray],
+    ) -> None:
+        """Target coordinates without attributes get CF defaults."""
+        output = regrid_forecast_run(predictions, *target_grid, "2024-01-14")
+
+        assert output["latitude"].attrs == {
+            "standard_name": "latitude",
+            "long_name": "Latitude",
+            "units": "degrees_north",
+            "axis": "Y",
+        }
+        assert output["longitude"].attrs == {
+            "standard_name": "longitude",
+            "long_name": "Longitude",
+            "units": "degrees_east",
+            "axis": "X",
+        }
+
+    def test_target_coordinate_attributes_override_defaults(
+        self,
+        predictions: xr.Dataset,
+        target_grid: tuple[xr.DataArray, xr.DataArray],
+    ) -> None:
+        """Attributes on the target coordinates override the CF defaults."""
+        latitudes, longitudes = target_grid
+        latitudes = latitudes.assign_attrs(long_name="Grid latitude", unit_long="Deg")
+        output = regrid_forecast_run(predictions, latitudes, longitudes, "2024-01-14")
+
+        assert output["latitude"].attrs["long_name"] == "Grid latitude"
+        assert output["latitude"].attrs["unit_long"] == "Deg"
+        assert output["latitude"].attrs["units"] == "degrees_north"
+
     def test_raises_value_error_for_2d_target_coordinates(
         self,
         predictions: xr.Dataset,
