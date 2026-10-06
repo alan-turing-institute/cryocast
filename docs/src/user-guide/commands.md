@@ -24,7 +24,7 @@ To create the CARRA2 target for the initial Svalbard downscaling region
 (76-81°N, 15-35°E), use:
 
 ```bash
-uv run imp datasets create data=downscaling_north
+uv run cryocast datasets create data=downscaling_north
 ```
 
 The stored target is the smallest rectangular window on the native CARRA2 2.5 km
@@ -34,7 +34,7 @@ paired OSI SAF 25 km sea-ice concentration needed to train the downscaler.
 Train the downscaler with:
 
 ```bash
-uv run imp train --config-name downscaling_north
+uv run cryocast train --config-name downscaling_north
 ```
 
 The model starts from a coordinate-aligned bilinear interpolation baseline and learns a
