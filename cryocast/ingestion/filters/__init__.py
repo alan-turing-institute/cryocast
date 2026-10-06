@@ -2,6 +2,7 @@ import logging
 
 from anemoi.transform.filters import filter_registry
 
+from .crop_latlon_filter import CropLatLonFilter
 from .nan_to_num_filter import NanToNumFilter
 from .reproject_filter import ReprojectFilter
 from .set_geography_filter import SetGeographyFilter
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 def register_filters() -> None:
     """Register all filters with anemoi-transform."""
     filters = {
+        "crop-latlon": CropLatLonFilter,
         "nan-to-num": NanToNumFilter,
         "reproject": ReprojectFilter,
         "set-geography": SetGeographyFilter,

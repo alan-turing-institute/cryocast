@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from cryocast.callbacks import MediaLoggingCallback, PredictionWriter
 from cryocast.model_service import ModelService
-from cryocast.models import EncodeProcessDecode
+from cryocast.models import Downscaler, DownscalingPipeline, EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.types import DataSpace
 
@@ -35,6 +35,10 @@ class FakeCommonDataModule:
         self.output_space = DataSpace(1, "output", (10, 10))
         self.target_variable_indices = [0]
         self.target_variables = ["mock_var"]
+        self.variable_names = {
+            "input": ["a", "b", "c", "d", "e"],
+            "output": ["target"],
+        }
 
 
 class FakeModel:
@@ -49,6 +53,7 @@ class FakeModel:
         mask_dir: str | None = None,
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
+        variable_names: dict[str, list[str]] | None = None,
         map_location: str | None = None,
         metrics: list[dict[str, Any]] | None = None,
         weights_only: bool = False,
@@ -58,6 +63,7 @@ class FakeModel:
             checkpoint_path,
             latitudes_fn,
             longitudes_fn,
+            variable_names,
             map_location,
             weights_only,
         )
@@ -197,6 +203,48 @@ class TestModelService:
         assert kwargs["_recursive_"] is False
         assert kwargs["_convert_"] == "object"
 
+    def test_from_config_passes_variable_names_to_downscaler(
+        self, cfg_model_service: DictConfig
+    ) -> None:
+        """Downscalers receive channel names so the source variable is unambiguous."""
+        cfg_model_service["model"]["_target_"] = "cryocast.models.Downscaler"
+        mock_instantiate = MagicMock(return_value=FakeModel())
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
+            )
+            ModelService.from_config(cfg_model_service)
+
+        assert mock_instantiate.call_args.kwargs["variable_names"] == {
+            "input": ["a", "b", "c", "d", "e"],
+            "output": ["target"],
+        }
+
+    def test_build_downscaling_pipeline(self) -> None:
+        """A forecast service and Downscaler service compose into one pipeline."""
+        forecast_service = ModelService.__new__(ModelService)
+        forecast_service.model_ = MagicMock()
+        downscaler_service = ModelService.__new__(ModelService)
+        downscaler_service.model_ = MagicMock(spec=Downscaler)
+
+        pipeline = forecast_service.build_downscaling_pipeline(downscaler_service)
+
+        assert isinstance(pipeline, DownscalingPipeline)
+        assert pipeline.forecast_model is forecast_service.model_
+        assert pipeline.downscaler is downscaler_service.model_
+
+    def test_build_downscaling_pipeline_rejects_wrong_model(self) -> None:
+        """Only a trained Downscaler can be attached to the forecast pipeline."""
+        forecast_service = ModelService.__new__(ModelService)
+        forecast_service.model_ = MagicMock()
+        downscaler_service = ModelService.__new__(ModelService)
+        downscaler_service.model_ = MagicMock()
+
+        with pytest.raises(TypeError, match="Downscaler"):
+            forecast_service.build_downscaling_pipeline(downscaler_service)
+
     def test_from_checkpoint_loads_model(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
@@ -247,6 +295,43 @@ class TestModelService:
             service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
 
         assert service.model.checkpoint_epoch is None
+
+    def test_from_checkpoint_passes_variable_names_to_downscaler(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Reloading a downscaler restores data-dependent channel metadata."""
+        cfg_model_service["model"]["_target_"] = "cryocast.models.Downscaler"
+        cfg_model_service["model"]["name"] = "downscaler"
+
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "model.ckpt"
+        checkpoint_path.write_text("checkpoint")
+
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
+
+        loaded = MagicMock(spec=Downscaler)
+        with pytest.MonkeyPatch.context() as mp:
+            mock_load = MagicMock(return_value=loaded)
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "cryocast.model_service.hydra.utils.get_class",
+                lambda _target: Downscaler,
+            )
+            mp.setattr(Downscaler, "load_from_checkpoint", mock_load)
+            mp.setattr(
+                "cryocast.model_service.torch.load",
+                lambda *_args, **_kwargs: {"epoch": 0},
+            )
+            service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
+
+        assert service.model is loaded
+        assert mock_load.call_args.kwargs["variable_names"] == {
+            "input": ["a", "b", "c", "d", "e"],
+            "output": ["target"],
+        }
 
     def test_from_checkpoint_config_overloads(
         self, cfg_model_service: DictConfig, tmp_path: Path
