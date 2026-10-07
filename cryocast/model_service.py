@@ -162,7 +162,12 @@ class ModelService:
                 combined_cfg["window"]["batch_size"] = config["window"]["batch_size"]
         except (NotADirectoryError, FileNotFoundError):
             combined_cfg = config
-            log.debug("Could not load checkpoint configuration from %s.", config_path)
+            log.warning(
+                "Could not load the checkpoint configuration from %s, so the values "
+                "from the provided config file will be used instead. This may cause "
+                "problems if the values differ from those used during training.",
+                config_path,
+            )
 
         # Load the model from checkpoint
         builder = cls(combined_cfg)

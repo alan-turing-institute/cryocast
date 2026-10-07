@@ -544,9 +544,12 @@ class TestModelService:
         service._verify_model_matches_data()
 
     def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
-        self, cfg_model_service: DictConfig, tmp_path: Path
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Use the CLI config unmerged when no checkpoint-side model_config.yaml exists."""
+        """Warn and use the current config when there is no saved model_config.yaml."""
         checkpoints_dir = tmp_path / "checkpoints"
         checkpoints_dir.mkdir(parents=True)
         checkpoint_path = checkpoints_dir / "model.ckpt"
@@ -562,10 +565,14 @@ class TestModelService:
             mp.setattr(
                 "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
             )
-            service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+            with caplog.at_level(logging.WARNING, logger="cryocast.model_service"):
+                service = ModelService.from_checkpoint(
+                    cfg_model_service, checkpoint_path
+                )
 
         assert isinstance(service.model, FakeModel)
         assert service.config == cfg_model_service
+        assert "Could not load the checkpoint configuration" in caplog.text
 
     def test_build_run_directory_uses_wandb_sync_dir(self, tmp_path: Path) -> None:
         service = ModelService.__new__(ModelService)
