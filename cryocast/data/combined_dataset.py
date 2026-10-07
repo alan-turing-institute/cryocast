@@ -9,9 +9,16 @@ from cryocast.types import ArrayTCHW
 from .calendar_day_climatology import CalendarDayClimatology
 from .single_dataset import SingleDataset
 
+FORECAST_INPUT_PREFIX = "__forecast_input__:"
+
+
+def forecast_input_key(dataset_name: str) -> str:
+    """Return the reserved batch key for one input dataset forecast window."""
+    return f"{FORECAST_INPUT_PREFIX}{dataset_name}"
+
 
 class CombinedDataset(Dataset):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         datasets: Sequence[SingleDataset],
         target_group_name: str,
@@ -20,6 +27,7 @@ class CombinedDataset(Dataset):
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
+        include_forecast_inputs: bool = False,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -36,8 +44,9 @@ class CombinedDataset(Dataset):
             climatology: Optional [366, C, H, W] table of calendar-day means of the
                 target variables (29 February holds its own slot). When given, each
                 batch also contains a ``climatology`` key holding the calendar-day
-                mean field for each forecast step. When ``None`` the batches are
-                unchanged.
+                mean field for each forecast step.
+            include_forecast_inputs: If true, add the actual forecast window for each
+                input dataset under a reserved ``__forecast_input__:<name>`` key.
 
         """
         super().__init__()
@@ -45,6 +54,7 @@ class CombinedDataset(Dataset):
         # Store the number of forecast and history steps
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
+        self.include_forecast_inputs = include_forecast_inputs
 
         # Optional climatology table (calendar-day means of the target variables)
         self.climatology = climatology
@@ -80,6 +90,14 @@ class CombinedDataset(Dataset):
             and all(
                 date in target_date_set
                 for date in self.get_forecast_steps(available_date)
+            )
+            # ... and, when requested, every input has the complete forecast window
+            and (
+                not self.include_forecast_inputs
+                or all(
+                    date in input_date_set
+                    for date in self.get_forecast_steps(available_date)
+                )
             )
         )
         if len(available_dates) == 0:
@@ -117,6 +135,7 @@ class CombinedDataset(Dataset):
             The shape of each array is:
             - input datasets: [n_history_steps, C_input_k, H_input_k, W_input_k]
             - target dataset: [n_forecast_steps, C_target, H_target, W_target]
+            - optional forecast inputs: [n_forecast_steps, C_input_k, H_input_k, W_input_k]
 
             If a climatology table was provided, the dictionary also contains a
             ``climatology`` key with shape
@@ -134,6 +153,16 @@ class CombinedDataset(Dataset):
             self.n_forecast_steps,
             check=False,
         )
+        if self.include_forecast_inputs:
+            forecast_start = start_date + self.n_history_steps * self.frequency
+            batch.update(
+                {
+                    forecast_input_key(ds.name): ds.get_tchw_slice(
+                        forecast_start, self.n_forecast_steps, check=False
+                    )
+                    for ds in self.inputs
+                }
+            )
         if (climatology := self.climatology_for(start_date)) is not None:
             batch["climatology"] = climatology
         return batch

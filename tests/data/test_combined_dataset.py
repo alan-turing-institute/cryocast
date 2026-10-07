@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from cryocast.data.calendar_day_climatology import CalendarDayClimatology
-from cryocast.data.combined_dataset import CombinedDataset
+from cryocast.data.combined_dataset import CombinedDataset, forecast_input_key
 from cryocast.data.single_dataset import SingleDataset
 
 N_DAYS = len(CalendarDayClimatology.DAY_INDEX)
@@ -254,6 +254,30 @@ class TestCombinedDataset:
             batch["target"],
             combined.target.get_tchw([dates_as_np[2]]),
         )
+
+    def test_getitem_includes_actual_future_input_window(
+        self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
+    ) -> None:
+        """Forecast inputs come from future dates rather than persisted history."""
+        dataset = SingleDataset(name="dataset1", input_files=[mock_dataset])
+        combined = CombinedDataset(
+            datasets=[dataset],
+            target_group_name="dataset1",
+            target_variables=["ice_conc"],
+            n_history_steps=2,
+            n_forecast_steps=2,
+            include_forecast_inputs=True,
+        )
+
+        batch = combined[0]
+        key = forecast_input_key("dataset1")
+        assert key in batch
+        np.testing.assert_array_equal(
+            batch[key], combined.inputs[0].get_tchw([dates_as_np[2], dates_as_np[3]])
+        )
+        # The forecast input keeps every selected input channel; target remains a subset.
+        assert batch[key].shape == (2, 3, 2, 2)
+        assert batch["target"].shape == (2, 1, 2, 2)
 
 
 class TestCombinedDatasetClimatology:
