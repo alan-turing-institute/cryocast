@@ -353,7 +353,6 @@ class TestVitProcessor:
 
 
 class TestDDPMProcessor:
-    C_TARGET = 2
     LATENT_CHW = (4, 16, 16)
 
     def _make_processor(
@@ -362,18 +361,14 @@ class TestDDPMProcessor:
         n_forecast_steps: int,
         n_history_steps: int,
         use_autoregressive: bool,
-        target_channel_offset: int = 0,
         loss: DictConfig | torch.nn.Module | None = None,
     ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
         )
-        target = DataSpace(
-            name="target", channels=self.C_TARGET, shape=self.LATENT_CHW[1:]
-        )
         return DiffusionProcessor(
             data_space=combined,
-            data_space_target=target,
+            data_space_target=combined,
             n_forecast_steps=n_forecast_steps,
             n_history_steps=n_history_steps,
             timesteps=2,
@@ -381,25 +376,8 @@ class TestDDPMProcessor:
             time_embed_dim=256,
             dropout_rate=0.0,
             use_autoregressive=use_autoregressive,
-            target_channel_offset=target_channel_offset,
             loss=torch.nn.MSELoss() if loss is None else loss,
         )
-
-    @pytest.mark.parametrize(
-        "test_target_channel_offset",
-        [-1, LATENT_CHW[0]],
-        ids=["negative", "equal-to-combined-channels"],
-    )
-    def test_rejects_out_of_bounds_target_slice(
-        self, test_target_channel_offset: int
-    ) -> None:
-        with pytest.raises(ValueError, match="does not fit"):
-            self._make_processor(
-                n_forecast_steps=1,
-                n_history_steps=1,
-                use_autoregressive=False,
-                target_channel_offset=test_target_channel_offset,
-            )
 
     @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
     @pytest.mark.parametrize(
@@ -411,10 +389,6 @@ class TestDDPMProcessor:
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    # C_TARGET=2 inside 4 combined channels: offsets 0 and 1 are both valid
-    @pytest.mark.parametrize(
-        "test_target_channel_offset", [0, 1], ids=lambda o: f"offset{o}"
-    )
     def test_inference_forward_shape(
         self,
         *,
@@ -422,13 +396,11 @@ class TestDDPMProcessor:
         test_n_forecast_steps: int,
         test_n_history_steps: int,
         test_use_autoregressive: bool,
-        test_target_channel_offset: int,
     ) -> None:
         processor = self._make_processor(
             n_forecast_steps=test_n_forecast_steps,
             n_history_steps=test_n_history_steps,
             use_autoregressive=test_use_autoregressive,
-            target_channel_offset=test_target_channel_offset,
         )
         x = torch.randn(test_batch_size, test_n_history_steps, *self.LATENT_CHW)
         with torch.no_grad():
@@ -469,7 +441,7 @@ class TestDDPMProcessor:
         y = torch.randn(
             test_batch_size,
             test_n_forecast_steps,
-            self.C_TARGET,
+            self.LATENT_CHW[0],
             *self.LATENT_CHW[1:],
         )
         result = processor.rollout(x, y)
@@ -489,7 +461,7 @@ class TestDDPMProcessor:
             for p in processor.model.parameters()
         )
 
-    # n_forecast_steps=3 differs from C_TARGET=2 so a swapped (C, T) unflatten
+    # n_forecast_steps=3 differs from the latent channel count so a swapped (C, T) unflatten
     # changes the number of lead times seen by the wrapped loss
     @pytest.mark.parametrize(
         "test_n_forecast_steps", [1, 3], ids=lambda n: f"forecast{n}"
@@ -533,7 +505,7 @@ class TestDDPMProcessor:
         y = torch.randn(
             batch_size,
             test_n_forecast_steps,
-            self.C_TARGET,
+            self.LATENT_CHW[0],
             *self.LATENT_CHW[1:],
         )
 
@@ -541,7 +513,7 @@ class TestDDPMProcessor:
 
         expected_steps = 1 if test_use_autoregressive else test_n_forecast_steps
         assert len(calls) == expected_steps
-        expected_shape = (batch_size, self.C_TARGET, *self.LATENT_CHW[1:])
+        expected_shape = (batch_size, self.LATENT_CHW[0], *self.LATENT_CHW[1:])
         assert all(shapes == (expected_shape,) * 2 for shapes in calls)
         assert result.loss is not None
         assert result.loss.ndim == 0
@@ -575,46 +547,27 @@ class TestDDPMProcessor:
         warned = any("has no effect" in r.getMessage() for r in caplog.records)
         assert warned is expect_warning
 
-    @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
-    @pytest.mark.parametrize(
-        "test_n_forecast_steps", [1, 2], ids=lambda n: f"forecast{n}"
-    )
-    @pytest.mark.parametrize(
-        "test_n_history_steps", [1, 2], ids=lambda n: f"history{n}"
-    )
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    def test_non_target_channels_persist_from_last_frame(
-        self,
-        *,
-        test_batch_size: int,
-        test_n_forecast_steps: int,
-        test_n_history_steps: int,
-        test_use_autoregressive: bool,
+    def test_inference_predicts_every_combined_latent_channel(
+        self, monkeypatch: pytest.MonkeyPatch, *, test_use_autoregressive: bool
     ) -> None:
+        """No output channels are filled from history by persistence."""
         processor = self._make_processor(
-            n_forecast_steps=test_n_forecast_steps,
-            n_history_steps=test_n_history_steps,
+            n_forecast_steps=2,
+            n_history_steps=2,
             use_autoregressive=test_use_autoregressive,
         )
-        x = torch.randn(test_batch_size, test_n_history_steps, *self.LATENT_CHW)
-        with torch.no_grad():
-            result = processor.rollout(x)
+        x = torch.randn(1, 2, *self.LATENT_CHW)
 
-        s = processor.target_channel_offset
-        assert s is not None
-        c_target = processor.c_target
-        non_target_idx = [
-            i for i in range(self.LATENT_CHW[0]) if not (s <= i < s + c_target)
-        ]
-        last_frame = x[:, -1]
+        def fixed_reverse(y: torch.Tensor, _cond: torch.Tensor) -> torch.Tensor:
+            return torch.full_like(y, 7.0)
 
-        for t_step in range(test_n_forecast_steps):
-            assert torch.equal(
-                result.prediction[:, t_step, non_target_idx],
-                last_frame[:, non_target_idx],
-            )
+        monkeypatch.setattr(processor, "_run_reverse_diffusion", fixed_reverse)
+        result = processor.rollout(x)
+
+        assert torch.equal(result.prediction, torch.full_like(result.prediction, 7.0))
 
     @pytest.mark.parametrize(
         ("test_train_sampler", "test_infer_sampler"),
@@ -638,7 +591,7 @@ class TestDDPMProcessor:
         )
         trained.set_sampler(ddim_steps=train_ddim_steps, eta=train_eta)
         x = torch.randn(2, 1, *self.LATENT_CHW)
-        y = torch.randn(2, 1, self.C_TARGET, *self.LATENT_CHW[1:])
+        y = torch.randn(2, 1, self.LATENT_CHW[0], *self.LATENT_CHW[1:])
         optimizer = torch.optim.SGD(trained.parameters(), lr=0.1)
         loss = trained.rollout(x, y).loss
         assert loss is not None
@@ -677,7 +630,6 @@ class TestDDPMProcessor:
 @pytest.mark.parametrize("test_n_history_steps", [1, 2])
 @pytest.mark.parametrize("test_use_autoregressive", [True, False])
 class TestDDIMProcessor:
-    C_TARGET = 2
     TIMESTEPS = 4
     DDIM_STEPS = 2
 
@@ -688,7 +640,6 @@ class TestDDIMProcessor:
         n_forecast_steps: int,
         n_history_steps: int,
         use_autoregressive: bool,
-        target_channel_offset: int = 0,
         ddim_steps: int | None = None,
         eta: float = 0.0,
         timesteps: int | None = None,
@@ -696,10 +647,9 @@ class TestDDIMProcessor:
         combined = DataSpace(
             name="combined", channels=latent_chw[0], shape=latent_chw[1:]
         )
-        target = DataSpace(name="target", channels=self.C_TARGET, shape=latent_chw[1:])
         return DiffusionProcessor(
             data_space=combined,
-            data_space_target=target,
+            data_space_target=combined,
             n_forecast_steps=n_forecast_steps,
             n_history_steps=n_history_steps,
             timesteps=timesteps if timesteps is not None else self.TIMESTEPS,
@@ -709,7 +659,6 @@ class TestDDIMProcessor:
             time_embed_dim=256,
             dropout_rate=0.0,
             use_autoregressive=use_autoregressive,
-            target_channel_offset=target_channel_offset,
             loss=torch.nn.MSELoss(),
         )
 
@@ -768,7 +717,7 @@ class TestDDIMProcessor:
         y = torch.randn(
             test_batch_size,
             test_n_forecast_steps,
-            self.C_TARGET,
+            test_latent_chw[0],
             *test_latent_chw[1:],
         )
         result = processor.rollout(x, y)
@@ -783,8 +732,9 @@ class TestDDIMProcessor:
             *test_latent_chw[1:],
         )
 
-    def test_non_target_channels_persist_from_last_frame(
+    def test_inference_predicts_every_combined_latent_channel(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         test_batch_size: int,
         test_latent_chw: tuple[int, int, int],
         test_n_forecast_steps: int,
@@ -803,22 +753,14 @@ class TestDDIMProcessor:
             test_latent_chw[0],
             *test_latent_chw[1:],
         )
-        with torch.no_grad():
-            result = processor.rollout(x)
 
-        s = processor.target_channel_offset
-        assert s is not None
-        c_target = processor.c_target
-        non_target_idx = [
-            i for i in range(test_latent_chw[0]) if not (s <= i < s + c_target)
-        ]
-        last_frame = x[:, -1]
+        def fixed_reverse(y: torch.Tensor, _cond: torch.Tensor) -> torch.Tensor:
+            return torch.full_like(y, 3.0)
 
-        for t_step in range(test_n_forecast_steps):
-            torch.testing.assert_close(
-                result.prediction[:, t_step, non_target_idx],
-                last_frame[:, non_target_idx],
-            )
+        monkeypatch.setattr(processor, "_run_reverse_diffusion", fixed_reverse)
+        result = processor.rollout(x)
+
+        assert torch.equal(result.prediction, torch.full_like(result.prediction, 3.0))
 
     def test_training_loss_backprops(
         self,
@@ -843,7 +785,7 @@ class TestDDIMProcessor:
         y = torch.randn(
             test_batch_size,
             test_n_forecast_steps,
-            self.C_TARGET,
+            test_latent_chw[0],
             *test_latent_chw[1:],
         )
         result = processor.rollout(x, y)

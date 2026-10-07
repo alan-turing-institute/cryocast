@@ -24,7 +24,6 @@ class BaseProcessor(nn.Module):
         data_space_target: DataSpace | None = None,
         n_forecast_steps: int,
         n_history_steps: int,
-        target_channel_offset: int | None = None,
     ) -> None:
         """Initialise a BaseProcessor."""
         super().__init__()
@@ -33,7 +32,6 @@ class BaseProcessor(nn.Module):
         self.data_space_target = data_space_target or data_space
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
-        self.target_channel_offset = target_channel_offset
         # The latent spatial dimensions (H, W) for the inputs and target must match
         if self.data_space_target.shape != self.data_space.shape:
             msg = (
@@ -79,9 +77,7 @@ class BaseProcessor(nn.Module):
 
         Args:
             x: Encoded input TensorNTCHW with (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-            y: during training: Encoded target TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_target, latent_height, latent_width)
-                where n_latent_channels_target = self.data_space_target.channels (<= n_latent_channels_total);
-                otherwise: None
+            y: during training: Encoded forecast TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width); otherwise: None
 
         Returns:
             ProcessorOutput with:

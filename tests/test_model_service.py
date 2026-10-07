@@ -13,6 +13,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig, OmegaConf
 
 from cryocast.callbacks import MediaLoggingCallback, PredictionWriter
+from cryocast.data.combined_dataset import forecast_input_key
 from cryocast.model_service import ModelService
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
@@ -35,6 +36,10 @@ class FakeCommonDataModule:
         self.output_space = DataSpace(1, "output", (10, 10))
         self.target_variable_indices = [0]
         self.target_variables = ["mock_var"]
+        self.include_forecast_inputs_in_training = False
+
+    def set_training_forecast_inputs(self, *, enabled: bool) -> None:
+        self.include_forecast_inputs_in_training = enabled
 
 
 class FakeModel:
@@ -67,12 +72,7 @@ class FakeModel:
 
 
 def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
-    """Build a real full model and a pretrained ProcessorStage to hand over from.
-
-    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. As the
-    target dataset is also an input, the DiffusionProcessor's latent loss uses the
-    input encoder rather than the target encoder, which is only handed over here.
-    """
+    """Build a real full model and matching pretrained ProcessorStage."""
     space = DictConfig({"name": "sic", "channels": 1, "shape": [16, 16]})
     encoder = DictConfig(
         {
@@ -120,14 +120,6 @@ def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, Processor
         encoder=encoder,
         template=model,
     )
-    target_stage = EncoderStage.from_template(
-        channel_names=["sic"],
-        data_space_in=model.target_encoder.data_space_in,
-        dataset="target",
-        decoder=decoder,
-        encoder=encoder,
-        template=model,
-    )
     decoder_stage = DecoderStage.from_template(
         decoder=decoder,
         encoders=[input_stage],
@@ -136,15 +128,13 @@ def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, Processor
         target_variable_indices=[0],
     )
     pretrained = ProcessorStage.from_template(
-        processor=processor,
-        decoder_model=decoder_stage,
-        target_encoder=target_stage,
+        processor=processor, decoder_model=decoder_stage
     )
-    # Stand in for checkpoint contents without running an optimisation step
+    # Stand in for checkpoint contents without running an optimisation step.
     with torch.no_grad():
-        for parameter in pretrained.target_encoder.parameters():
+        for parameter in pretrained.encoders[0].parameters():
             parameter.add_(0.5)
-        for buffer in pretrained.target_encoder.buffers():
+        for buffer in pretrained.encoders[0].buffers():
             buffer.add_(2)
     service = ModelService.__new__(ModelService)
     service.model_ = model
@@ -819,7 +809,31 @@ class TestModelService:
         trainer.fit.assert_called_once_with(
             model=model, datamodule=service.data_module_, ckpt_path=ckpt_path
         )
+        service.data_module_.set_training_forecast_inputs.assert_called_once_with(
+            enabled=False
+        )
         assert result is trainer
+
+    def test_fit_enables_forecast_inputs_for_latent_loss_processor(
+        self, tmp_path: Path
+    ) -> None:
+        service, processor_stage = _build_pretrained_processor(tmp_path)
+        service.data_module_ = MagicMock()
+        config = DictConfig({"optimizer": "o", "scheduler": "s", "lr_scheduler": "l"})
+        trainer = MagicMock()
+        trainer.max_epochs = 1
+        trainer.num_devices = 1
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(service, "build_trainer", MagicMock(return_value=trainer))
+            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: False)
+            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: False)
+            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: False)
+            service._fit(model=processor_stage, config=config, job_stage="processor")
+
+        service.data_module_.set_training_forecast_inputs.assert_called_once_with(
+            enabled=True
+        )
 
     def test_fit_clears_device_caches_when_available(self) -> None:
         """Release cached device memory on every backend that reports itself available."""
@@ -989,16 +1003,13 @@ class TestModelService:
         """Chain encoders -> decoder -> processor -> finetune with merged configs."""
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        target_encoder = MagicMock()
         trained_decoder = MagicMock()
         processor_model = MagicMock()
         final_trainer = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(service, "_merged_config", lambda name: f"merged_{name}")
-            mock_encoders = MagicMock(
-                return_value=[MagicMock(), MagicMock(), target_encoder]
-            )
+            mock_encoders = MagicMock(return_value=[MagicMock(), MagicMock()])
             mock_decoder = MagicMock(return_value=trained_decoder)
             mock_processor = MagicMock(return_value=processor_model)
             mock_finetune = MagicMock(return_value=final_trainer)
@@ -1019,7 +1030,6 @@ class TestModelService:
             trained_decoder,
             train_cfg="merged_processor",
             checkpoint_dir=tmp_path,
-            target_encoder=target_encoder,
         )
         mock_finetune.assert_called_once_with(
             processor_model=processor_model, train_cfg="merged_finetune"
@@ -1124,44 +1134,46 @@ class TestModelService:
     def test_train_stage_encoders_trains_new_and_skips_via_checkpoint(
         self, tmp_path: Path
     ) -> None:
-        """Train a fresh encoder while reusing an existing checkpoint for another."""
+        """Train one input encoder while reusing a checkpoint for another."""
         service = ModelService.__new__(ModelService)
         encoder_era5 = SimpleNamespace(
             name="era5", data_space_in=DataSpace(3, "era5", (10, 10))
         )
-        target_encoder = SimpleNamespace(name="target")
+        encoder_sic = SimpleNamespace(
+            name="sic", data_space_in=DataSpace(1, "sic", (10, 10))
+        )
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.model_.encoders = [encoder_era5]
-        service.model_.target_encoder = target_encoder
+        service.model_.encoders = [encoder_era5, encoder_sic]
         service.config_ = DictConfig(
             {
                 "model": {
                     "decoder": {"foo": "bar"},
-                    "encoders": {"era5": {"baz": "qux"}},
+                    "encoders": {
+                        "era5": {"baz": "qux"},
+                        "sic": {"baz": "sic"},
+                    },
                 },
                 "reporting": {"metrics": [MAE_METRIC_CFG]},
             }
         )
         service.data_module_ = MagicMock()
-        service.data_module_.target_group_name = "target"
-        service.data_module_.target_variables = ["sic"]
         service.data_module_.datasets = {
-            "era5": SimpleNamespace(variable_names=["t2m"])
+            "era5": SimpleNamespace(variable_names=["t2m"]),
+            "sic": SimpleNamespace(variable_names=["sic"]),
         }
         service.data_module_.latitudes = {"input": [0.0]}
         service.data_module_.longitudes = {"input": [0.0]}
 
-        checkpoint_path = tmp_path / "encoder-target.epoch=3-step=9.ckpt"
+        checkpoint_path = tmp_path / "encoder-sic.epoch=3-step=9.ckpt"
         checkpoint_path.write_text("checkpoint")
-
         trained_encoder_model = MagicMock()
-        loaded_target_model = MagicMock()
+        loaded_sic_model = MagicMock()
         trainer = MagicMock()
         ckpt_path = tmp_path / "encoder-era5.ckpt"
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=trained_encoder_model)
-            mock_load_from_checkpoint = MagicMock(return_value=loaded_target_model)
+            mock_load_from_checkpoint = MagicMock(return_value=loaded_sic_model)
             mp.setattr(EncoderStage, "from_template", mock_from_template)
             mp.setattr(EncoderStage, "load_from_checkpoint", mock_load_from_checkpoint)
             mp.setattr(service, "_fit", MagicMock(return_value=trainer))
@@ -1176,7 +1188,7 @@ class TestModelService:
                 train_cfg=DictConfig({"foo": "bar"}), checkpoint_dir=tmp_path
             )
 
-        assert result == [trained_encoder_model, loaded_target_model]
+        assert result == [trained_encoder_model, loaded_sic_model]
         mock_from_template.assert_called_once_with(
             channel_names=["t2m"],
             data_space_in=encoder_era5.data_space_in,
@@ -1186,14 +1198,11 @@ class TestModelService:
             template=service.model_,
         )
         trained_encoder_model.load_state_dict.assert_called_once_with("era5_state")
-
         assert mock_load_from_checkpoint.call_args.args == (checkpoint_path,)
         load_kwargs = mock_load_from_checkpoint.call_args.kwargs
         assert load_kwargs["map_location"] == "cpu"
         assert load_kwargs["metrics"] == [MAE_METRIC_CFG]
         assert load_kwargs["weights_only"] is False
-        assert load_kwargs["latitudes_fn"]() == service.data_module_.latitudes
-        assert load_kwargs["longitudes_fn"]() == service.data_module_.longitudes
 
     def test_train_stage_finetune_loads_pretrained_weights_and_fits(self) -> None:
         service = ModelService.__new__(ModelService)
@@ -1203,7 +1212,6 @@ class TestModelService:
         service.model_.encoders = [encoder]
         service.model_.processor = MagicMock()
         service.model_.decoder = MagicMock()
-        service.model_.target_encoder = MagicMock()
 
         pretrained_encoder = MagicMock()
         pretrained_encoder.name = "era5"
@@ -1212,7 +1220,6 @@ class TestModelService:
         processor_model.encoders = [pretrained_encoder]
         processor_model.processor.state_dict.return_value = "processor_state"
         processor_model.decoder.state_dict.return_value = "decoder_state"
-        processor_model.target_encoder.state_dict.return_value = "target_encoder_state"
 
         trainer = MagicMock()
 
@@ -1231,56 +1238,39 @@ class TestModelService:
             "processor_state"
         )
         service.model_.decoder.load_state_dict.assert_called_once_with("decoder_state")
-        service.model_.target_encoder.load_state_dict.assert_called_once_with(
-            "target_encoder_state"
-        )
         mock_fit.assert_called_once_with(
             config=DictConfig({"lr": 1}), job_stage="finetune"
         )
         mock_save.assert_called_once_with(trainer, "finetune")
         assert result is trainer
 
-    def test_train_stage_finetune_transfers_target_encoder_state(
+    def test_train_stage_finetune_transfers_encoder_state_without_aliasing(
         self, tmp_path: Path
     ) -> None:
-        """Copy parameters and buffers without swapping in the frozen pretrained module."""
         service, pretrained = _build_pretrained_processor(tmp_path)
         model = cast("EncodeProcessDecode", service.model)
-        target_encoder = model.target_encoder
-        buffer_names = dict(pretrained.target_encoder.named_buffers())
-        assert any(name.endswith("running_mean") for name in buffer_names)
-        assert any(name.endswith("running_var") for name in buffer_names)
-        assert any(name.endswith("num_batches_tracked") for name in buffer_names)
-        requires_grad = [p.requires_grad for p in target_encoder.parameters()]
-        training_mode = target_encoder.training
+        encoder = model.encoders[0]
+        pretrained_encoder = pretrained.encoders[0]
+        requires_grad = [p.requires_grad for p in encoder.parameters()]
+        training_mode = encoder.training
         trainer = MagicMock(spec=Trainer)
 
         def check_handover(*, config: DictConfig, job_stage: str) -> Trainer:
             del config, job_stage
             for actual, expected in zip(
-                (*model.encoders, model.processor, model.decoder, target_encoder),
-                (
-                    *pretrained.encoders,
-                    pretrained.processor,
-                    pretrained.decoder,
-                    pretrained.target_encoder,
-                ),
+                (*model.encoders, model.processor, model.decoder),
+                (*pretrained.encoders, pretrained.processor, pretrained.decoder),
                 strict=True,
             ):
                 torch.testing.assert_close(
                     actual.state_dict(), expected.state_dict(), rtol=0, atol=0
                 )
-            assert model.target_encoder is target_encoder
-            assert [p.requires_grad for p in target_encoder.parameters()] == (
-                requires_grad
-            )
-            assert target_encoder.training == training_mode
+            assert model.encoders[0] is encoder
+            assert [p.requires_grad for p in encoder.parameters()] == requires_grad
+            assert encoder.training == training_mode
             for actual_tensor, expected_tensor in zip(
-                (*target_encoder.parameters(), *target_encoder.buffers()),
-                (
-                    *pretrained.target_encoder.parameters(),
-                    *pretrained.target_encoder.buffers(),
-                ),
+                (*encoder.parameters(), *encoder.buffers()),
+                (*pretrained_encoder.parameters(), *pretrained_encoder.buffers()),
                 strict=True,
             ):
                 assert actual_tensor.data_ptr() != expected_tensor.data_ptr()
@@ -1308,9 +1298,11 @@ class TestModelService:
         model = cast("EncodeProcessDecode", service.model)
         model.eval()
         pretrained.eval()
+        future = torch.rand(2, 2, 1, 16, 16)
         batch = {
             "sic": torch.rand(2, 2, 1, 16, 16),
-            "target": torch.rand(2, 2, 1, 16, 16),
+            forecast_input_key("sic"): future,
+            "target": future.clone(),
         }
 
         def loss(module: EncodeProcessDecode) -> torch.Tensor:
@@ -1340,7 +1332,6 @@ class TestModelService:
         service.data_module_ = MagicMock()
         service.data_module_.mask_directory = tmp_path
         decoder_model = MagicMock()
-        target_encoder = MagicMock()
         processor_model = MagicMock()
         processor_model.processor.data_space.chw = (4, 8, 8)
         trainer = MagicMock()
@@ -1358,13 +1349,12 @@ class TestModelService:
                 lambda *_a, **_k: {"state_dict": "processor_state"},
             )
             result = service.train_stage_processor(
-                decoder_model, target_encoder, train_cfg=DictConfig({"lr": 1})
+                decoder_model, train_cfg=DictConfig({"lr": 1})
             )
 
         mock_from_template.assert_called_once_with(
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
-            target_encoder=target_encoder,
             mask_dir=str(tmp_path),
         )
         processor_model.load_state_dict.assert_called_once_with("processor_state")
@@ -1383,7 +1373,6 @@ class TestModelService:
         service.data_module_ = MagicMock()
         service.data_module_.mask_directory = tmp_path
         decoder_model = MagicMock()
-        target_encoder = MagicMock()
         checkpoint_path = tmp_path / "processor.epoch=1-step=5.ckpt"
         checkpoint_path.write_text("checkpoint")
         loaded_processor = MagicMock()
@@ -1393,7 +1382,6 @@ class TestModelService:
             mp.setattr(ProcessorStage, "load_from_checkpoint", mock_load)
             result = service.train_stage_processor(
                 decoder_model,
-                target_encoder,
                 train_cfg=DictConfig({}),
                 checkpoint_dir=tmp_path,
             )
@@ -1405,7 +1393,6 @@ class TestModelService:
             weights_only=False,
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
-            target_encoder=target_encoder,
             mask_dir=str(tmp_path),
         )
         assert result is loaded_processor
