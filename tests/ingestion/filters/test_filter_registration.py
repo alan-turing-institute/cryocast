@@ -9,10 +9,10 @@ from typing import ClassVar
 
 from anemoi.transform.filters import filter_registry
 
-from icenet_mp.ingestion.filters import register_filters
-from icenet_mp.ingestion.filters.nan_to_num_filter import NanToNumFilter
-from icenet_mp.ingestion.filters.reproject_filter import ReprojectFilter
-from icenet_mp.ingestion.filters.set_geography_filter import SetGeographyFilter
+from cryocast.ingestion.filters import register_filters
+from cryocast.ingestion.filters.nan_to_num_filter import NanToNumFilter
+from cryocast.ingestion.filters.reproject_filter import ReprojectFilter
+from cryocast.ingestion.filters.set_geography_filter import SetGeographyFilter
 
 
 class TestFilterRegistration:

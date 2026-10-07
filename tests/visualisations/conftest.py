@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from icenet_mp.types import ArrayHW, ArrayTHW, Hemisphere, PlotSpec
-from icenet_mp.visualisations.land_mask import LandMask
+from cryocast.types import ArrayHW, ArrayTHW, Hemisphere, PlotSpec
+from cryocast.visualisations.land_mask import LandMask
 
 # Suppress Matplotlib animation warning during tests; we intentionally do not keep
 # long-lived references to animation objects beyond saving to buffer.

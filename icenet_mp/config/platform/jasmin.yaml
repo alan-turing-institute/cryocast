@@ -1,6 +1,0 @@
-# @package _global_
-defaults:
-  - override /train/trainer: default  # needed as dawn overrides this
-  - _self_
-
-base_path: /gws/ssde/j25b/turing_environment/projects/icenet-mp/

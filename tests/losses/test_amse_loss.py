@@ -7,7 +7,7 @@ import torch
 from omegaconf import OmegaConf
 from torch.nn import functional
 
-from icenet_mp.losses.amse_loss import AMSELoss, AMSEMode
+from cryocast.losses.amse_loss import AMSELoss, AMSEMode
 
 from .conftest import make_fields
 
@@ -32,7 +32,7 @@ class TestAMSELoss:
     def test_config_instantiation(self, wavenumber_weight: str | None) -> None:
         config = OmegaConf.create(
             {
-                "_target_": "icenet_mp.losses.amse_loss.AMSELoss",
+                "_target_": "cryocast.losses.amse_loss.AMSELoss",
                 "mode": "hybrid",
                 "spectral_weight": 0.1,
                 "wavenumber_weight": wavenumber_weight,

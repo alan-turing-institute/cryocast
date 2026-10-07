@@ -1,2 +1,0 @@
-metric_summary:
-  _target_: icenet_mp.callbacks.MetricSummaryCallback

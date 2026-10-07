@@ -6,7 +6,7 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig
 
-CONFIG_DIR = str(files("icenet_mp.config"))
+CONFIG_DIR = str(files("cryocast.config"))
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,7 @@ def _clear_global_hydra() -> Iterator[None]:
 
 @pytest.fixture
 def compose_config() -> Callable[..., DictConfig]:
-    """Return a callable that composes a config from the icenet-mp config directory."""
+    """Return a callable that composes a config from the cryocast config directory."""
 
     def _compose(
         config_name: str = "sample", overrides: list[str] | None = None

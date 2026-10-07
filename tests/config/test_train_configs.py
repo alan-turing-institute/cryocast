@@ -6,22 +6,22 @@ from omegaconf import DictConfig
 DEFAULT_CALLBACK_TARGETS = {
     "best_checkpoint": "lightning.pytorch.callbacks.ModelCheckpoint",
     "early_stopping": "lightning.pytorch.callbacks.EarlyStopping",
-    "ema_weight_averaging": "icenet_mp.callbacks.EMAWeightAveragingCallback",
+    "ema_weight_averaging": "cryocast.callbacks.EMAWeightAveragingCallback",
     "learning_rate": "lightning.pytorch.callbacks.LearningRateMonitor",
-    "media_logging": "icenet_mp.callbacks.MediaLoggingCallback",
-    "metric_summary": "icenet_mp.callbacks.MetricSummaryCallback",
+    "media_logging": "cryocast.callbacks.MediaLoggingCallback",
+    "metric_summary": "cryocast.callbacks.MetricSummaryCallback",
 }
 
 PERSISTENCE_CALLBACK_TARGETS = {
     "learning_rate": "lightning.pytorch.callbacks.LearningRateMonitor",
-    "media_logging": "icenet_mp.callbacks.MediaLoggingCallback",
-    "metric_summary": "icenet_mp.callbacks.MetricSummaryCallback",
-    "unconditional_checkpoint": "icenet_mp.callbacks.UnconditionalCheckpoint",
+    "media_logging": "cryocast.callbacks.MediaLoggingCallback",
+    "metric_summary": "cryocast.callbacks.MetricSummaryCallback",
+    "unconditional_checkpoint": "cryocast.callbacks.UnconditionalCheckpoint",
 }
 
 
 class TestTrainCallbacks:
-    """Regression tests for icenet-mp's train.callbacks composition."""
+    """Regression tests for train.callbacks composition."""
 
     def test_default_train_callbacks(
         self, compose_config: Callable[..., DictConfig]
@@ -44,7 +44,7 @@ class TestTrainCallbacks:
 
 
 class TestTrainMultistage:
-    """Regression tests for icenet-mp's train.multistage composition."""
+    """Regression tests for train.multistage composition."""
 
     def test_multistage_default_present(
         self, compose_config: Callable[..., DictConfig]

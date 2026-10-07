@@ -1,6 +1,6 @@
 # Data
 
-IceNet-MP downloads data using [Anemoi](https://anemoi.readthedocs.io/projects/datasets/en/latest/).
+CryoCast downloads data using [Anemoi](https://anemoi.readthedocs.io/projects/datasets/en/latest/).
 The northern and southern hemispheres are treated as separate datasets.
 
 - OSI SAF sea ice concentration (serving as both a model input and a forecast target)
@@ -24,8 +24,8 @@ Each of these is a L3/L4 reprocessed product, drawing primarily on satellite dat
 
 The full-resolution datasets are detailed in:
 
-- `icenet_mp/config/data/datasets/full_sicnorth_osisaf_25p0km_1979_2025_24h_v1.yaml`
-- `icenet_mp/config/data/datasets/full_sicsouth_osisaf_25p0km_1979_2025_24h_v1.yaml`
+- `cryocast/config/data/datasets/full_sicnorth_osisaf_25p0km_1979_2025_24h_v1.yaml`
+- `cryocast/config/data/datasets/full_sicsouth_osisaf_25p0km_1979_2025_24h_v1.yaml`
 
 and contain the following subset of [available variables](https://osisaf-hl.met.no/sites/osisaf-hl/files/user_manuals/osisaf_pum_sea-ice-conc-climate-data-record_3.3.pdf)
 
@@ -35,7 +35,7 @@ and contain the following subset of [available variables](https://osisaf-hl.met.
 
 ### Other OSI SAF products
 
-Higher resolution OSI SAF datasets exist (for example with 10 km spatial resolution), but these are not currently used by IceNet-MP.
+Higher resolution OSI SAF datasets exist (for example with 10 km spatial resolution), but these are not currently used by CryoCast.
 
 ## ERA 5 data
 
@@ -44,8 +44,8 @@ Data is download at 0.25 degree resolution before being reprojected onto the sam
 
 The full-resolution datasets are detailed in:
 
-- `icenet_mp/config/data/datasets/full_weathernorth_era5_25p0km_1979_2025_24h_v3.yaml`
-- `icenet_mp/config/data/datasets/full_weathersouth_era5_25p0km_1979_2025_24h_v3.yaml`
+- `cryocast/config/data/datasets/full_weathernorth_era5_25p0km_1979_2025_24h_v3.yaml`
+- `cryocast/config/data/datasets/full_weathersouth_era5_25p0km_1979_2025_24h_v3.yaml`
 
 and contain the following subset of [available variables](https://codes.ecmwf.int/grib/param-db?encoding=grib2&ordering=id&limit=20&page=1):
 
@@ -75,8 +75,8 @@ Coverage begins on 1999-07-26, once enough floats were deployed to provide usabl
 
 The full-resolution datasets are detailed in:
 
-- `icenet_mp/config/data/datasets/full_floatnorth_argo_25p0km_1999_2025_24h_v2.yaml`
-- `icenet_mp/config/data/datasets/full_floatsouth_argo_25p0km_1999_2025_24h_v2.yaml`
+- `cryocast/config/data/datasets/full_floatnorth_argo_25p0km_1999_2025_24h_v2.yaml`
+- `cryocast/config/data/datasets/full_floatsouth_argo_25p0km_1999_2025_24h_v2.yaml`
 
 and contain the following variables:
 

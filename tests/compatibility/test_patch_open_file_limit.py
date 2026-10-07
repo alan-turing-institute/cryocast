@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from icenet_mp.compatibility.torch.patch_open_file_limit import (
+from cryocast.compatibility.torch.patch_open_file_limit import (
     MIN_OPEN_FILE_LIMIT,
     patch_open_file_limit,
 )
