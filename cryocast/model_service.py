@@ -193,6 +193,7 @@ class ModelService:
             checkpoint_path, map_location="cpu", weights_only=False
         ).get("epoch")
 
+        builder._verify_model_matches_data()
         return builder
 
     @staticmethod
@@ -223,6 +224,40 @@ class ModelService:
                     "n_history_steps": predict.get("n_history_steps", 1),
                 }
         return ckpt_config
+
+    def _verify_model_matches_data(self) -> None:
+        """Check that the data has the shape that the model was trained with.
+
+        Raises:
+            ValueError: If the input spaces, output space or window lengths differ.
+
+        """
+        model_inputs = {space.name: space for space in self.model.input_spaces}
+        data_inputs = {space.name: space for space in self.data_module.input_spaces}
+        mismatches = [
+            f"input '{name}' is {model_inputs.get(name, 'missing')} in the model but "
+            f"{data_inputs.get(name, 'missing')} in the data"
+            for name in sorted(model_inputs.keys() | data_inputs.keys())
+            if model_inputs.get(name) != data_inputs.get(name)
+        ]
+        if self.model.output_space != self.data_module.output_space:
+            mismatches.append(
+                f"output is {self.model.output_space} in the model but "
+                f"{self.data_module.output_space} in the data"
+            )
+        mismatches.extend(
+            f"{key} is {getattr(self.model, key)} in the model but "
+            f"{getattr(self.data_module, key)} in the data"
+            for key in ("n_history_steps", "n_forecast_steps")
+            if getattr(self.model, key) != getattr(self.data_module, key)
+        )
+        if mismatches:
+            msg = (
+                "The checkpointed model does not match the configured data: "
+                + "; ".join(mismatches)
+                + ". Check the 'variables' and 'window' settings."
+            )
+            raise ValueError(msg)
 
     @property
     def config(self) -> DictConfig:

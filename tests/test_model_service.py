@@ -40,6 +40,11 @@ class FakeCommonDataModule:
 class FakeModel:
     ignored_hparams: ClassVar[frozenset[str]] = frozenset()
     metrics: list[dict[str, Any]] | None = None
+    # Matches the data described by FakeCommonDataModule
+    input_spaces: ClassVar[list[DataSpace]] = [DataSpace(5, "input", (20, 20))]
+    n_forecast_steps = 2
+    n_history_steps = 3
+    output_space = DataSpace(1, "output", (10, 10))
 
     @classmethod
     def load_from_checkpoint(
@@ -488,6 +493,55 @@ class TestModelService:
 
         with pytest.raises(FileNotFoundError, match="Could not find checkpoint file"):
             ModelService.from_checkpoint(DictConfig({}), missing_path)
+
+    @pytest.mark.parametrize(
+        ("attribute", "value", "match"),
+        [
+            ("n_history_steps", 2, "n_history_steps is 3 in the model but 2"),
+            ("n_forecast_steps", 5, "n_forecast_steps is 2 in the model but 5"),
+            (
+                "input_spaces",
+                [DataSpace(4, "input", (20, 20))],
+                "input 'input' is DataSpace\\(channels=5.* but DataSpace\\(channels=4",
+            ),
+            (
+                "input_spaces",
+                [DataSpace(5, "input", (20, 20)), DataSpace(2, "extra", (20, 20))],
+                "input 'extra' is missing in the model",
+            ),
+            (
+                "output_space",
+                DataSpace(2, "output", (10, 10)),
+                "output is DataSpace\\(channels=1.* but DataSpace\\(channels=2",
+            ),
+        ],
+        ids=["history", "forecast", "input-channels", "extra-input", "output"],
+    )
+    def test_verify_model_matches_data_raises_on_mismatch(
+        self, attribute: str, value: object, match: str
+    ) -> None:
+        """Report how the configured data differs from the checkpointed model."""
+        data_module = FakeCommonDataModule(DictConfig({}))
+        setattr(data_module, attribute, value)
+        service = ModelService.__new__(ModelService)
+        service.model_ = FakeModel()  # type: ignore[assignment]
+        service.data_module_ = data_module  # type: ignore[assignment]
+
+        with pytest.raises(ValueError, match=match):
+            service._verify_model_matches_data()
+
+    def test_verify_model_matches_data_ignores_input_order(self) -> None:
+        """Inputs are matched by name, so their order does not matter."""
+        spaces = [DataSpace(5, "a", (20, 20)), DataSpace(2, "b", (20, 20))]
+        model = FakeModel()
+        model.input_spaces = spaces  # type: ignore[misc]
+        data_module = FakeCommonDataModule(DictConfig({}))
+        data_module.input_spaces = spaces[::-1]
+        service = ModelService.__new__(ModelService)
+        service.model_ = model  # type: ignore[assignment]
+        service.data_module_ = data_module  # type: ignore[assignment]
+
+        service._verify_model_matches_data()
 
     def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
         self, cfg_model_service: DictConfig, tmp_path: Path
