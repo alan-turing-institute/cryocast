@@ -10,13 +10,14 @@ from .conftest import CustomCliRunner
 
 class FakeModelService:
     def __init__(self) -> None:
-        """Initialise recorded training calls."""
+        """Initialise recorded training calls as (checkpoint_dir, multistage)."""
         self.calls: list[tuple[Path | None, bool]] = []
 
-    def train(
-        self, checkpoint_dir: Path | None = None, *, multistage: bool = False
-    ) -> None:
-        self.calls.append((checkpoint_dir, multistage))
+    def train(self) -> None:
+        self.calls.append((None, False))
+
+    def train_multistage(self, *, checkpoint_dir: Path | None = None) -> None:
+        self.calls.append((checkpoint_dir, True))
 
 
 class TestTrainCLI:
@@ -100,19 +101,27 @@ class TestTrainCLI:
         assert result.exit_code == 0, result.output
         assert service.calls == [(None, True)]
 
-    def test_checkpoint_dir_without_multistage_still_resolves(
+    def test_checkpoint_dir_without_multistage_loads_model_from_checkpoint(
         self,
         tmp_path: Path,
         runner: CustomCliRunner,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Accept --checkpoint-dir alone; the command has no multistage-only gating."""
+        """Resuming single-stage training rebuilds the model from its checkpoint."""
         service = FakeModelService()
+        captured: list[Path] = []
 
-        def fake_from_config(_config: DictConfig) -> FakeModelService:
+        def fake_from_checkpoint(
+            _config: DictConfig, checkpoint_path: Path
+        ) -> FakeModelService:
+            captured.append(checkpoint_path)
             return service
 
-        monkeypatch.setattr(ModelService, "from_config", fake_from_config)
+        def fail_from_config(_config: DictConfig) -> FakeModelService:
+            pytest.fail("from_config should not be used when resuming")
+
+        monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
+        monkeypatch.setattr(ModelService, "from_config", fail_from_config)
         checkpoint_dir = tmp_path / "checkpoints"
 
         result = runner.call(
@@ -126,7 +135,27 @@ class TestTrainCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert service.calls == [(checkpoint_dir.resolve(), False)]
+        assert captured == [checkpoint_dir.resolve()]
+        assert service.calls == [(None, False)]
+
+    def test_checkpoint_dir_without_last_checkpoint_fails(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+    ) -> None:
+        """Resuming single-stage training needs a last*.ckpt file to resume from."""
+        result = runner.call(
+            [
+                "train",
+                "--config-name",
+                "sample",
+                "--checkpoint-dir",
+                str(tmp_path),
+            ]
+        )
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, FileNotFoundError)
 
     def test_checkpoint_dir_resolves_a_relative_path(
         self,

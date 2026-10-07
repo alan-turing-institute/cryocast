@@ -27,7 +27,10 @@ class FakeModelService:
         """A fake ModelService that returns a fixed FakeTrainer from train()."""
         self._trainer = trainer
 
-    def train(self, *, checkpoint_dir: Path | None, multistage: bool) -> FakeTrainer:  # noqa: ARG002
+    def train(self) -> FakeTrainer:
+        return self._trainer
+
+    def train_multistage(self, *, checkpoint_dir: Path | None = None) -> FakeTrainer:  # noqa: ARG002
         return self._trainer
 
 
@@ -413,6 +416,46 @@ class TestSweepTrialCLI:
         assert len(trials) == 1
         assert trials[0].state == TrialState.COMPLETE
         assert trials[0].value == pytest.approx(0.42)
+
+    def test_trial_resumes_single_stage_training_from_checkpoint_dir(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Resuming a single-stage trial rebuilds the model from its checkpoint."""
+        study_path, _ = _build_study(tmp_path, n_completed=0)
+        checkpoint = MagicMock(spec=ModelCheckpoint)
+        checkpoint.best_model_score = torch.tensor(0.42)
+        trainer = FakeTrainer(checkpoint_callbacks=[checkpoint])
+        captured: list[Path] = []
+
+        def fake_from_checkpoint(
+            _config: object, checkpoint_path: Path
+        ) -> FakeModelService:
+            captured.append(checkpoint_path)
+            return FakeModelService(trainer)
+
+        def fail_from_config(_config: object) -> FakeModelService:
+            pytest.fail("from_config should not be used when resuming")
+
+        monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
+        monkeypatch.setattr(ModelService, "from_config", fail_from_config)
+        checkpoint_dir = tmp_path / "checkpoints"
+
+        result = runner.call(
+            [
+                "sweep",
+                "trial",
+                "--sweep-path",
+                str(study_path),
+                "--checkpoint-dir",
+                str(checkpoint_dir),
+            ]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured == [checkpoint_dir.resolve()]
 
     def test_trial_marks_failed_when_no_unique_checkpoint_callback(
         self,

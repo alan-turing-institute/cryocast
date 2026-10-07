@@ -286,6 +286,53 @@ class TestModelService:
             assert service.config == expected_config
             assert service.config["model"]["name"] != "will_not_overwrite"
 
+    @pytest.mark.parametrize("test_from_dir", [False, True], ids=["file", "dir"])
+    def test_from_checkpoint_config_precedence(
+        self, cfg_model_service: DictConfig, tmp_path: Path, *, test_from_dir: bool
+    ) -> None:
+        """Take the model description from the checkpoint and the rest from config."""
+        checkpoints_dir = tmp_path / "checkpoints"
+        checkpoints_dir.mkdir(parents=True)
+        checkpoint_path = checkpoints_dir / "last.ckpt"
+        checkpoint_path.write_text("checkpoint")
+        (checkpoints_dir / "epoch=3-step=10.ckpt").write_text("checkpoint")
+
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["train"]["trainer"] = {"max_epochs": 10}
+        files_dir = tmp_path / "files"
+        files_dir.mkdir(parents=True)
+        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
+
+        current_config = cfg_model_service.copy()
+        current_config["train"]["trainer"] = {"max_epochs": 200}
+        current_config["model"]["name"] = "will_not_overwrite"
+        current_config["window"]["n_history_steps"] = 99
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
+            mp.setattr(
+                "cryocast.model_service.hydra.utils.get_class",
+                lambda _target: FakeModel,
+            )
+            mp.setattr("cryocast.model_service.torch.load", lambda *_a, **_k: {})
+            service = ModelService.from_checkpoint(
+                current_config, checkpoints_dir if test_from_dir else checkpoint_path
+            )
+
+        assert service.config["train"]["trainer"]["max_epochs"] == 200
+        assert service.config["model"]["name"] == "mock-model"
+        assert service.config["window"]["n_history_steps"] == 3
+        assert service.checkpoint_path == checkpoint_path
+
+    def test_from_checkpoint_raises_without_last_checkpoint_in_dir(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """Reject a checkpoint directory with no resumable ``last*.ckpt`` file."""
+        (tmp_path / "epoch=3-step=10.ckpt").write_text("checkpoint")
+
+        with pytest.raises(FileNotFoundError, match=r"last\*.ckpt"):
+            ModelService.from_checkpoint(cfg_model_service, tmp_path)
+
     def test_from_checkpoint_variables_replaced_not_merged(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
@@ -439,7 +486,7 @@ class TestModelService:
     ) -> None:
         missing_path = tmp_path / "missing.ckpt"
 
-        with pytest.raises(FileNotFoundError, match="does not exist"):
+        with pytest.raises(FileNotFoundError, match="Could not find checkpoint file"):
             ModelService.from_checkpoint(DictConfig({}), missing_path)
 
     def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
@@ -866,6 +913,7 @@ class TestModelService:
         service.model_ = MagicMock()
         service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
+        service.checkpoint_path = None
 
         with pytest.MonkeyPatch.context() as mp:
             mock_fit = MagicMock()
@@ -938,48 +986,21 @@ class TestModelService:
             with pytest.raises(ValueError, match="2 checkpoints"):
                 service._save_stage_checkpoint(trainer, "encoder")
 
-    def test_train_standard_mode_rejects_checkpoint_dir_without_last_ckpt(
-        self, tmp_path: Path
-    ) -> None:
-        """Reject a checkpoint directory with no resumable ``last*.ckpt`` file."""
-        service = ModelService.__new__(ModelService)
-        service.model_ = MagicMock()
-        service.model_.multistage_only = False
-        service.config_ = DictConfig({"train": "train_config"})
-
-        with pytest.raises(FileNotFoundError, match=r"last\*.ckpt"):
-            service.train(checkpoint_dir=tmp_path)
-
-    def test_train_standard_mode_resumes_from_last_checkpoint(
-        self, tmp_path: Path
-    ) -> None:
-        """Resume single-stage training from the ``last*.ckpt`` file if present."""
+    def test_train_resumes_from_loaded_checkpoint(self, tmp_path: Path) -> None:
+        """Resume training from the checkpoint that the model was loaded from."""
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock()
         service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
         ckpt_path = tmp_path / "last.ckpt"
-        ckpt_path.write_text("checkpoint")
+        service.checkpoint_path = ckpt_path
 
         with pytest.MonkeyPatch.context() as mp:
             mock_fit = MagicMock()
             mp.setattr(service, "_fit", mock_fit)
-            service.train(checkpoint_dir=tmp_path)
+            service.train()
 
         mock_fit.assert_called_once_with(config="train_config", ckpt_path=ckpt_path)
-
-    def test_train_delegates_to_multistage_when_requested(self, tmp_path: Path) -> None:
-        service = ModelService.__new__(ModelService)
-        service.model_ = MagicMock()
-        trainer = MagicMock()
-
-        with pytest.MonkeyPatch.context() as mp:
-            mock_train_multistage = MagicMock(return_value=trainer)
-            mp.setattr(service, "train_multistage", mock_train_multistage)
-            result = service.train(checkpoint_dir=tmp_path, multistage=True)
-
-        mock_train_multistage.assert_called_once_with(checkpoint_dir=tmp_path)
-        assert result is trainer
 
     def test_train_multistage_rejects_non_encode_process_decode_model(self) -> None:
         service = ModelService.__new__(ModelService)

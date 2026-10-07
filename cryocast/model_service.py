@@ -61,12 +61,21 @@ class ModelService:
             )
         patch_open_file_limit()
 
+        self.checkpoint_path: Path | None = None
         self.data_module_: CommonDataModule | None = None
         self.model_: BaseModel | None = None
 
     @classmethod
     def from_config(cls, config: DictConfig) -> "ModelService":
-        """Build a new ModelService by instantiating a model from a configuration."""
+        """Build a new ModelService by instantiating a model from a configuration.
+
+        Args:
+            config: The current configuration.
+
+        Returns:
+            A new ModelService instance with a model built from the provided config.
+
+        """
         # Load the model configuration
         builder = cls(config)
 
@@ -100,25 +109,48 @@ class ModelService:
     def from_checkpoint(
         cls, config: DictConfig, checkpoint_path: Path
     ) -> "ModelService":
-        """Build a new ModelService by loading a model from a checkpoint."""
-        # Verify the checkpoint path
+        """Build a new ModelService by loading a model from a checkpoint.
+
+        The model is loaded with the "model", "variables" and "window" configs that
+        it was trained with, apart from "window.batch_size". Everything else is taken
+        from the current config. Calling `train` on the resulting ModelService will
+        resume training from the checkpoint.
+
+        Args:
+            config: The current configuration.
+            checkpoint_path: A checkpoint file, or a directory containing a
+                ``last*.ckpt`` file to resume from.
+
+        Returns:
+            A new ModelService instance with a model loaded from the provided
+            checkpoint.
+
+        """
+        # Find the checkpoint file
+        if checkpoint_path.is_dir():
+            if not (matches := sorted(checkpoint_path.glob("last*.ckpt"))):
+                msg = (
+                    f"No resumable checkpoint (last*.ckpt) found in {checkpoint_path}."
+                )
+                raise FileNotFoundError(msg)
+            checkpoint_path = matches[-1]
         if checkpoint_path.is_file():
             log.debug("Found checkpoint at %s.", checkpoint_path)
         else:
-            msg = f"Checkpoint file {checkpoint_path} does not exist."
+            msg = f"Could not find checkpoint file {checkpoint_path}."
             raise FileNotFoundError(msg)
 
-        # Build a combined model configuration where the command line config takes
-        # precedence except for the "model", "train", "variables" and "window" keys
-        # which are related to training the model. The exception to this is
-        # "window.batch_size", which is also taken from the command line config.
+        # Build a combined model configuration where the current config takes
+        # precedence except for the "model", "variables" and "window" keys which
+        # describe the trained model. The exception to this is "window.batch_size",
+        # which is also taken from the current config.
         config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
         try:
             # Load the model configuration from the checkpoint directory
             ckpt_config = cls._migrate_legacy_config(config_path)
             log.debug("Loaded checkpoint configuration from %s.", config_path)
             combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
-            for key in ("model", "train", "window"):
+            for key in ("model", "window"):
                 combined_cfg[key] = OmegaConf.merge(
                     combined_cfg.get(key, {}), ckpt_config.get(key, {})
                 )
@@ -134,6 +166,7 @@ class ModelService:
 
         # Load the model from checkpoint
         builder = cls(combined_cfg)
+        builder.checkpoint_path = checkpoint_path
         model_cls: type[BaseModel] = hydra.utils.get_class(
             builder.config["model"]["_target_"]
         )
@@ -496,20 +529,11 @@ class ModelService:
             datamodule=self.data_module,
         )
 
-    def train(
-        self, *, checkpoint_dir: Path | None = None, multistage: bool = False
-    ) -> Trainer:
-        """Train a model.
+    def train(self) -> Trainer:
+        """Train a model in a single stage.
 
-        Args:
-            checkpoint_dir: For multistage training, a directory of existing per-stage
-                checkpoints to skip completed stages. For single-stage training, if the
-                directory contains a ``last*.ckpt`` file, training will resume from it.
-            multistage: Whether to train an ``EncodeProcessDecode`` model in stages.
-
+        If this ModelService was loaded from a checkpoint, training resumes from it.
         """
-        if multistage:
-            return self.train_multistage(checkpoint_dir=checkpoint_dir)
         if self.model.multistage_only:
             msg = (
                 "This model cannot be trained in standard mode. The most likely "
@@ -517,15 +541,9 @@ class ModelService:
                 "training. Use `cryocast train --multistage` instead."
             )
             raise ValueError(msg)
-        ckpt_path = None
-        if checkpoint_dir is not None:
-            matches = sorted(checkpoint_dir.glob("last*.ckpt"))
-            if not matches:
-                msg = f"No resumable checkpoint (last*.ckpt) found in {checkpoint_dir}."
-                raise FileNotFoundError(msg)
-            ckpt_path = matches[-1]
-            log.info("Resuming single-stage training from %s.", ckpt_path)
-        return self._fit(config=self.config["train"], ckpt_path=ckpt_path)
+        if self.checkpoint_path:
+            log.info("Resuming single-stage training from %s.", self.checkpoint_path)
+        return self._fit(config=self.config["train"], ckpt_path=self.checkpoint_path)
 
     def train_multistage(self, *, checkpoint_dir: Path | None = None) -> Trainer:
         """Train an EncodeProcessDecode model in multiple stages.

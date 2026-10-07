@@ -155,11 +155,17 @@ def trial(
         os.environ["WANDB_PROJECT"] = "train"
 
         # Train the model for this trial
-        model = ModelService.from_config(config)
-        trainer = model.train(
-            checkpoint_dir=Path(checkpoint_dir).resolve() if checkpoint_dir else None,
-            multistage=multistage,
-        )
+        resolved_ckpt_dir = Path(checkpoint_dir).resolve() if checkpoint_dir else None
+        # For multistage training, we pass the directory of checkpoints to train_multistage
+        if multistage:
+            model_service = ModelService.from_config(config)
+            trainer = model_service.train_multistage(checkpoint_dir=resolved_ckpt_dir)
+        # For single-stage training, we resume from the most recent checkpoint
+        elif resolved_ckpt_dir:
+            trainer = ModelService.from_checkpoint(config, resolved_ckpt_dir).train()
+        # ... or if no checkpoint is provided, we start training from scratch
+        else:
+            trainer = ModelService.from_config(config).train()
 
         # If there is exactly one ModelCheckpoint callback then we will use that
         checkpoints = [

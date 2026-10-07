@@ -44,11 +44,17 @@ def train(
     ] = False,
 ) -> None:
     """Train a model."""
-    model = ModelService.from_config(config)
-    model.train(
-        checkpoint_dir=Path(checkpoint_dir).resolve() if checkpoint_dir else None,
-        multistage=multistage,
-    )
+    resolved_ckpt_dir = Path(checkpoint_dir).resolve() if checkpoint_dir else None
+    # For multistage training, we pass the directory of checkpoints to train_multistage
+    if multistage:
+        model_service = ModelService.from_config(config)
+        model_service.train_multistage(checkpoint_dir=resolved_ckpt_dir)
+    # For single-stage training, we resume from the most recent checkpoint
+    elif resolved_ckpt_dir:
+        ModelService.from_checkpoint(config, resolved_ckpt_dir).train()
+    # ... or if no checkpoint is provided, we start training from scratch
+    else:
+        ModelService.from_config(config).train()
 
 
 if __name__ == "__main__":
