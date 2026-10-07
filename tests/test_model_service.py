@@ -817,7 +817,10 @@ class TestModelService:
             config=config, job_stage="processor", project="train"
         )
         trainer.fit.assert_called_once_with(
-            model=model, datamodule=service.data_module_, ckpt_path=ckpt_path
+            model=model,
+            datamodule=service.data_module_,
+            ckpt_path=ckpt_path,
+            weights_only=False,
         )
         assert result is trainer
 

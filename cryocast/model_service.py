@@ -254,7 +254,10 @@ class ModelService:
             get_device_name(trainer.accelerator.name()),
         )
         trainer.fit(
-            model=current_model, datamodule=self.data_module, ckpt_path=ckpt_path
+            model=current_model,
+            datamodule=self.data_module,
+            ckpt_path=ckpt_path,
+            weights_only=False,  # our own checkpoints contain pathlib hyperparameters
         )
 
         # Explicitly release cached device memory rather than delegating this to the
