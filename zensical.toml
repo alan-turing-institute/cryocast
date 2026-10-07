@@ -25,6 +25,7 @@ nav = [
         { "Train a model" = "how-to/train.md" },
         { "Train a model in multiple stages" = "how-to/train-multistage.md" },
         { "Evaluate a model" = "how-to/evaluate.md" },
+        { "Submit forecasts to SIPN" = "how-to/submit-sipn.md" },
         { "Run a hyperparameter sweep" = "how-to/sweeps.md" },
         { "Create a release" = "how-to/release.md" },
     ] },
