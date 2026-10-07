@@ -613,7 +613,7 @@ class TestModelService:
         service.data_module_.assign_workers.assert_called_once_with(4)
         assert (run_dir / "files" / "model_config.yaml").exists()
         assert plotting_callback.prefix == "processor"
-        assert checkpoint_callback.dirpath == run_dir / "checkpoints"
+        assert checkpoint_callback.dirpath == str(run_dir / "checkpoints")
         assert (
             enabled_prediction_writer.output_path
             == run_dir / "files" / "predictions.nc"

@@ -13,9 +13,9 @@ class TestDirpath:
         """Round-trip a truthy dirpath, and leave it unchanged when set to a falsy value."""
         callback = UnconditionalCheckpoint()
         callback.dirpath = tmp_path
-        assert callback.dirpath == tmp_path
+        assert callback.dirpath == str(tmp_path)
         callback.dirpath = None
-        assert callback.dirpath == tmp_path
+        assert callback.dirpath == str(tmp_path)
 
 
 class TestSaveUnconditionally:

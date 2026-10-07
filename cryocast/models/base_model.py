@@ -29,6 +29,7 @@ from cryocast.types import (
     ModelStepOutput,
     TensorNTCHW,
 )
+from cryocast.utils import to_plain_types
 
 if TYPE_CHECKING:
     from torch.nn.modules.module import _IncompatibleKeys
@@ -49,7 +50,7 @@ class BaseModel(LightningModule, ABC):
         self,
         *,
         channel_names: Sequence[str] | None = None,
-        hemisphere: Hemisphere,
+        hemisphere: Hemisphere | str,
         input_spaces: Sequence[DictConfig],
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
@@ -86,7 +87,7 @@ class BaseModel(LightningModule, ABC):
 
         # Save model name, hemisphere, lat/lon information and channel names
         self.name = name
-        self.hemisphere: Hemisphere = hemisphere
+        self.hemisphere = Hemisphere(hemisphere)
         self.latitudes_fn = latitudes_fn
         self.longitudes_fn = longitudes_fn
         self.channel_names = list(channel_names) if channel_names else []
@@ -160,6 +161,10 @@ class BaseModel(LightningModule, ABC):
         # All arguments to the ultimate child class will be logged as hyperparameters,
         # and saved to W&B, unless explicitly ignored here.
         self.save_hyperparameters(ignore=[*self.ignored_hparams])
+
+        # Convert hyperparameters to plain Python types, to make checkpoints portable
+        for key, value in self.hparams.items():
+            self.hparams[key] = to_plain_types(value)
 
     @cached_property
     def latitudes(self) -> dict[str, list[float]]:

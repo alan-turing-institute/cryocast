@@ -463,7 +463,7 @@ class ModelService:
                     callback.__class__.__name__,
                     run_directory / "checkpoints",
                 )
-                callback.dirpath = run_directory / "checkpoints"
+                callback.dirpath = str(run_directory / "checkpoints")
             # Set prediction output path for the prediction writer, if enabled
             if isinstance(callback, PredictionWriter) and callback.enabled:
                 output_path = run_directory / "files" / "predictions.nc"

@@ -1,12 +1,14 @@
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
-from pathlib import Path
+from enum import StrEnum
+from pathlib import Path, PurePath
 
 import numpy as np
 import torch
 from lightning import Trainer
 from lightning.pytorch.loggers import WandbLogger
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from wandb.wandb_run import Run
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -113,3 +115,22 @@ def to_list(value: str | Sequence[str]) -> list[str]:
     if isinstance(value, str):
         return [value]
     return value if isinstance(value, list) else list(value)
+
+
+def to_plain_types(value: object) -> object:
+    """Recursively convert enums, paths and OmegaConf containers to plain Python types.
+
+    This is useful for values that need to be stored, for example in checkpoints, which
+    can then be loaded without needing to import the original classes.
+    """
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, PurePath):
+        return str(value)
+    if isinstance(value, DictConfig | ListConfig):
+        return to_plain_types(OmegaConf.to_container(value, resolve=True))
+    if isinstance(value, Mapping):
+        return {key: to_plain_types(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return type(value)(to_plain_types(item) for item in value)
+    return value
