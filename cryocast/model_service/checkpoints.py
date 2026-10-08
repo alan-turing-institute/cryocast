@@ -128,7 +128,9 @@ class CheckpointFile:
         "window" sections, which describe the trained model. The "model" and "window"
         checkpoint configs are merged over the current ones, apart from
         "window.batch_size", while the "variables" checkpoint config replaces the
-        current one entirely. A warning lists any current values that are replaced.
+        current one entirely. If the current config names a different model, the
+        "model" checkpoint config also replaces the current one entirely. A warning
+        lists any current values that are replaced.
 
         Args:
             config: The current config.
@@ -153,16 +155,18 @@ class CheckpointFile:
         if "batch_size" in config.get("window", {}):
             combined["window"]["batch_size"] = config["window"]["batch_size"]
 
-        # Warn about any current config values that are not used, summarising a
-        # different model in one line rather than listing every difference
+        # A different model must not inherit any of the configured model's settings,
+        # so use the checkpoint model config outright and summarise this in one line
+        # rather than listing every difference
         sections = ["model", "variables", "window"]
         configured_model = OmegaConf.select(config, "model.name")
-        combined_model = OmegaConf.select(combined, "model.name")
-        if configured_model and configured_model != combined_model:
+        checkpoint_model = OmegaConf.select(ckpt_config, "model.name")
+        if configured_model and configured_model != checkpoint_model:
+            combined["model"] = ckpt_config.get("model", {})
             log.warning(
                 "Using the '%s' model from the checkpoint rather than the configured "
                 "'%s' model.",
-                combined_model,
+                checkpoint_model,
                 configured_model,
             )
             sections.remove("model")

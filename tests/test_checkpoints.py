@@ -171,6 +171,36 @@ class TestMergeConfig:
         assert combined["reporting"]["loggers"] == "will_overwrite"
         assert combined["train"]["trainer"]["max_epochs"] == 200
 
+    def test_different_model_replaced_not_merged(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """A different configured model's settings do not leak into the checkpoint's."""
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["model"] = {"name": "dc-gsta-dc", "depth": 6}
+        config = cfg_model_service.copy()
+        config["model"] = {"name": "quick-test", "depth": 2, "extra": 1}
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        combined = checkpoint_file.merge_config(config)
+
+        assert combined["model"] == ckpt_config["model"]
+
+    def test_same_model_keeps_configured_extra_keys(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
+        """The same model keeps configured keys that the checkpoint config lacks."""
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["model"] = {"name": "dc-gsta-dc", "depth": 6}
+        config = cfg_model_service.copy()
+        config["model"] = {"name": "dc-gsta-dc", "depth": 2, "extra": 1}
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        combined = checkpoint_file.merge_config(config)
+
+        assert combined["model"] == {"name": "dc-gsta-dc", "depth": 6, "extra": 1}
+
     def test_variables_replaced_not_merged(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
