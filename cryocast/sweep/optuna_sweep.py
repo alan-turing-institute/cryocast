@@ -160,7 +160,7 @@ class OptunaSweep:
         return DictConfig(OmegaConf.merge(base_config, wandb_overrides))
 
     def initialise_study(self, model_cfg: DictConfig, sweep_id: str) -> None:
-        """Create the Optuna study directory and save the model and sweep configs."""
+        """Create the Optuna study and save the model and sweep configs alongside it."""
         # Generate study and storage paths
         sweep_base = (Path(model_cfg.get("base_path"))).resolve() / "sweeps"
         self._study_name = sweep_id
@@ -182,6 +182,9 @@ class OptunaSweep:
 
         # Save the model config to the study path
         OmegaConf.save(model_cfg, self.study_path / "model_config.yaml")
+
+        # Avoid race-conditions by creating the Optuna study here
+        _ = self.study
 
     def initialise_sweep(self, model_cfg: DictConfig) -> str:
         """Generate a new W&B sweep."""

@@ -27,27 +27,25 @@ CONFIG: dict[str, Any] = {
 }
 
 
-def build_sampler(config: dict[str, Any], study_path: Path) -> OptunaSweep:
-    """Build an OptunaSweep at `study_path`.
+def build_sampler(config: dict[str, Any], base_path: Path) -> OptunaSweep:
+    """Initialise a study under `base_path` then load it, as a trial process would.
 
     The persisted model config has a default for every path in `CONFIG`'s
     `parameters`, mirroring a real composed Hydra config where a sweep only ever
     overrides an already-present leaf.
     """
-    sampler = OptunaSweep(config)
-    sampler._study_path = study_path
-    sampler._study_name = study_path.name
-    OmegaConf.save(
-        OmegaConf.create(
-            {
-                "train": {"optimizer": {"lr": 0.001}},
-                "loss": {"delta": 1.0},
-                "model": {"name": "unet"},
-            }
-        ),
-        study_path / "model_config.yaml",
+    model_cfg = OmegaConf.create(
+        {
+            "base_path": str(base_path),
+            "train": {"optimizer": {"lr": 0.001}},
+            "loss": {"delta": 1.0},
+            "model": {"name": "unet"},
+        }
     )
-    return sampler
+    OptunaSweep({**config, "entity": "test-entity"}).initialise_study(
+        model_cfg, "sweep123"
+    )
+    return OptunaSweep.from_path(base_path / "sweeps" / "sweep123")
 
 
 class TestOptunaSweepInit:
@@ -115,15 +113,14 @@ class TestUnsetProperties:
 class TestOptunaSweepStudy:
     """Tests for the OptunaSweep.study property."""
 
-    def test_unknown_sampler_raises(self, tmp_path: Path) -> None:
-        sampler = build_sampler({**CONFIG, "sampler": "not-a-sampler"}, tmp_path)
-        with pytest.raises(ValueError, match="Unknown sampler"):
-            _ = sampler.study
-
-    def test_creates_sqlite_backed_study(self, tmp_path: Path) -> None:
+    def test_loads_initialised_study(self, tmp_path: Path) -> None:
         sampler = build_sampler(CONFIG, tmp_path)
-        study = sampler.study
-        assert study.study_name == tmp_path.name
+        assert sampler.study.study_name == "sweep123"
+
+    def test_creates_study_when_not_initialised(self, tmp_path: Path) -> None:
+        (tmp_path / "optuna.yaml").write_text(yaml.safe_dump(CONFIG))
+        sampler = OptunaSweep.from_path(tmp_path)
+        assert sampler.study.study_name == tmp_path.name
         assert (tmp_path / "optuna.db").exists()
 
 
@@ -142,7 +139,7 @@ class TestOptunaSweepAsk:
         sampler1 = build_sampler(CONFIG, tmp_path)
         _, overrides1 = sampler1.ask()
 
-        sampler2 = build_sampler(CONFIG, tmp_path)
+        sampler2 = OptunaSweep.from_path(sampler1.study_path)
         _, overrides2 = sampler2.ask()
 
         assert [value for _, value in overrides1] != [value for _, value in overrides2]
@@ -185,7 +182,7 @@ class TestOptunaSweepAsk:
         slow = build_sampler(config, tmp_path)
         slow.ask()
 
-        concurrent = build_sampler(config, tmp_path)
+        concurrent = OptunaSweep.from_path(slow.study_path)
         _, concurrent_overrides = concurrent.ask()
 
         _, slow_overrides = slow.ask()
@@ -338,7 +335,7 @@ class TestOptunaSweepAskAndTell:
     def test_ask_persists_sampler_state(self, tmp_path: Path) -> None:
         sampler = build_sampler(CONFIG, tmp_path)
         sampler.ask()
-        assert (tmp_path / "sampler.pkl").exists()
+        assert (sampler.study_path / "sampler.pkl").exists()
 
     def test_successive_asks_return_different_trials(self, tmp_path: Path) -> None:
         sampler = build_sampler(CONFIG, tmp_path)
@@ -375,6 +372,21 @@ class TestOptunaSweepInitialiseStudy:
 
         saved_model_cfg = OmegaConf.load(study_path / "model_config.yaml")
         assert saved_model_cfg.base_path == str(tmp_path)
+
+    def test_creates_sqlite_backed_study(self, tmp_path: Path) -> None:
+        sampler = OptunaSweep({**CONFIG, "entity": "test-entity"})
+        model_cfg = OmegaConf.create({"base_path": str(tmp_path)})
+
+        sampler.initialise_study(model_cfg, "sweep123")
+
+        assert sampler.study.study_name == "sweep123"
+        assert (tmp_path / "sweeps" / "sweep123" / "optuna.db").exists()
+
+    def test_unknown_sampler_raises(self, tmp_path: Path) -> None:
+        sampler = OptunaSweep({**CONFIG, "entity": "test-entity", "sampler": "bad"})
+        model_cfg = OmegaConf.create({"base_path": str(tmp_path)})
+        with pytest.raises(ValueError, match="Unknown sampler"):
+            sampler.initialise_study(model_cfg, "sweep123")
 
 
 class TestOptunaSweepInitialiseSweep:

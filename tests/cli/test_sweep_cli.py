@@ -51,14 +51,12 @@ def _build_study(tmp_path: Path, n_completed: int = 1) -> tuple[Path, int | None
             "train.optimizer.lr": {"type": "float", "low": 1.0e-5, "high": 1.0e-2}
         },
     }
-    study_path = tmp_path / "example-sweep"
-    study_path.mkdir()
-    (study_path / "optuna.yaml").write_text(yaml.safe_dump(cfg_sweep))
-    OmegaConf.save(
-        OmegaConf.create({"train": {"optimizer": {"lr": 0.001}}}),
-        study_path / "model_config.yaml",
+    model_cfg = OmegaConf.create(
+        {"base_path": str(tmp_path), "train": {"optimizer": {"lr": 0.001}}}
     )
+    OptunaSweep(cfg_sweep).initialise_study(model_cfg, "example-sweep")
 
+    study_path = tmp_path / "sweeps" / "example-sweep"
     sampler = OptunaSweep.from_path(study_path)
     trial_number = None
     for _ in range(n_completed):
@@ -160,6 +158,7 @@ class TestSweepInitialiseCLI:
         assert result.exit_code == 0, result.output
         study_path = tmp_path / "sweeps" / "fake-sweep-id"
         assert (study_path / "model_config.yaml").exists()
+        assert (study_path / "optuna.db").exists()
         saved_sweep_cfg = yaml.safe_load((study_path / "optuna.yaml").read_text())
         assert saved_sweep_cfg["entity"] == "turing-seaice"
         assert saved_sweep_cfg["name"] == "example"
