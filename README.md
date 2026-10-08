@@ -37,7 +37,7 @@ cd cryocast
 uv sync --managed-python
 ```
 
-Create a local config in `cryocast/config/` (see [Configuration](https://alan-turing-institute.github.io/icenet-mp/user-guide/configuration/) for details):
+Create a local config in `cryocast/config/` (see [Configuration](https://alan-turing-institute.github.io/cryocast/user-guide/configuration/) for details):
 
 ```yaml
 # cryocast/config/my.local.yaml
@@ -63,12 +63,12 @@ uv run cryocast evaluate --checkpoint /path/to/checkpoint.ckpt --config-name my.
 
 ## Documentation
 
-See the [project documentation](https://alan-turing-institute.github.io/icenet-mp/) for the full user guide and reference material.
+See the [project documentation](https://alan-turing-institute.github.io/cryocast/) for the full user guide and reference material.
 
-- [Installation](https://alan-turing-institute.github.io/icenet-mp/user-guide/installation/) for prerequisites, `uv` setup, and HPC-specific steps
-- [Configuration](https://alan-turing-institute.github.io/icenet-mp/user-guide/configuration/) for local config files, model overrides, and custom datasets
-- [Commands](https://alan-turing-institute.github.io/icenet-mp/user-guide/commands/) for `datasets create`, `datasets inspect`, `train`, and `evaluate`
-- [Add a model](https://alan-turing-institute.github.io/icenet-mp/how-to/add-a-model/) for tensor format and model architecture guidance
+- [Installation](https://alan-turing-institute.github.io/cryocast/user-guide/installation/) for prerequisites, `uv` setup, and HPC-specific steps
+- [Configuration](https://alan-turing-institute.github.io/cryocast/user-guide/configuration/) for local config files, model overrides, and custom datasets
+- [Commands](https://alan-turing-institute.github.io/cryocast/user-guide/commands/) for `datasets create`, `datasets inspect`, `train`, and `evaluate`
+- [Add a model](https://alan-turing-institute.github.io/cryocast/how-to/add-a-model/) for tensor format and model architecture guidance
 
 ## Jupyter notebooks
 
