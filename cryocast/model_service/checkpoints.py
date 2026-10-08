@@ -14,8 +14,13 @@ from typing import Any, ClassVar
 
 import torch
 from omegaconf import DictConfig, OmegaConf
+from torch.serialization import get_unsafe_globals_in_checkpoint
 
-from cryocast.exceptions import OutdatedCheckpointError
+from cryocast.exceptions import (
+    CheckpointUpgradeError,
+    OutdatedCheckpointError,
+    UntrustedCheckpointError,
+)
 from cryocast.types import DataSpace
 from cryocast.utils import to_plain_types
 
@@ -215,7 +220,9 @@ class CheckpointFile:
             msg = (
                 f"Checkpoint {self.path} contains objects that cannot be loaded "
                 "safely, probably because it was saved by an older version of this "
-                f"code. Upgrade it with 'cryocast checkpoint upgrade {self.path}'."
+                "code. Upgrading it runs any code embedded in the file, so only do so "
+                "if you trust its source, with 'cryocast checkpoint upgrade --trust "
+                f"{self.path}'."
             )
             raise OutdatedCheckpointError(msg) from exc
 
@@ -224,10 +231,15 @@ class LegacyCheckpointFile:
     """A checkpoint file saved by an older version of this code.
 
     Upgrading rewrites the checkpoint, and the config saved alongside it, into the
-    current format so that they can be loaded safely. Only files that need upgrading
-    are rewritten, so upgrading twice changes nothing. Each rewritten file is first
-    backed up to ``<name>.bak``, unless an earlier upgrade has already done so, so
-    that the backup always holds the original file.
+    current format so that they can be loaded safely. Only files that need upgrading are
+    rewritten, so upgrading twice changes nothing. Each rewritten file is first backed
+    up to ``<name>.bak``, unless an earlier upgrade has already done so. This means that
+    the backup always holds the original file.
+
+    Reading a checkpoint that cannot be loaded safely runs the full pickle machinery, so
+    a malicious file can execute arbitrary code. This is only done when the caller
+    explicitly trusts the checkpoint.
+
     """
 
     # Older checkpoints may reference this package by its previous name
@@ -281,15 +293,26 @@ class LegacyCheckpointFile:
 
     @staticmethod
     def _replace(path: Path, write: Callable[[Path], None]) -> None:
-        """Replace a file, backing up the original unless it has already been."""
+        """Replace a file, backing up the original unless it has already been.
+
+        Args:
+            path: The file to replace.
+            write: Writes the replacement to the given path, raising if it cannot, in
+                which case the original file is left unchanged.
+
+        """
         tmp_path = path.with_name(f"{path.name}.tmp")
-        write(tmp_path)
+        try:
+            write(tmp_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
         if not (backup_path := path.with_name(f"{path.name}.bak")).exists():
             shutil.move(path, backup_path)
         shutil.move(tmp_path, path)
         log.info("Upgraded %s, keeping the original at %s.", path, backup_path)
 
-    def upgrade(self) -> CheckpointFile:
+    def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901
         """Upgrade the checkpoint and its config to the current format.
 
         The checkpoint is rewritten to reference ``cryocast`` classes and to contain
@@ -297,8 +320,20 @@ class LegacyCheckpointFile:
         The config is rewritten to reference ``cryocast`` and to replace the legacy
         'predict' settings with 'variables' and 'window' ones.
 
+        Args:
+            trusted: Whether the checkpoint comes from a trusted source. A checkpoint
+                that cannot be loaded safely can only be upgraded by unpickling it
+                without restrictions, which can execute arbitrary code, so this is
+                refused unless the checkpoint is trusted.
+
         Returns:
             The upgraded checkpoint file.
+
+        Raises:
+            UntrustedCheckpointError: If the checkpoint cannot be loaded safely and is
+                not trusted.
+            CheckpointUpgradeError: If the upgraded checkpoint would still not load
+                safely, in which case no files are changed.
 
         """
         checkpoint_path = self.checkpoint_file.path
@@ -306,9 +341,16 @@ class LegacyCheckpointFile:
 
         # Upgrade the checkpoint if it cannot be loaded safely or if it references the
         # old package name, which may be stored as a plain string such as a '_target_'
-        if unsafe := torch.serialization.get_unsafe_globals_in_checkpoint(
-            checkpoint_path
-        ):
+        if unsafe := get_unsafe_globals_in_checkpoint(checkpoint_path):
+            if not trusted:
+                msg = (
+                    f"Checkpoint {checkpoint_path} references "
+                    f"{', '.join(sorted(unsafe))}, so upgrading it means unpickling it "
+                    "without restrictions, which can execute arbitrary code. If you "
+                    "trust its source, upgrade it with 'cryocast checkpoint upgrade "
+                    f"--trust {checkpoint_path}'."
+                )
+                raise UntrustedCheckpointError(msg)
             ckpt_state = torch.load(
                 checkpoint_path,
                 map_location="cpu",
@@ -321,8 +363,20 @@ class LegacyCheckpointFile:
             ckpt_state = self.checkpoint_file.load()
         renamed: set[str] = set()
         ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
+
         if unsafe or renamed:
-            self._replace(checkpoint_path, lambda path: torch.save(ckpt_state, path))
+
+            def write_upgraded_checkpoint(tmp_path: Path) -> None:
+                torch.save(ckpt_state, tmp_path)
+                if remaining := get_unsafe_globals_in_checkpoint(tmp_path):
+                    msg = (
+                        f"Could not upgrade checkpoint {checkpoint_path}, as it contains "
+                        "objects that cannot be converted to plain types: "
+                        f"{', '.join(sorted(remaining))}. The original file is unchanged."
+                    )
+                    raise CheckpointUpgradeError(msg)
+
+            self._replace(checkpoint_path, write_upgraded_checkpoint)
         else:
             log.info("Checkpoint %s is already up to date.", checkpoint_path)
 
@@ -349,7 +403,7 @@ class LegacyCheckpointFile:
                     "n_history_steps": predict.get("n_history_steps", 1),
                 }
         if predict is not None or self._PACKAGE_PATTERN.search(text):
-            self._replace(config_path, lambda path: OmegaConf.save(config, path))
+            self._replace(config_path, lambda tmp_pth: OmegaConf.save(config, tmp_pth))
         else:
             log.info("Configuration %s is already up to date.", config_path)
         return self.checkpoint_file

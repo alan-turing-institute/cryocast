@@ -366,6 +366,20 @@ class TestToPlainTypes:
         assert type(result["pair"]) is tuple
 
     @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(np.float64(0.5), 0.5), (np.int64(3), 3), (np.bool_(True), True)],  # noqa: FBT003,
+        ids=["float64", "int64", "bool"],
+    )
+    def test_converts_numpy_scalars_to_python_scalars(
+        self, value: np.generic, expected: object
+    ) -> None:
+        """Replace NumPy scalars, which need numpy to unpickle, with Python scalars."""
+        result = to_plain_types(value)
+
+        assert result == expected
+        assert type(result) is type(expected)
+
+    @pytest.mark.parametrize(
         "value", [1, 0.5, "text", None], ids=lambda v: type(v).__name__
     )
     def test_leaves_other_values_unchanged(self, value: object) -> None:

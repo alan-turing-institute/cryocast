@@ -7,10 +7,12 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from cryocast.exceptions import CheckpointUpgradeError, UntrustedCheckpointError
 from cryocast.model_service.checkpoints import (
     CheckpointFile,
     LegacyCheckpointFile,
@@ -118,7 +120,7 @@ class TestLoad:
         with pytest.raises(OutdatedCheckpointError) as exc_info:
             CheckpointFile(path).load()
 
-        assert f"cryocast checkpoint upgrade {path}" in str(exc_info.value)
+        assert f"cryocast checkpoint upgrade --trust {path}" in str(exc_info.value)
         assert isinstance(exc_info.value, pickle.UnpicklingError)
 
     def test_loads_upgraded_checkpoint(self, tmp_path: Path) -> None:
@@ -129,7 +131,7 @@ class TestLoad:
         with pytest.raises(OutdatedCheckpointError):
             checkpoint_file.load()
 
-        LegacyCheckpointFile(checkpoint_file).upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
         assert checkpoint_file.load()["hyper_parameters"]["hemisphere"] == "north"
 
@@ -395,7 +397,7 @@ class TestUpgrade:
             tmp_path / "checkpoints" / "last.ckpt"
         )
 
-        LegacyCheckpointFile(checkpoint_file).upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
         checkpoint = torch.load(checkpoint_file.path, weights_only=True)
         assert (
@@ -441,7 +443,7 @@ class TestUpgrade:
         legacy_config = "model:\n  _target_: icenet_mp.models.EncodeProcessDecode\n"
         _save_legacy_config(checkpoint_file, legacy_config)
 
-        LegacyCheckpointFile(checkpoint_file).upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
         assert OmegaConf.load(checkpoint_file.config_path) == {
             "model": {"_target_": "cryocast.models.EncodeProcessDecode"}
@@ -482,7 +484,7 @@ class TestUpgrade:
         }
         _save_legacy_config(checkpoint_file, OmegaConf.to_yaml(legacy_config))
 
-        LegacyCheckpointFile(checkpoint_file).upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
         assert OmegaConf.load(checkpoint_file.config_path) == {
             "model": {"name": "dc-gsta-dc"},
@@ -501,7 +503,7 @@ class TestUpgrade:
         _save_legacy_config(checkpoint_files[0], legacy_config)
 
         for checkpoint_file in checkpoint_files:
-            LegacyCheckpointFile(checkpoint_file).upgrade()
+            LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
         for checkpoint_file in checkpoint_files:
             assert not torch.serialization.get_unsafe_globals_in_checkpoint(
@@ -522,14 +524,14 @@ class TestUpgrade:
         _save_legacy_config(
             checkpoint_file, "predict:\n  target:\n    group_name: sic\n"
         )
-        LegacyCheckpointFile(checkpoint_file).upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
         upgraded = [
             path.read_bytes()
             for path in (checkpoint_file.path, checkpoint_file.config_path)
         ]
 
         with caplog.at_level(logging.INFO, logger="cryocast.model_service.checkpoints"):
-            LegacyCheckpointFile(checkpoint_file).upgrade()
+            LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
         assert [
             path.read_bytes()
@@ -559,3 +561,59 @@ class TestUpgrade:
         assert backup_path.read_text() == original_config
         assert path.read_bytes() == checkpoint
         assert not (tmp_path / "checkpoints" / "last.ckpt.bak").exists()
+
+    def test_refuses_to_unpickle_untrusted_checkpoint(self, tmp_path: Path) -> None:
+        """Refuse to upgrade an unsafe checkpoint unless it is trusted, changing nothing."""
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
+        original = checkpoint_file.path.read_bytes()
+        _save_legacy_config(
+            checkpoint_file, "predict:\n  target:\n    group_name: sic\n"
+        )
+
+        with pytest.raises(UntrustedCheckpointError) as exc_info:
+            LegacyCheckpointFile(checkpoint_file).upgrade()
+
+        assert "arbitrary code" in str(exc_info.value)
+        assert f"cryocast checkpoint upgrade --trust {checkpoint_file.path}" in str(
+            exc_info.value
+        )
+        assert checkpoint_file.path.read_bytes() == original
+        assert "predict" in OmegaConf.load(checkpoint_file.config_path)
+        assert not list(tmp_path.rglob("*.bak"))
+
+    def test_converts_numpy_scalars(self, tmp_path: Path) -> None:
+        """Replace NumPy scalars with Python scalars so the checkpoint loads safely."""
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        torch.save({"callbacks": {"best_score": np.float64(0.25)}}, path)
+
+        LegacyCheckpointFile(CheckpointFile(path)).upgrade(trusted=True)
+
+        checkpoint = CheckpointFile(path).load()
+        assert checkpoint["callbacks"]["best_score"] == 0.25
+        assert type(checkpoint["callbacks"]["best_score"]) is float
+
+    def test_leaves_files_unchanged_if_upgrade_would_not_load_safely(
+        self, tmp_path: Path
+    ) -> None:
+        """Name leftover unsafe objects rather than writing an unloadable checkpoint."""
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        torch.save({"callbacks": {"scores": np.array([0.25])}}, path)
+        checkpoint_file = CheckpointFile(path)
+        original = path.read_bytes()
+        _save_legacy_config(
+            checkpoint_file, "predict:\n  target:\n    group_name: sic\n"
+        )
+
+        with pytest.raises(CheckpointUpgradeError, match=r"numpy") as exc_info:
+            LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
+
+        # Suggesting another upgrade would send the user round in a loop
+        assert "cryocast checkpoint upgrade" not in str(exc_info.value)
+        assert path.read_bytes() == original
+        assert "predict" in OmegaConf.load(checkpoint_file.config_path)
+        assert not list(tmp_path.rglob("*.bak"))
+        assert not list(tmp_path.rglob("*.tmp"))

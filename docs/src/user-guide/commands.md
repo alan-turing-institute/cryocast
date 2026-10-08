@@ -169,6 +169,17 @@ Upgrades checkpoints saved by older versions of CryoCast, or by its predecessor 
 The run's `files/model_config.yaml` is also upgraded, replacing references to `icenet_mp` and converting the legacy `predict` settings into `variables` and `window` settings.
 Each file that needs upgrading is backed up to `<name>.bak` before being rewritten.
 Files that are already up to date are left unchanged, so it is safe to upgrade a checkpoint more than once, and an existing backup is never overwritten.
+If an upgraded checkpoint would still contain objects that cannot be loaded safely, the upgrade stops with an error naming them and no files are changed.
+
+!!! warning "Only upgrade checkpoints you trust"
+    A checkpoint that cannot be loaded safely has to be unpickled without restrictions in order to upgrade it, and a malicious checkpoint can execute arbitrary code when this happens.
+    The command therefore refuses to upgrade such checkpoints unless you pass `--trust`:
+
+    ```bash
+    uv run cryocast checkpoint upgrade --trust PATH_TO_A_TRUSTED_CHECKPOINT
+    ```
+
+    Only use `--trust` for checkpoints that you or your collaborators created, never for files from an unknown source.
 
 ## `feature-importance`
 

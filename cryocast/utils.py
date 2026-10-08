@@ -120,7 +120,7 @@ def to_list(value: str | Sequence[str]) -> list[str]:
 
 
 def to_plain_types(value: object) -> object:  # noqa: PLR0911
-    """Recursively convert enums, paths, DataSpaces and OmegaConf containers to plain types.
+    """Recursively convert enums, paths, DataSpaces, OmegaConf containers and NumPy scalars to plain types.
 
     This is useful for values that need to be stored, for example in checkpoints, which
     can then be loaded without needing to import the original classes.
@@ -133,6 +133,8 @@ def to_plain_types(value: object) -> object:  # noqa: PLR0911
         return to_plain_types(value.to_dict())
     if isinstance(value, DictConfig | ListConfig):
         return to_plain_types(OmegaConf.to_container(value, resolve=True))
+    if isinstance(value, np.generic):
+        return value.item()
     if isinstance(value, Mapping):
         return {key: to_plain_types(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
