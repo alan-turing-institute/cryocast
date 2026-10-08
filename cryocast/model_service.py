@@ -18,6 +18,7 @@ from cryocast.callbacks import (
     PredictionWriter,
     UnconditionalCheckpoint,
 )
+from cryocast.checkpoint_config import load_checkpoint_config, merge_checkpoint_config
 from cryocast.compatibility.torch import (
     patch_interpolate_antialias,
     patch_open_file_limit,
@@ -140,34 +141,13 @@ class ModelService:
             msg = f"Could not find checkpoint file {checkpoint_path}."
             raise FileNotFoundError(msg)
 
-        # Build a combined model configuration where the current config takes
-        # precedence except for the "model", "variables" and "window" keys which
-        # describe the trained model. The exception to this is "window.batch_size",
-        # which is also taken from the current config.
-        config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
-        try:
-            # Load the model configuration from the checkpoint directory
-            ckpt_config = cls._migrate_legacy_config(config_path)
-            log.debug("Loaded checkpoint configuration from %s.", config_path)
-            combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
-            for key in ("model", "window"):
-                combined_cfg[key] = OmegaConf.merge(
-                    combined_cfg.get(key, {}), ckpt_config.get(key, {})
-                )
-            # We must use the same variables that the checkpoint was trained with
-            if "variables" in ckpt_config:
-                combined_cfg["variables"] = ckpt_config["variables"]
-            # Batch size does not affect the trained model, so this can be overridden
-            if "batch_size" in config.get("window", {}):
-                combined_cfg["window"]["batch_size"] = config["window"]["batch_size"]
-        except (NotADirectoryError, FileNotFoundError):
-            combined_cfg = config
-            log.warning(
-                "Could not load the checkpoint configuration from %s, so the values "
-                "from the provided config file will be used instead. This may cause "
-                "problems if the values differ from those used during training.",
-                config_path,
-            )
+        # Use the config that the checkpoint was trained with, where available
+        ckpt_config = load_checkpoint_config(checkpoint_path)
+        combined_cfg = (
+            config
+            if ckpt_config is None
+            else merge_checkpoint_config(config, ckpt_config)
+        )
 
         # Load the model from checkpoint
         builder = cls(combined_cfg)
@@ -200,35 +180,6 @@ class ModelService:
 
         builder._verify_model_matches_data()
         return builder
-
-    @staticmethod
-    def _migrate_legacy_config(ckpt_config_path: Path) -> DictConfig:
-        """Load a YAML config file, migrating legacy settings to the current format."""
-        ckpt_config = DictConfig(OmegaConf.load(ckpt_config_path))
-
-        # Checkpoints from before 'predict' was split into 'variables' and 'window'
-        # are translated, since the current defaults would otherwise be used.
-        if (predict := ckpt_config.pop("predict", None)) is not None:
-            log.warning(
-                "Checkpoint configuration %s uses the legacy 'predict' key. This "
-                "has been translated into 'variables' and 'window' settings.",
-                ckpt_config_path,
-            )
-            # Legacy checkpoints used every variable from every dataset group as input.
-            # A missing target variable list selected every variable in the target
-            # group, which is expressed as an empty list.
-            target = predict["target"]
-            if "variables" not in ckpt_config:
-                ckpt_config["variables"] = {
-                    "input": {},
-                    "target": {target["group_name"]: target.get("variables", [])},
-                }
-            if "window" not in ckpt_config:
-                ckpt_config["window"] = {
-                    "n_forecast_steps": predict.get("n_forecast_steps", 1),
-                    "n_history_steps": predict.get("n_history_steps", 1),
-                }
-        return ckpt_config
 
     def _verify_model_matches_data(self) -> None:
         """Check that the data has the shape that the model was trained with.
