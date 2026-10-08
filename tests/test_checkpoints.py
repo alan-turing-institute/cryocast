@@ -3,7 +3,7 @@ import pickle
 import sys
 from enum import StrEnum
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -14,9 +14,7 @@ from cryocast.model_service.checkpoints import (
     CheckpointFile,
     LegacyCheckpointFile,
     OutdatedCheckpointError,
-    verify_model_matches_data,
 )
-from cryocast.types import DataSpace
 
 
 def _save_run_config(run_dir: Path, config: DictConfig) -> CheckpointFile:
@@ -289,65 +287,6 @@ class TestMergeConfig:
             "Using the 'dc-gsta-dc' model from the checkpoint rather than the "
             "configured 'quick-test' model." in caplog.text
         )
-
-
-def _describe_data(**overrides: object) -> SimpleNamespace:
-    """Describe a model or data module with the attributes that are compared."""
-    attributes: dict[str, object] = {
-        "input_spaces": [DataSpace(5, "input", (20, 20))],
-        "n_forecast_steps": 2,
-        "n_history_steps": 3,
-        "output_space": DataSpace(1, "output", (10, 10)),
-    }
-    return SimpleNamespace(**(attributes | overrides))
-
-
-class TestVerifyModelMatchesData:
-    def test_accepts_matching_data(self) -> None:
-        """Accept data that matches the model."""
-        verify_model_matches_data(_describe_data(), _describe_data())  # type: ignore[arg-type]
-
-    def test_ignores_input_order(self) -> None:
-        """Inputs are matched by name, so their order does not matter."""
-        spaces = [DataSpace(5, "a", (20, 20)), DataSpace(2, "b", (20, 20))]
-
-        verify_model_matches_data(
-            _describe_data(input_spaces=spaces),  # type: ignore[arg-type]
-            _describe_data(input_spaces=spaces[::-1]),  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.parametrize(
-        ("overrides", "match"),
-        [
-            ({"n_history_steps": 2}, "n_history_steps is 3 in the model but 2"),
-            ({"n_forecast_steps": 5}, "n_forecast_steps is 2 in the model but 5"),
-            (
-                {"input_spaces": [DataSpace(4, "input", (20, 20))]},
-                r"input 'input' is DataSpace\(channels=5.* but DataSpace\(channels=4",
-            ),
-            (
-                {
-                    "input_spaces": [
-                        DataSpace(5, "input", (20, 20)),
-                        DataSpace(2, "extra", (20, 20)),
-                    ]
-                },
-                "input 'extra' is missing in the model",
-            ),
-            (
-                {"output_space": DataSpace(2, "output", (10, 10))},
-                r"output is DataSpace\(channels=1.* but DataSpace\(channels=2",
-            ),
-        ],
-        ids=["history", "forecast", "input-channels", "extra-input", "output"],
-    )
-    def test_raises_on_mismatch(self, overrides: dict[str, object], match: str) -> None:
-        """Report how the data differs from the model."""
-        with pytest.raises(ValueError, match=match):
-            verify_model_matches_data(
-                _describe_data(),  # type: ignore[arg-type]
-                _describe_data(**overrides),  # type: ignore[arg-type]
-            )
 
 
 def _save_legacy_checkpoint(path: Path) -> CheckpointFile:

@@ -27,10 +27,7 @@ from cryocast.models import BaseModel, EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
 
-from .checkpoints import (
-    CheckpointFile,
-    verify_model_matches_data,
-)
+from .checkpoints import CheckpointFile
 
 log = logging.getLogger(__name__)
 
@@ -163,8 +160,44 @@ class ModelService:
         )
         builder.model_.checkpoint_epoch = checkpoint.get("epoch")
 
-        verify_model_matches_data(builder.model, builder.data_module)
+        builder._verify_model_matches_data()
         return builder
+
+    def _verify_model_matches_data(self) -> None:
+        """Check that the data has the shape that the model was trained with.
+
+        Inputs are matched by name, since models look up each input by its name.
+
+        Raises:
+            ValueError: If the input spaces, output space or window lengths differ.
+
+        """
+        model_inputs = {space.name: space for space in self.model.input_spaces}
+        data_inputs = {space.name: space for space in self.data_module.input_spaces}
+        mismatches = [
+            f"input '{name}' is {model_inputs.get(name, 'missing')} in the model but "
+            f"{data_inputs.get(name, 'missing')} in the data"
+            for name in sorted(model_inputs.keys() | data_inputs.keys())
+            if model_inputs.get(name) != data_inputs.get(name)
+        ]
+        if self.model.output_space != self.data_module.output_space:
+            mismatches.append(
+                f"output is {self.model.output_space} in the model but "
+                f"{self.data_module.output_space} in the data"
+            )
+        mismatches.extend(
+            f"{key} is {getattr(self.model, key)} in the model but "
+            f"{getattr(self.data_module, key)} in the data"
+            for key in ("n_history_steps", "n_forecast_steps")
+            if getattr(self.model, key) != getattr(self.data_module, key)
+        )
+        if mismatches:
+            msg = (
+                "The checkpointed model does not match the configured data: "
+                + "; ".join(mismatches)
+                + ". Check the 'variables' and 'window' settings."
+            )
+            raise ValueError(msg)
 
     @property
     def config(self) -> DictConfig:

@@ -10,17 +10,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 import torch
 from omegaconf import DictConfig, OmegaConf
 
 from cryocast.exceptions import OutdatedCheckpointError
 from cryocast.utils import to_plain_types
-
-if TYPE_CHECKING:
-    from cryocast.data import CommonDataModule
-    from cryocast.models import BaseModel
 
 log = logging.getLogger(__name__)
 
@@ -209,45 +205,6 @@ class CheckpointFile:
                 f"code. Upgrade it with 'cryocast checkpoint upgrade {self.path}'."
             )
             raise OutdatedCheckpointError(msg) from exc
-
-
-def verify_model_matches_data(
-    model: "BaseModel", data_module: "CommonDataModule"
-) -> None:
-    """Check that the data has the shape that a model was trained with.
-
-    Inputs are matched by name, since models look up each input by its name.
-
-    Raises:
-        ValueError: If the input spaces, output space or window lengths differ.
-
-    """
-    model_inputs = {space.name: space for space in model.input_spaces}
-    data_inputs = {space.name: space for space in data_module.input_spaces}
-    mismatches = [
-        f"input '{name}' is {model_inputs.get(name, 'missing')} in the model but "
-        f"{data_inputs.get(name, 'missing')} in the data"
-        for name in sorted(model_inputs.keys() | data_inputs.keys())
-        if model_inputs.get(name) != data_inputs.get(name)
-    ]
-    if model.output_space != data_module.output_space:
-        mismatches.append(
-            f"output is {model.output_space} in the model but "
-            f"{data_module.output_space} in the data"
-        )
-    mismatches.extend(
-        f"{key} is {getattr(model, key)} in the model but "
-        f"{getattr(data_module, key)} in the data"
-        for key in ("n_history_steps", "n_forecast_steps")
-        if getattr(model, key) != getattr(data_module, key)
-    )
-    if mismatches:
-        msg = (
-            "The checkpointed model does not match the configured data: "
-            + "; ".join(mismatches)
-            + ". Check the 'variables' and 'window' settings."
-        )
-        raise ValueError(msg)
 
 
 class LegacyCheckpointFile:
