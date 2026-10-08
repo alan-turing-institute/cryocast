@@ -76,21 +76,22 @@ class TestFindLast:
 
         assert checkpoint_file.path == checkpoint_dir / "last.ckpt"
 
-    def test_finds_most_recently_modified_checkpoint(self, tmp_path: Path) -> None:
-        """Pick the newest ``last*.ckpt`` file, not the last one alphabetically."""
-        for mtime, name in enumerate(("last-v2.ckpt", "last-v10.ckpt", "last.ckpt")):
+    def test_finds_highest_version_regardless_of_modification_time(
+        self, tmp_path: Path
+    ) -> None:
+        """Pick the highest Lightning version, not the newest or last alphabetically."""
+        for mtime, name in enumerate(("last-v10.ckpt", "last-v2.ckpt", "last.ckpt")):
             (path := tmp_path / name).write_text("checkpoint")
             os.utime(path, ns=(mtime, mtime))
 
-        assert CheckpointFile.find_last(tmp_path).path == tmp_path / "last.ckpt"
-
-    def test_finds_highest_version_when_modified_together(self, tmp_path: Path) -> None:
-        """Pick the highest Lightning version when modification times are equal."""
-        for name in ("last.ckpt", "last-v2.ckpt", "last-v10.ckpt"):
-            (path := tmp_path / name).write_text("checkpoint")
-            os.utime(path, ns=(0, 0))
-
         assert CheckpointFile.find_last(tmp_path).path == tmp_path / "last-v10.ckpt"
+
+    def test_ignores_other_files_starting_with_last(self, tmp_path: Path) -> None:
+        """Only consider ``last.ckpt`` and ``last-vN.ckpt`` files."""
+        for name in ("last.ckpt", "last-best.ckpt"):
+            (tmp_path / name).write_text("checkpoint")
+
+        assert CheckpointFile.find_last(tmp_path).path == tmp_path / "last.ckpt"
 
     def test_raises_without_last_checkpoint_in_directory(self, tmp_path: Path) -> None:
         """Reject a directory with no resumable ``last*.ckpt`` file."""
@@ -513,6 +514,22 @@ class TestUpgrade:
         assert (tmp_path / "files" / "model_config.yaml.bak").read_text() == (
             legacy_config
         )
+
+    def test_upgrading_keeps_the_checkpoint_to_resume_from(
+        self, tmp_path: Path
+    ) -> None:
+        """Resume from the same checkpoint whatever order the files are upgraded in."""
+        checkpoint_files = [
+            _save_legacy_checkpoint(tmp_path / "checkpoints" / name)
+            for name in ("last.ckpt", "last-v1.ckpt")
+        ]
+        for mtime, checkpoint_file in enumerate(checkpoint_files):
+            os.utime(checkpoint_file.path, ns=(mtime, mtime))
+
+        for checkpoint_file in reversed(checkpoint_files):
+            LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
+
+        assert CheckpointFile.find_last(tmp_path / "checkpoints") == checkpoint_files[1]
 
     def test_upgrading_twice_changes_nothing(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

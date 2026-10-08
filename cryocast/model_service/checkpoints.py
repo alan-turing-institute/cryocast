@@ -54,26 +54,26 @@ class CheckpointFile:
             checkpoint_dir: A directory that may contain checkpoints.
 
         Lightning saves ``last-v1.ckpt``, ``last-v2.ckpt`` and so on when ``last.ckpt``
-        already exists, so the most recently modified ``last*.ckpt`` file is chosen,
-        falling back to the highest version number if modification times are equal.
+        already exists, so the file with the highest version number is chosen.
 
         Returns:
-            The most recent ``last*.ckpt`` file in the directory if it exists.
+            The ``last.ckpt`` or ``last-vN.ckpt`` file with the highest version number.
 
         Raises:
-            FileNotFoundError: If the directory has no ``last*.ckpt`` file.
+            FileNotFoundError: If the directory has no such file.
 
         """
-
-        def recency(path: Path) -> tuple[int, int]:
-            version = re.fullmatch(r"last-v(\d+)\.ckpt", path.name)
-            return path.stat().st_mtime_ns, int(version[1]) if version else 0
-
-        if not (matches := sorted(checkpoint_dir.glob("last*.ckpt"), key=recency)):
+        versions = {
+            int(match[1] or 0): path
+            for path in checkpoint_dir.glob("last*.ckpt")
+            if (match := re.fullmatch(r"last(?:-v(\d+))?\.ckpt", path.name))
+        }
+        if not versions:
             msg = f"No resumable checkpoint (last*.ckpt) found in {checkpoint_dir}."
             raise FileNotFoundError(msg)
-        log.debug("Found checkpoint at %s.", matches[-1])
-        return cls(matches[-1])
+        path = versions[max(versions)]
+        log.debug("Found checkpoint at %s.", path)
+        return cls(path)
 
     @property
     def config_path(self) -> Path:
