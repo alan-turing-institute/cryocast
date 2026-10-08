@@ -392,6 +392,30 @@ class TestUpgrade:
         assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
         assert (tmp_path / "checkpoints" / "last.ckpt.bak").is_file()
 
+    def test_upgrades_legacy_package_in_safely_loadable_checkpoint(
+        self, tmp_path: Path
+    ) -> None:
+        """Rewrite icenet_mp references stored as plain strings, keeping a backup."""
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        torch.save(
+            {
+                "hyper_parameters": {"loss": {"_target_": "icenet_mp.losses.MAELoss"}},
+                "state_dict": {"weight": torch.ones(2)},
+            },
+            path,
+        )
+        original = path.read_bytes()
+
+        LegacyCheckpointFile(CheckpointFile(path)).upgrade()
+
+        checkpoint = torch.load(path, weights_only=True)
+        assert checkpoint["hyper_parameters"] == {
+            "loss": {"_target_": "cryocast.losses.MAELoss"}
+        }
+        assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
+        assert (tmp_path / "checkpoints" / "last.ckpt.bak").read_bytes() == original
+
     def test_upgrades_legacy_package_in_config(self, tmp_path: Path) -> None:
         """Rewrite icenet_mp references in the run's model config, keeping a backup."""
         checkpoint_file = _save_legacy_checkpoint(

@@ -249,14 +249,25 @@ class LegacyCheckpointFile:
         self.checkpoint_file = checkpoint_file
 
     @classmethod
-    def _rename(cls, value: object) -> object:
-        """Recursively replace legacy class names with cryocast.X in strings."""
+    def _rename(cls, value: object, renamed: set[str]) -> object:
+        """Recursively replace legacy class names with cryocast.X in strings.
+
+        Args:
+            value: The value to rename.
+            renamed: Collects each string that was renamed.
+
+        """
         if isinstance(value, str):
+            if cls._PACKAGE_PATTERN.search(value):
+                renamed.add(value)
             return cls._PACKAGE_PATTERN.sub("cryocast", value)
         if isinstance(value, Mapping):
-            return {cls._rename(key): cls._rename(item) for key, item in value.items()}
+            return {
+                cls._rename(key, renamed): cls._rename(item, renamed)
+                for key, item in value.items()
+            }
         if isinstance(value, list | tuple):
-            return type(value)(cls._rename(item) for item in value)
+            return type(value)(cls._rename(item, renamed) for item in value)
         return value
 
     @staticmethod
@@ -284,10 +295,12 @@ class LegacyCheckpointFile:
         checkpoint_path = self.checkpoint_file.path
         config_path = self.checkpoint_file.config_path
 
-        # Upgrade the checkpoint if it cannot be loaded safely. Every legacy checkpoint
-        # contains enums or paths, so one that can be loaded safely is already current.
-        if torch.serialization.get_unsafe_globals_in_checkpoint(checkpoint_path):
-            checkpoint = torch.load(
+        # Upgrade the checkpoint if it cannot be loaded safely or if it references the
+        # old package name, which may be stored as a plain string such as a '_target_'
+        if unsafe := torch.serialization.get_unsafe_globals_in_checkpoint(
+            checkpoint_path
+        ):
+            ckpt_state = torch.load(
                 checkpoint_path,
                 map_location="cpu",
                 pickle_module=SimpleNamespace(
@@ -295,10 +308,12 @@ class LegacyCheckpointFile:
                 ),
                 weights_only=False,  # this is an older checkpoint that the user chose
             )
-            self._replace(
-                checkpoint_path,
-                lambda path: torch.save(self._rename(to_plain_types(checkpoint)), path),
-            )
+        else:
+            ckpt_state = self.checkpoint_file.load()
+        renamed: set[str] = set()
+        ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
+        if unsafe or renamed:
+            self._replace(checkpoint_path, lambda path: torch.save(ckpt_state, path))
         else:
             log.info("Checkpoint %s is already up to date.", checkpoint_path)
 
