@@ -48,6 +48,15 @@ class CheckpointFile:
             raise FileNotFoundError(msg)
 
     @classmethod
+    def _backup_path(cls, path: Path) -> Path:
+        """Return a backup path for a file, refusing to overwrite an existing backup."""
+        backup_path = path.with_name(f"{path.name}.bak")
+        if backup_path.exists():
+            msg = f"{backup_path} already exists: has {path} already been upgraded?"
+            raise FileExistsError(msg)
+        return backup_path
+
+    @classmethod
     def find_last(cls, checkpoint_dir: Path) -> "CheckpointFile":
         """Find the checkpoint to resume training from in a directory of checkpoints.
 
@@ -82,7 +91,7 @@ class CheckpointFile:
         with self.suggest_upgrade_on_failure():
             return torch.load(self.path, map_location="cpu", weights_only=True)
 
-    def load_config(self) -> DictConfig | None:
+    def _load_config(self) -> DictConfig | None:
         """Load the config saved alongside the checkpoint, migrating legacy settings.
 
         Returns:
@@ -125,6 +134,71 @@ class CheckpointFile:
                 }
         return ckpt_config
 
+    def merge_config(self, config: DictConfig) -> DictConfig:
+        """Combine the current config with the config that the checkpoint was trained with.
+
+        The current config takes precedence, except for the "model", "variables" and
+        "window" sections, which describe the trained model. The "model" and "window"
+        checkpoint configs are merged over the current ones, apart from
+        "window.batch_size", while the "variables" checkpoint config replaces the
+        current one entirely. A warning lists any current values that are replaced.
+
+        Args:
+            config: The current config.
+
+        Returns:
+            The combined config, or the current config (with a warning) if there is no
+            saved checkpoint config.
+
+        """
+        if (ckpt_config := self._load_config()) is None:
+            return config
+
+        combined = DictConfig(OmegaConf.merge(ckpt_config, config))
+        for key in ("model", "window"):
+            combined[key] = OmegaConf.merge(
+                combined.get(key, {}), ckpt_config.get(key, {})
+            )
+        # We must use the same variables that the checkpoint was trained with
+        if "variables" in ckpt_config:
+            combined["variables"] = ckpt_config["variables"]
+        # Batch size does not affect the trained model, so this can be overridden
+        if "batch_size" in config.get("window", {}):
+            combined["window"]["batch_size"] = config["window"]["batch_size"]
+
+        # Warn about any current config values that are not used, summarising a
+        # different model in one line rather than listing every difference
+        sections = ["model", "variables", "window"]
+        configured_model = OmegaConf.select(config, "model.name")
+        combined_model = OmegaConf.select(combined, "model.name")
+        if configured_model and configured_model != combined_model:
+            log.warning(
+                "Using the '%s' model from the checkpoint rather than the configured "
+                "'%s' model.",
+                combined_model,
+                configured_model,
+            )
+            sections.remove("model")
+
+        replaced: dict[str, tuple[Any, Any]] = {}
+        for section in sections:
+            used = _leaf_values(combined.get(section, {}), section)
+            replaced |= {
+                key: (value, used.get(key, "unset"))
+                for key, value in _leaf_values(config.get(section, {}), section).items()
+                if value != used.get(key, "unset")
+            }
+        if replaced:
+            log.warning(
+                "Using settings from the checkpoint rather than the current config: %s.",
+                "; ".join(
+                    f"{key}={reprlib.repr(used)} (configured as {reprlib.repr(configured)})"
+                    for key, (configured, used) in replaced.items()
+                ),
+            )
+
+        return combined
+
     @contextmanager
     def suggest_upgrade_on_failure(self) -> Generator[None]:
         """Suggest upgrading the checkpoint if it cannot be loaded safely.
@@ -158,7 +232,7 @@ class CheckpointFile:
                 already been upgraded.
 
         """
-        backup_path = _backup_path(self.path)
+        backup_path = self._backup_path(self.path)
 
         # Load the checkpoint, resolving any icenet_mp classes as their cryocast versions
         pickle_module = SimpleNamespace(
@@ -182,7 +256,7 @@ class CheckpointFile:
         if self.config_path.is_file() and LEGACY_PACKAGE_PATTERN.search(
             text := self.config_path.read_text()
         ):
-            backup_path = _backup_path(self.config_path)
+            backup_path = self._backup_path(self.config_path)
             shutil.move(self.config_path, backup_path)
             self.config_path.write_text(LEGACY_PACKAGE_PATTERN.sub("cryocast", text))
             log.info(
@@ -190,67 +264,6 @@ class CheckpointFile:
                 self.config_path,
                 backup_path,
             )
-
-
-def merge_checkpoint_config(config: DictConfig, ckpt_config: DictConfig) -> DictConfig:
-    """Combine the current config with the config that a checkpoint was trained with.
-
-    The current config takes precedence, except for the "model", "variables" and
-    "window" sections, which describe the trained model. The "model" and "window"
-    checkpoint configs are merged over the current ones, apart from
-    "window.batch_size", while the "variables" checkpoint config replaces the
-    current one entirely. A warning lists any current values that are replaced.
-
-    Args:
-        config: The current config.
-        ckpt_config: The config that the checkpoint was trained with.
-
-    Returns:
-        The combined config.
-
-    """
-    combined = DictConfig(OmegaConf.merge(ckpt_config, config))
-    for key in ("model", "window"):
-        combined[key] = OmegaConf.merge(combined.get(key, {}), ckpt_config.get(key, {}))
-    # We must use the same variables that the checkpoint was trained with
-    if "variables" in ckpt_config:
-        combined["variables"] = ckpt_config["variables"]
-    # Batch size does not affect the trained model, so this can be overridden
-    if "batch_size" in config.get("window", {}):
-        combined["window"]["batch_size"] = config["window"]["batch_size"]
-
-    # Warn about any current config values that are not used, summarising a
-    # different model in one line rather than listing every difference
-    sections = ["model", "variables", "window"]
-    configured_model = OmegaConf.select(config, "model.name")
-    combined_model = OmegaConf.select(combined, "model.name")
-    if configured_model and configured_model != combined_model:
-        log.warning(
-            "Using the '%s' model from the checkpoint rather than the configured "
-            "'%s' model.",
-            combined_model,
-            configured_model,
-        )
-        sections.remove("model")
-
-    replaced: dict[str, tuple[Any, Any]] = {}
-    for section in sections:
-        used = _leaf_values(combined.get(section, {}), section)
-        replaced |= {
-            key: (value, used.get(key, "unset"))
-            for key, value in _leaf_values(config.get(section, {}), section).items()
-            if value != used.get(key, "unset")
-        }
-    if replaced:
-        log.warning(
-            "Using settings from the checkpoint rather than the current config: %s.",
-            "; ".join(
-                f"{key}={reprlib.repr(used)} (configured as {reprlib.repr(configured)})"
-                for key, (configured, used) in replaced.items()
-            ),
-        )
-
-    return combined
 
 
 def verify_model_matches_data(
@@ -299,15 +312,6 @@ class _LegacyPackageUnpickler(pickle.Unpickler):
         if module.split(".", maxsplit=1)[0] == LEGACY_PACKAGE:
             module = "cryocast" + module.removeprefix(LEGACY_PACKAGE)
         return super().find_class(module, name)
-
-
-def _backup_path(path: Path) -> Path:
-    """Return a backup path for a file, refusing to overwrite an existing backup."""
-    backup_path = path.with_name(f"{path.name}.bak")
-    if backup_path.exists():
-        msg = f"{backup_path} already exists: has {path} already been upgraded?"
-        raise FileExistsError(msg)
-    return backup_path
 
 
 def _rename_legacy_package(value: object) -> object:

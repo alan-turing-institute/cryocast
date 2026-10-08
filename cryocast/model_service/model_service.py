@@ -29,7 +29,6 @@ from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
 
 from .checkpoints import (
     CheckpointFile,
-    merge_checkpoint_config,
     verify_model_matches_data,
 )
 
@@ -136,12 +135,7 @@ class ModelService:
         checkpoint = checkpoint_file.load()
 
         # Use the config that the checkpoint was trained with, where available
-        ckpt_config = checkpoint_file.load_config()
-        combined_cfg = (
-            config
-            if ckpt_config is None
-            else merge_checkpoint_config(config, ckpt_config)
-        )
+        combined_cfg = checkpoint_file.merge_config(config)
 
         # Load the model from checkpoint
         builder = cls(combined_cfg)

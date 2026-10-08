@@ -13,7 +13,6 @@ from omegaconf import DictConfig, OmegaConf
 from cryocast.model_service.checkpoints import (
     CheckpointFile,
     OutdatedCheckpointError,
-    merge_checkpoint_config,
     verify_model_matches_data,
 )
 from cryocast.types import DataSpace
@@ -119,19 +118,14 @@ class TestLoad:
         assert checkpoint_file.load()["hyper_parameters"]["hemisphere"] == "north"
 
 
-class TestLoadConfig:
-    def test_loads_saved_config(
-        self, cfg_model_service: DictConfig, tmp_path: Path
+class TestMergeConfig:
+    def test_returns_config_with_warning_when_missing(
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Load the model_config.yaml saved alongside a checkpoint."""
-        checkpoint_file = _save_run_config(tmp_path, cfg_model_service)
-
-        assert checkpoint_file.load_config() == cfg_model_service
-
-    def test_returns_none_with_warning_when_missing(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Warn and return None when there is no saved model_config.yaml."""
+        """Warn and use the current config when there is no saved model_config.yaml."""
         path = tmp_path / "checkpoints" / "last.ckpt"
         path.parent.mkdir()
         path.write_text("checkpoint")
@@ -139,9 +133,9 @@ class TestLoadConfig:
         with caplog.at_level(
             logging.WARNING, logger="cryocast.model_service.checkpoints"
         ):
-            result = CheckpointFile(path).load_config()
+            combined = CheckpointFile(path).merge_config(cfg_model_service)
 
-        assert result is None
+        assert combined is cfg_model_service
         assert "Could not load the checkpoint configuration" in caplog.text
 
     @pytest.mark.parametrize(
@@ -178,24 +172,21 @@ class TestLoadConfig:
         with caplog.at_level(
             logging.WARNING, logger="cryocast.model_service.checkpoints"
         ):
-            ckpt_config = checkpoint_file.load_config()
+            combined = checkpoint_file.merge_config(DictConfig({}))
 
-        assert ckpt_config is not None
         assert "uses the legacy 'predict' key" in caplog.text
-        assert "predict" not in ckpt_config
-        assert OmegaConf.to_container(ckpt_config["variables"]) == {
+        assert "predict" not in combined
+        assert OmegaConf.to_container(combined["variables"]) == {
             "input": {},
             "target": expected_target,
         }
-        assert OmegaConf.to_container(ckpt_config["window"]) == {
+        assert OmegaConf.to_container(combined["window"]) == {
             "n_forecast_steps": 7,
             "n_history_steps": 4,
         }
 
-
-class TestMergeCheckpointConfig:
     def test_model_and_window_from_checkpoint_and_the_rest_from_config(
-        self, cfg_model_service: DictConfig
+        self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
         """The checkpoint describes the model; everything else is from the config."""
         config = cfg_model_service.copy()
@@ -204,14 +195,18 @@ class TestMergeCheckpointConfig:
         config["reporting"]["loggers"] = "will_overwrite"
         config["train"]["trainer"] = {"max_epochs": 200}
 
-        combined = merge_checkpoint_config(config, cfg_model_service)
+        checkpoint_file = _save_run_config(tmp_path, cfg_model_service)
+
+        combined = checkpoint_file.merge_config(config)
 
         assert combined["model"]["name"] == "mock-model"
         assert combined["window"]["n_history_steps"] == 3
         assert combined["reporting"]["loggers"] == "will_overwrite"
         assert combined["train"]["trainer"]["max_epochs"] == 200
 
-    def test_variables_replaced_not_merged(self, cfg_model_service: DictConfig) -> None:
+    def test_variables_replaced_not_merged(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
         """Checkpoint variables win outright rather than being unioned with the config."""
         ckpt_config = cfg_model_service.copy()
         ckpt_config["variables"] = {
@@ -228,11 +223,15 @@ class TestMergeCheckpointConfig:
             "target": {"sic-osisaf": ["ice_conc"]},
         }
 
-        combined = merge_checkpoint_config(config, ckpt_config)
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        combined = checkpoint_file.merge_config(config)
 
         assert combined["variables"] == ckpt_config["variables"]
 
-    def test_batch_size_from_config(self, cfg_model_service: DictConfig) -> None:
+    def test_batch_size_from_config(
+        self, cfg_model_service: DictConfig, tmp_path: Path
+    ) -> None:
         """Batch size comes from the config; other window keys do not."""
         config = cfg_model_service.copy()
         config["window"] = {
@@ -241,7 +240,9 @@ class TestMergeCheckpointConfig:
             "n_history_steps": 1,
         }
 
-        combined = merge_checkpoint_config(config, cfg_model_service)
+        checkpoint_file = _save_run_config(tmp_path, cfg_model_service)
+
+        combined = checkpoint_file.merge_config(config)
 
         assert OmegaConf.to_container(combined["window"]) == {
             "batch_size": 1,
@@ -272,6 +273,7 @@ class TestMergeCheckpointConfig:
     )
     def test_warns_about_replaced_values(
         self,
+        tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
         overrides: dict[str, Any],
         expected: list[str],
@@ -287,10 +289,12 @@ class TestMergeCheckpointConfig:
         )
         config = DictConfig(OmegaConf.merge(ckpt_config, overrides))
 
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
         with caplog.at_level(
             logging.WARNING, logger="cryocast.model_service.checkpoints"
         ):
-            merge_checkpoint_config(config, ckpt_config)
+            checkpoint_file.merge_config(config)
 
         for message in expected:
             assert message in caplog.text
@@ -298,16 +302,18 @@ class TestMergeCheckpointConfig:
             assert not caplog.records
 
     def test_summarises_different_models_in_one_warning(
-        self, caplog: pytest.LogCaptureFixture
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Report a different model in one line rather than every differing value."""
         ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", "depth": 6}})
         config = DictConfig({"model": {"name": "quick-test", "depth": 2}})
 
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
         with caplog.at_level(
             logging.WARNING, logger="cryocast.model_service.checkpoints"
         ):
-            merge_checkpoint_config(config, ckpt_config)
+            checkpoint_file.merge_config(config)
 
         assert len(caplog.records) == 1
         assert (
