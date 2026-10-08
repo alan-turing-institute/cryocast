@@ -1,6 +1,6 @@
 # Metrics
 
-`cryocast.metrics` ([API reference](../api/metrics.md)) cryocastlements several
+`cryocast.metrics` ([API reference](../api/metrics.md)) implements several
 `torchmetrics.Metric` classes, each computed per forecast lead time.
 Using a combination of these metrics it is possible to understand why model results differ.
 Here we use six synthetic scenarios to show what each metric actually captures and what its strengths and weaknesses are.

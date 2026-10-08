@@ -31,7 +31,7 @@ Louisa van Zeeland
 Louisa van Zeeland (lvanzeeland@turing.ac.uk) or seaice@turing.ac.uk (this will send an email to all team members)
 
 ### Access to Products
-Code for the forecasting pipeline is open source and available on [GitHub](https://github.com/alan-turing-institute/icenet-mp
+Code for the forecasting pipeline is open source and available on [GitHub](https://github.com/alan-turing-institute/cryocast
 ).
 
 There are not live forecast products being published alongside the code at this stage.
@@ -42,7 +42,7 @@ MIT Licensed codebase
 ### References
 
 ### Citation
-The Alan Turing Institute. (2026). CryoCast [Source code]. Github. https://github.com/alan-turing-institute/icenet-mp
+The Alan Turing Institute. (2026). CryoCast [Source code]. Github. https://github.com/alan-turing-institute/cryocast
 
 ## Model/System Details
 
