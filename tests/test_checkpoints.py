@@ -595,6 +595,24 @@ class TestUpgrade:
         assert checkpoint["callbacks"]["best_score"] == 0.25
         assert type(checkpoint["callbacks"]["best_score"]) is float
 
+    def test_keeps_state_dict_metadata(self, tmp_path: Path) -> None:
+        """Keep the state dict versions that modules use to load older state."""
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        state_dict = torch.nn.BatchNorm1d(2).state_dict()
+        torch.save(
+            {
+                "hyper_parameters": {"loss": {"_target_": "icenet_mp.losses.MAELoss"}},
+                "state_dict": state_dict,
+            },
+            path,
+        )
+
+        LegacyCheckpointFile(CheckpointFile(path)).upgrade()
+
+        upgraded = CheckpointFile(path).load()["state_dict"]
+        assert upgraded._metadata == state_dict._metadata  # type: ignore[attr-defined]
+
     def test_leaves_files_unchanged_if_upgrade_would_not_load_safely(
         self, tmp_path: Path
     ) -> None:

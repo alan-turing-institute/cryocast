@@ -1,5 +1,6 @@
 import re
 import time
+from collections import OrderedDict
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import ModuleType
@@ -364,6 +365,16 @@ class TestToPlainTypes:
         assert isinstance(result, dict)
         assert type(result["spaces"][0]) is dict
         assert type(result["pair"]) is tuple
+
+    def test_keeps_state_dict_metadata(self) -> None:
+        """Keep a state dict as an OrderedDict with its '_metadata' attribute."""
+        state_dict = torch.nn.BatchNorm1d(2).state_dict()
+
+        result = to_plain_types(state_dict)
+
+        assert type(result) is OrderedDict
+        assert list(result) == list(state_dict)
+        assert result._metadata == state_dict._metadata  # type: ignore[attr-defined]
 
     @pytest.mark.parametrize(
         ("value", "expected"),

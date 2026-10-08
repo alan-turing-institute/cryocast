@@ -49,4 +49,4 @@ class UnconditionalCheckpoint(Callback):
             filepath = Path(dirpath) / filepath
         # Ensure that all distributed processes agree on the filepath then save
         filepath = Path(trainer.strategy.broadcast(str(filepath)))
-        trainer.save_checkpoint(filepath)
+        trainer.save_checkpoint(filepath, weights_only=False)

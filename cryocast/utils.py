@@ -1,4 +1,5 @@
 import re
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from enum import StrEnum
@@ -135,6 +136,16 @@ def to_plain_types(value: object) -> object:  # noqa: PLR0911
         return to_plain_types(OmegaConf.to_container(value, resolve=True))
     if isinstance(value, np.generic):
         return value.item()
+    if isinstance(value, OrderedDict):
+        # Keep state dicts as OrderedDicts with their attributes, since modules use
+        # the '_metadata' attribute to load state saved by older module versions
+        converted = OrderedDict(
+            (key, to_plain_types(item)) for key, item in value.items()
+        )
+        converted.__dict__.update(
+            {name: to_plain_types(attr) for name, attr in vars(value).items()}
+        )
+        return converted
     if isinstance(value, Mapping):
         return {key: to_plain_types(item) for key, item in value.items()}
     if isinstance(value, list | tuple):

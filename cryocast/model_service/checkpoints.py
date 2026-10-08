@@ -5,6 +5,7 @@ import pickle
 import re
 import reprlib
 import shutil
+from collections import OrderedDict
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -282,6 +283,16 @@ class LegacyCheckpointFile:
             if cls._PACKAGE_PATTERN.search(value):
                 renamed.add(value)
             return cls._PACKAGE_PATTERN.sub("cryocast", value)
+        if isinstance(value, OrderedDict):
+            # Keep state dicts as OrderedDicts with their '_metadata' attribute
+            renamed_dict = OrderedDict(
+                (cls._rename(key, renamed), cls._rename(item, renamed))
+                for key, item in value.items()
+            )
+            renamed_dict.__dict__.update(
+                {name: cls._rename(attr, renamed) for name, attr in vars(value).items()}
+            )
+            return renamed_dict
         if isinstance(value, Mapping):
             return {
                 cls._rename(key, renamed): cls._rename(item, renamed)
