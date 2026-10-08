@@ -1,7 +1,9 @@
 from pathlib import Path
+from pickle import UnpicklingError
 
 import pytest
 
+from cryocast.exceptions import CheckpointUpgradeError, UntrustedCheckpointError
 from cryocast.model_service.checkpoints import CheckpointFile, LegacyCheckpointFile
 
 from .conftest import CustomCliRunner
@@ -53,3 +55,51 @@ class TestCheckpointCLI:
             (CheckpointFile(tmp_path.resolve() / "a.ckpt"), trusted),
             (CheckpointFile(tmp_path.resolve() / "b.ckpt"), trusted),
         ]
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            UntrustedCheckpointError("untrusted"),
+            CheckpointUpgradeError("cannot convert"),
+            UnpicklingError("corrupt"),
+            EOFError("truncated"),
+            ValueError("not a torch.save file"),
+        ],
+        ids=["untrusted", "upgrade-error", "corrupt", "truncated", "not-checkpoint"],
+    )
+    def test_upgrade_continues_past_failed_checkpoints(
+        self,
+        error: Exception,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        upgraded: list[str] = []
+
+        def fake_upgrade(
+            legacy_checkpoint: LegacyCheckpointFile, *, trusted: bool = False
+        ) -> CheckpointFile:
+            del trusted
+            if (name := legacy_checkpoint.checkpoint_file.path.name) == "bad.ckpt":
+                raise error
+            upgraded.append(name)
+            return legacy_checkpoint.checkpoint_file
+
+        monkeypatch.setattr(LegacyCheckpointFile, "upgrade", fake_upgrade)
+        monkeypatch.chdir(tmp_path)
+        for name in ("a.ckpt", "bad.ckpt", "b.ckpt"):
+            (tmp_path / name).write_text("checkpoint")
+
+        result = runner.call(
+            ["checkpoint", "upgrade", "a.ckpt", "bad.ckpt", "missing.ckpt", "b.ckpt"]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert upgraded == ["a.ckpt", "b.ckpt"]
+        assert "Failed to upgrade bad.ckpt" in caplog.text
+        assert "Failed to upgrade missing.ckpt" in caplog.text
+        assert (
+            "Failed to upgrade 2 of 4 checkpoints: bad.ckpt, missing.ckpt"
+            in caplog.text
+        )
