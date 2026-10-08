@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from optuna.trial import TrialState
 
 from cryocast.model_service import ModelService
+from cryocast.model_service.checkpoints import CheckpointFile
 from cryocast.sweep import OptunaSweep
 
 from .conftest import CustomCliRunner
@@ -428,10 +429,10 @@ class TestSweepTrialCLI:
         checkpoint = MagicMock(spec=ModelCheckpoint)
         checkpoint.best_model_score = torch.tensor(0.42)
         trainer = FakeTrainer(checkpoint_callbacks=[checkpoint])
-        captured: list[Path] = []
+        captured: list[CheckpointFile] = []
 
         def fake_from_checkpoint(
-            _config: object, checkpoint_file: Path
+            _config: object, checkpoint_file: CheckpointFile
         ) -> FakeModelService:
             captured.append(checkpoint_file)
             return FakeModelService(trainer)
@@ -457,7 +458,7 @@ class TestSweepTrialCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert captured == [checkpoint_dir.resolve() / "last.ckpt"]
+        assert captured == [CheckpointFile(checkpoint_dir.resolve() / "last.ckpt")]
 
     def test_trial_marks_failed_when_no_unique_checkpoint_callback(
         self,

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from cryocast.cli import checkpoint
+from cryocast.model_service.checkpoints import CheckpointFile
 
 from .conftest import CustomCliRunner
 
@@ -25,11 +25,20 @@ class TestCheckpointCLI:
         runner: CustomCliRunner,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        upgraded: list[Path] = []
-        monkeypatch.setattr(checkpoint, "upgrade_checkpoint", upgraded.append)
+        upgraded: list[CheckpointFile] = []
+
+        def fake_upgrade(checkpoint_file: CheckpointFile) -> None:
+            upgraded.append(checkpoint_file)
+
+        monkeypatch.setattr(CheckpointFile, "upgrade", fake_upgrade)
         monkeypatch.chdir(tmp_path)
+        for name in ("a.ckpt", "b.ckpt"):
+            (tmp_path / name).write_text("checkpoint")
 
         result = runner.call(["checkpoint", "upgrade", "a.ckpt", "b.ckpt"])
 
         assert result.exit_code == 0, result.output
-        assert upgraded == [tmp_path / "a.ckpt", tmp_path / "b.ckpt"]
+        assert upgraded == [
+            CheckpointFile(tmp_path.resolve() / "a.ckpt"),
+            CheckpointFile(tmp_path.resolve() / "b.ckpt"),
+        ]

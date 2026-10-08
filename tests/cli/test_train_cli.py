@@ -4,6 +4,7 @@ import pytest
 from omegaconf import DictConfig
 
 from cryocast.model_service import ModelService
+from cryocast.model_service.checkpoints import CheckpointFile
 
 from .conftest import CustomCliRunner
 
@@ -109,10 +110,10 @@ class TestTrainCLI:
     ) -> None:
         """Resuming single-stage training rebuilds the model from its checkpoint."""
         service = FakeModelService()
-        captured: list[Path] = []
+        captured: list[CheckpointFile] = []
 
         def fake_from_checkpoint(
-            _config: DictConfig, checkpoint_file: Path
+            _config: DictConfig, checkpoint_file: CheckpointFile
         ) -> FakeModelService:
             captured.append(checkpoint_file)
             return service
@@ -137,7 +138,7 @@ class TestTrainCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert captured == [checkpoint_dir.resolve() / "last.ckpt"]
+        assert captured == [CheckpointFile(checkpoint_dir.resolve() / "last.ckpt")]
         assert service.calls == [(None, False)]
 
     def test_checkpoint_dir_without_last_checkpoint_fails(

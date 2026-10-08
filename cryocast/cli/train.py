@@ -5,8 +5,7 @@ from typing import Annotated
 import typer
 from omegaconf import DictConfig
 
-from cryocast.model_service import ModelService
-from cryocast.model_service.checkpoints import find_checkpoint_file
+from cryocast.model_service import CheckpointFile, ModelService
 
 from .hydra import hydra_adaptor
 
@@ -52,7 +51,7 @@ def train(
         model_service.train_multistage(checkpoint_dir=checkpoint_dir)
     # For single-stage training, we resume from the most recent checkpoint
     elif checkpoint_dir:
-        checkpoint_file = find_checkpoint_file(checkpoint_dir)
+        checkpoint_file = CheckpointFile.find_last(checkpoint_dir)
         ModelService.from_checkpoint(config, checkpoint_file).train()
     # ... or if no checkpoint is provided, we start training from scratch
     else:

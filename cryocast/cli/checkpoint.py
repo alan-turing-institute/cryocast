@@ -3,7 +3,7 @@ from typing import Annotated
 
 import typer
 
-from cryocast.model_service.checkpoints import upgrade_checkpoint
+from cryocast.model_service import CheckpointFile
 
 # Create the typer app
 checkpoint_cli = typer.Typer(help="Manage model checkpoints")
@@ -20,8 +20,8 @@ def upgrade(
     Each checkpoint is backed up to '<name>.bak' and rewritten so that it can be
     loaded safely. The run's 'files/model_config.yaml' is also updated if needed.
     """
-    for checkpoint_file in checkpoints:
-        upgrade_checkpoint(checkpoint_file.resolve())
+    for path in checkpoints:
+        CheckpointFile(path).upgrade()
 
 
 if __name__ == "__main__":

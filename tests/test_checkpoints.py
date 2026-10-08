@@ -11,35 +11,69 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from cryocast.model_service.checkpoints import (
+    CheckpointFile,
     OutdatedCheckpointError,
-    find_checkpoint_file,
-    load_checkpoint,
-    load_checkpoint_config,
     merge_checkpoint_config,
-    upgrade_checkpoint,
     verify_model_matches_data,
 )
 from cryocast.types import DataSpace
 
 
-def _save_run_config(run_dir: Path, config: DictConfig) -> Path:
-    """Save a run's model_config.yaml and return the path of a checkpoint in the run."""
+def _save_run_config(run_dir: Path, config: DictConfig) -> CheckpointFile:
+    """Save a run's model_config.yaml and return a checkpoint file in the run."""
     (run_dir / "files").mkdir(parents=True)
     OmegaConf.save(config, run_dir / "files" / "model_config.yaml")
-    checkpoint_file = run_dir / "checkpoints" / "last.ckpt"
-    checkpoint_file.parent.mkdir()
-    checkpoint_file.write_text("checkpoint")
-    return checkpoint_file
+    path = run_dir / "checkpoints" / "last.ckpt"
+    path.parent.mkdir()
+    path.write_text("checkpoint")
+    return CheckpointFile(path)
 
 
-class TestFindCheckpoint:
+class TestInit:
+    def test_wraps_existing_file(self, tmp_path: Path) -> None:
+        """Wrap a checkpoint file that exists."""
+        path = tmp_path / "last.ckpt"
+        path.write_text("checkpoint")
+
+        assert CheckpointFile(path).path == path
+
+    def test_raises_when_checkpoint_missing(self, tmp_path: Path) -> None:
+        """Reject a checkpoint file that does not exist."""
+        with pytest.raises(FileNotFoundError, match="Could not find checkpoint file"):
+            CheckpointFile(tmp_path / "missing.ckpt")
+
+    def test_resolves_relative_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Store the absolute path of a checkpoint given by a relative path."""
+        (tmp_path / "last.ckpt").write_text("checkpoint")
+        monkeypatch.chdir(tmp_path)
+
+        assert (
+            CheckpointFile(Path("last.ckpt")).path == tmp_path.resolve() / "last.ckpt"
+        )
+
+    def test_config_path_is_in_the_run_files_directory(self, tmp_path: Path) -> None:
+        """The run's config is saved in a files directory next to the checkpoints."""
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        path.write_text("checkpoint")
+
+        assert CheckpointFile(path).config_path == (
+            tmp_path / "files" / "model_config.yaml"
+        )
+
+
+class TestFindLast:
     def test_finds_last_checkpoint_in_directory(self, tmp_path: Path) -> None:
         """Pick the ``last*.ckpt`` file in a directory, not a best-epoch checkpoint."""
         checkpoint_dir = tmp_path
         for name in ("epoch=3-step=10.ckpt", "last.ckpt"):
             (checkpoint_dir / name).write_text("checkpoint")
 
-        assert find_checkpoint_file(checkpoint_dir) == checkpoint_dir / "last.ckpt"
+        checkpoint_file = CheckpointFile.find_last(checkpoint_dir)
+
+        assert checkpoint_file.path == checkpoint_dir / "last.ckpt"
 
     def test_raises_without_last_checkpoint_in_directory(self, tmp_path: Path) -> None:
         """Reject a directory with no resumable ``last*.ckpt`` file."""
@@ -47,75 +81,65 @@ class TestFindCheckpoint:
         (checkpoint_dir / "epoch=3-step=10.ckpt").write_text("checkpoint")
 
         with pytest.raises(FileNotFoundError, match=r"last\*.ckpt"):
-            find_checkpoint_file(checkpoint_dir)
+            CheckpointFile.find_last(checkpoint_dir)
 
 
-class TestLoadCheckpoint:
-    def test_raises_when_checkpoint_missing(self, tmp_path: Path) -> None:
-        """Reject a checkpoint file that does not exist."""
-        with pytest.raises(FileNotFoundError, match="Could not find checkpoint file"):
-            load_checkpoint(tmp_path / "missing.ckpt")
-
+class TestLoad:
     def test_loads_plain_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint that contains only plain Python types and tensors."""
-        checkpoint_file = tmp_path / "last.ckpt"
-        torch.save(
-            {"epoch": 3, "state_dict": {"weight": torch.ones(2)}}, checkpoint_file
-        )
+        path = tmp_path / "last.ckpt"
+        torch.save({"epoch": 3, "state_dict": {"weight": torch.ones(2)}}, path)
 
-        checkpoint = load_checkpoint(checkpoint_file)
+        checkpoint = CheckpointFile(path).load()
 
         assert checkpoint["epoch"] == 3
         assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
 
     def test_suggests_upgrading_outdated_checkpoint(self, tmp_path: Path) -> None:
         """Refuse to load other objects, suggesting how to upgrade the checkpoint."""
-        checkpoint_file = tmp_path / "last.ckpt"
-        torch.save(
-            {"callbacks": {"dirpath": Path("/run/checkpoints")}}, checkpoint_file
-        )
+        path = tmp_path / "last.ckpt"
+        torch.save({"callbacks": {"dirpath": Path("/run/checkpoints")}}, path)
 
         with pytest.raises(OutdatedCheckpointError) as exc_info:
-            load_checkpoint(checkpoint_file)
+            CheckpointFile(path).load()
 
-        assert f"cryocast checkpoint upgrade {checkpoint_file}" in str(exc_info.value)
+        assert f"cryocast checkpoint upgrade {path}" in str(exc_info.value)
         assert isinstance(exc_info.value, pickle.UnpicklingError)
 
     def test_loads_upgraded_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint after upgrading it."""
-        checkpoint_file = tmp_path / "checkpoints" / "last.ckpt"
-        _save_legacy_checkpoint(checkpoint_file)
-        with pytest.raises(OutdatedCheckpointError):
-            load_checkpoint(checkpoint_file)
-
-        upgrade_checkpoint(checkpoint_file)
-
-        assert load_checkpoint(checkpoint_file)["hyper_parameters"]["hemisphere"] == (
-            "north"
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
         )
+        with pytest.raises(OutdatedCheckpointError):
+            checkpoint_file.load()
+
+        checkpoint_file.upgrade()
+
+        assert checkpoint_file.load()["hyper_parameters"]["hemisphere"] == "north"
 
 
-class TestLoadCheckpointConfig:
+class TestLoadConfig:
     def test_loads_saved_config(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
         """Load the model_config.yaml saved alongside a checkpoint."""
         checkpoint_file = _save_run_config(tmp_path, cfg_model_service)
 
-        assert load_checkpoint_config(checkpoint_file) == cfg_model_service
+        assert checkpoint_file.load_config() == cfg_model_service
 
     def test_returns_none_with_warning_when_missing(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Warn and return None when there is no saved model_config.yaml."""
-        checkpoint_file = tmp_path / "checkpoints" / "last.ckpt"
-        checkpoint_file.parent.mkdir()
-        checkpoint_file.write_text("checkpoint")
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        path.write_text("checkpoint")
 
         with caplog.at_level(
             logging.WARNING, logger="cryocast.model_service.checkpoints"
         ):
-            result = load_checkpoint_config(checkpoint_file)
+            result = CheckpointFile(path).load_config()
 
         assert result is None
         assert "Could not load the checkpoint configuration" in caplog.text
@@ -154,7 +178,7 @@ class TestLoadCheckpointConfig:
         with caplog.at_level(
             logging.WARNING, logger="cryocast.model_service.checkpoints"
         ):
-            ckpt_config = load_checkpoint_config(checkpoint_file)
+            ckpt_config = checkpoint_file.load_config()
 
         assert ckpt_config is not None
         assert "uses the legacy 'predict' key" in caplog.text
@@ -351,7 +375,7 @@ class TestVerifyModelMatchesData:
             )
 
 
-def _save_legacy_checkpoint(checkpoint_file: Path) -> None:
+def _save_legacy_checkpoint(path: Path) -> CheckpointFile:
     """Save a checkpoint as icenet-mp did, with enums, paths and OmegaConf objects."""
 
     class Hemisphere(StrEnum):
@@ -362,7 +386,7 @@ def _save_legacy_checkpoint(checkpoint_file: Path) -> None:
     Hemisphere.__qualname__ = "Hemisphere"
     module = ModuleType(Hemisphere.__module__)
     module.Hemisphere = Hemisphere  # type: ignore[attr-defined]
-    checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with pytest.MonkeyPatch.context() as mp:
         for name in ("icenet_mp", "icenet_mp.types", "icenet_mp.types.enums"):
             mp.setitem(sys.modules, name, module)
@@ -375,24 +399,21 @@ def _save_legacy_checkpoint(checkpoint_file: Path) -> None:
                 },
                 "state_dict": {"weight": torch.ones(2)},
             },
-            checkpoint_file,
+            path,
         )
+    return CheckpointFile(path)
 
 
-class TestUpgradeCheckpoint:
-    def test_raises_when_checkpoint_missing(self, tmp_path: Path) -> None:
-        """Reject a checkpoint file that does not exist."""
-        with pytest.raises(FileNotFoundError, match="Could not find checkpoint file"):
-            upgrade_checkpoint(tmp_path / "missing.ckpt")
-
+class TestUpgrade:
     def test_upgraded_checkpoint_loads_with_weights_only(self, tmp_path: Path) -> None:
         """Upgrade to plain types that reference cryocast, keeping a backup."""
-        checkpoint_file = tmp_path / "checkpoints" / "last.ckpt"
-        _save_legacy_checkpoint(checkpoint_file)
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
 
-        upgrade_checkpoint(checkpoint_file)
+        checkpoint_file.upgrade()
 
-        checkpoint = torch.load(checkpoint_file, weights_only=True)
+        checkpoint = torch.load(checkpoint_file.path, weights_only=True)
         assert (
             checkpoint["callbacks"]["ModelCheckpoint"]["dirpath"] == "/run/checkpoints"
         )
@@ -405,49 +426,51 @@ class TestUpgradeCheckpoint:
 
     def test_upgrades_legacy_model_config(self, tmp_path: Path) -> None:
         """Rewrite icenet_mp references in the run's model config, keeping a backup."""
-        checkpoint_file = tmp_path / "checkpoints" / "last.ckpt"
-        _save_legacy_checkpoint(checkpoint_file)
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
         legacy_config = "model:\n  _target_: icenet_mp.models.EncodeProcessDecode\n"
-        config_path = tmp_path / "files" / "model_config.yaml"
-        config_path.parent.mkdir()
-        config_path.write_text(legacy_config)
+        checkpoint_file.config_path.parent.mkdir()
+        checkpoint_file.config_path.write_text(legacy_config)
 
-        upgrade_checkpoint(checkpoint_file)
+        checkpoint_file.upgrade()
 
-        assert config_path.read_text() == legacy_config.replace("icenet_mp", "cryocast")
-        assert (config_path.parent / "model_config.yaml.bak").read_text() == (
+        assert checkpoint_file.config_path.read_text() == legacy_config.replace(
+            "icenet_mp", "cryocast"
+        )
+        assert (tmp_path / "files" / "model_config.yaml.bak").read_text() == (
             legacy_config
         )
 
     def test_upgrades_several_checkpoints_from_one_run(self, tmp_path: Path) -> None:
         """Upgrade every checkpoint in a run, with its model config upgraded once."""
         checkpoint_files = [
-            tmp_path / "checkpoints" / name for name in ("epoch=1.ckpt", "last.ckpt")
+            _save_legacy_checkpoint(tmp_path / "checkpoints" / name)
+            for name in ("epoch=1.ckpt", "last.ckpt")
         ]
-        for checkpoint_file in checkpoint_files:
-            _save_legacy_checkpoint(checkpoint_file)
-        config_path = tmp_path / "files" / "model_config.yaml"
+        config_path = checkpoint_files[0].config_path
         config_path.parent.mkdir()
         config_path.write_text("model:\n  _target_: icenet_mp.models.Persistence\n")
 
         for checkpoint_file in checkpoint_files:
-            upgrade_checkpoint(checkpoint_file)
+            checkpoint_file.upgrade()
 
         for checkpoint_file in checkpoint_files:
             assert not torch.serialization.get_unsafe_globals_in_checkpoint(
-                checkpoint_file
+                checkpoint_file.path
             )
         assert "icenet_mp" not in config_path.read_text()
 
     def test_refuses_to_overwrite_backup(self, tmp_path: Path) -> None:
         """Refuse to upgrade twice, which would overwrite the original backup."""
-        checkpoint_file = tmp_path / "checkpoints" / "last.ckpt"
-        _save_legacy_checkpoint(checkpoint_file)
-        upgrade_checkpoint(checkpoint_file)
-        upgraded = checkpoint_file.read_bytes()
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
+        checkpoint_file.upgrade()
+        upgraded = checkpoint_file.path.read_bytes()
 
         with pytest.raises(FileExistsError, match="already been upgraded"):
-            upgrade_checkpoint(checkpoint_file)
+            checkpoint_file.upgrade()
 
-        assert checkpoint_file.read_bytes() == upgraded
-        assert not list(checkpoint_file.parent.glob("*.tmp"))
+        assert checkpoint_file.path.read_bytes() == upgraded
+        assert not list(checkpoint_file.path.parent.glob("*.tmp"))

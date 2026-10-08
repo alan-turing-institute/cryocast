@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 from omegaconf import DictConfig
 
-from cryocast.model_service import ModelService
+from cryocast.model_service import CheckpointFile, ModelService
 
 from .hydra import hydra_adaptor
 
@@ -85,7 +85,8 @@ def evaluate(
             "enabled"
         ] = True
 
-    model = ModelService.from_checkpoint(config, Path(checkpoint).resolve())
+    checkpoint_file = CheckpointFile(Path(checkpoint))
+    model = ModelService.from_checkpoint(config, checkpoint_file)
     model.evaluate()
 
 

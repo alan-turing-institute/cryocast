@@ -28,10 +28,8 @@ from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStag
 from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
 
 from .checkpoints import (
-    load_checkpoint,
-    load_checkpoint_config,
+    CheckpointFile,
     merge_checkpoint_config,
-    suggest_upgrade_on_failure,
     verify_model_matches_data,
 )
 
@@ -69,7 +67,7 @@ class ModelService:
             )
         patch_open_file_limit()
 
-        self.checkpoint_file: Path | None = None
+        self.checkpoint_file: CheckpointFile | None = None
         self.data_module_: CommonDataModule | None = None
         self.model_: BaseModel | None = None
 
@@ -115,7 +113,7 @@ class ModelService:
 
     @classmethod
     def from_checkpoint(
-        cls, config: DictConfig, checkpoint_file: Path
+        cls, config: DictConfig, checkpoint_file: CheckpointFile
     ) -> "ModelService":
         """Build a new ModelService by loading a model from a checkpoint.
 
@@ -123,7 +121,7 @@ class ModelService:
         it was trained with, apart from "window.batch_size". Everything else is taken
         from the current config. Calling `train` on the resulting ModelService will
         resume training from the checkpoint. To resume from a directory of
-        checkpoints, find its checkpoint file with `find_checkpoint` first.
+        checkpoints, find its checkpoint file with `CheckpointFile.find_last` first.
 
         Args:
             config: The current configuration.
@@ -135,10 +133,10 @@ class ModelService:
 
         """
         # Load the checkpoint first, so that an outdated one fails before anything else
-        checkpoint = load_checkpoint(checkpoint_file)
+        checkpoint = checkpoint_file.load()
 
         # Use the config that the checkpoint was trained with, where available
-        ckpt_config = load_checkpoint_config(checkpoint_file)
+        ckpt_config = checkpoint_file.load_config()
         combined_cfg = (
             config
             if ckpt_config is None
@@ -160,7 +158,7 @@ class ModelService:
             if key in builder.config["model"]
         }
         builder.model_ = model_cls.load_from_checkpoint(
-            checkpoint_file,
+            checkpoint_file.path,
             latitudes_fn=lambda: builder.data_module.latitudes,
             longitudes_fn=lambda: builder.data_module.longitudes,
             map_location="cpu",  # Lightning will move this to the correct device
@@ -203,7 +201,7 @@ class ModelService:
         model: BaseModel | None = None,
         config: DictConfig,
         job_stage: str | None = None,
-        checkpoint_file: Path | None = None,
+        checkpoint_file: CheckpointFile | None = None,
     ) -> Trainer:
         """Build a trainer and run trainer.fit() for the given config and stage.
 
@@ -239,7 +237,7 @@ class ModelService:
         trainer.fit(
             model=current_model,
             datamodule=self.data_module,
-            ckpt_path=checkpoint_file,
+            ckpt_path=checkpoint_file.path if checkpoint_file else None,
             weights_only=True,
         )
 
@@ -267,7 +265,9 @@ class ModelService:
             ),
         )
 
-    def _save_stage_checkpoint(self, trainer: Trainer, stage_name: str) -> Path:
+    def _save_stage_checkpoint(
+        self, trainer: Trainer, stage_name: str
+    ) -> CheckpointFile:
         """Save a stage checkpoint at a predictable path.
 
         Args:
@@ -275,7 +275,7 @@ class ModelService:
             stage_name: Name of the training stage (e.g. "encoder-era5").
 
         Returns:
-            The path to the saved checkpoint.
+            The saved checkpoint.
 
         If a best checkpoint is available, it will be moved to the desired path.
 
@@ -314,7 +314,7 @@ class ModelService:
                 stage_name,
                 checkpoint_dir / checkpoint_name,
             )
-        return checkpoint_dir / checkpoint_name
+        return CheckpointFile(checkpoint_dir / checkpoint_name)
 
     def build_run_directory(self, trainer: Trainer) -> Path:
         """Get run directory from Wandb or generate one in the same format."""
@@ -498,7 +498,9 @@ class ModelService:
             )
             raise ValueError(msg)
         if self.checkpoint_file:
-            log.info("Resuming single-stage training from %s.", self.checkpoint_file)
+            log.info(
+                "Resuming single-stage training from %s.", self.checkpoint_file.path
+            )
         return self._fit(
             config=self.config["train"], checkpoint_file=self.checkpoint_file
         )
@@ -571,14 +573,14 @@ class ModelService:
         if checkpoint_dir is not None and (
             matches := sorted(checkpoint_dir.glob("decoder.epoch=*-step=*.ckpt"))
         ):
-            checkpoint_file = matches[-1]
+            checkpoint_file = CheckpointFile(matches[-1])
             log.info(
                 "Skipping training for decoder. Loaded checkpoint from %s.",
-                checkpoint_file,
+                checkpoint_file.path,
             )
-            with suggest_upgrade_on_failure(checkpoint_file):
+            with checkpoint_file.suggest_upgrade_on_failure():
                 return DecoderStage.load_from_checkpoint(
-                    checkpoint_file,
+                    checkpoint_file.path,
                     decoder=self.config["model"]["decoder"],
                     encoders=encoder_models,
                     map_location="cpu",  # Lightning will move this to the correct device
@@ -605,7 +607,7 @@ class ModelService:
         trainer = self._fit(model=decoder_model, config=train_cfg, job_stage="decoder")
         checkpoint_file = self._save_stage_checkpoint(trainer, "decoder")
         # Reload the best weights into the decoder model
-        decoder_model.load_state_dict(load_checkpoint(checkpoint_file)["state_dict"])
+        decoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
         return decoder_model
 
     def train_stage_encoders(
@@ -635,16 +637,16 @@ class ModelService:
                     checkpoint_dir.glob(f"encoder-{encoder.name}.epoch=*-step=*.ckpt")
                 )
             ):
-                checkpoint_file = matches[-1]
+                checkpoint_file = CheckpointFile(matches[-1])
                 log.info(
                     "Skipping training for encoder '%s'. Loaded checkpoint from %s.",
                     encoder.name,
-                    checkpoint_file,
+                    checkpoint_file.path,
                 )
-                with suggest_upgrade_on_failure(checkpoint_file):
+                with checkpoint_file.suggest_upgrade_on_failure():
                     encoder_models.append(
                         EncoderStage.load_from_checkpoint(
-                            checkpoint_file,
+                            checkpoint_file.path,
                             latitudes_fn=lambda: self.data_module.latitudes,
                             longitudes_fn=lambda: self.data_module.longitudes,
                             map_location="cpu",  # Lightning will move this to the correct device
@@ -677,9 +679,7 @@ class ModelService:
                 trainer, f"encoder-{encoder.name}"
             )
             # Reload the best weights into the encoder model
-            encoder_model.load_state_dict(
-                load_checkpoint(checkpoint_file)["state_dict"]
-            )
+            encoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
             encoder_models.append(encoder_model)
 
         return encoder_models
@@ -717,14 +717,14 @@ class ModelService:
         if checkpoint_dir is not None and (
             matches := sorted(checkpoint_dir.glob("processor.epoch=*-step=*.ckpt"))
         ):
-            checkpoint_file = matches[-1]
+            checkpoint_file = CheckpointFile(matches[-1])
             log.info(
                 "Skipping training for processor. Loaded checkpoint from %s.",
-                checkpoint_file,
+                checkpoint_file.path,
             )
-            with suggest_upgrade_on_failure(checkpoint_file):
+            with checkpoint_file.suggest_upgrade_on_failure():
                 return ProcessorStage.load_from_checkpoint(
-                    checkpoint_file,
+                    checkpoint_file.path,
                     decoder_model=decoder_model,
                     map_location="cpu",  # Lightning will move this to the correct device
                     mask_dir=str(self.data_module.mask_directory),
@@ -752,5 +752,5 @@ class ModelService:
         )
         checkpoint_file = self._save_stage_checkpoint(trainer, "processor")
         # Reload the best weights into the processor model
-        processor_model.load_state_dict(load_checkpoint(checkpoint_file)["state_dict"])
+        processor_model.load_state_dict(checkpoint_file.load()["state_dict"])
         return processor_model

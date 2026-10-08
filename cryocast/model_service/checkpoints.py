@@ -7,6 +7,7 @@ import reprlib
 import shutil
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -28,107 +29,167 @@ LEGACY_PACKAGE = "icenet_mp"
 LEGACY_PACKAGE_PATTERN = re.compile(rf"\b{LEGACY_PACKAGE}(?=\.)")
 
 
-def find_checkpoint_file(checkpoint_dir: Path) -> Path:
-    """Find the checkpoint to resume training from in a directory of checkpoints.
+@dataclass(frozen=True)
+class CheckpointFile:
+    """A checkpoint file that has been verified to exist, with an absolute path."""
 
-    Args:
-        checkpoint_dir: A directory that may contain checkpoints.
+    path: Path
 
-    Returns:
-        The path of the directory's ``last*.ckpt`` file.
+    def __post_init__(self) -> None:
+        """Resolve the checkpoint path and check that the file exists.
 
-    Raises:
-        FileNotFoundError: If the directory has no ``last*.ckpt`` file.
+        Raises:
+            FileNotFoundError: If there is no file at the given path.
 
-    """
-    if not (matches := sorted(checkpoint_dir.glob("last*.ckpt"))):
-        msg = f"No resumable checkpoint (last*.ckpt) found in {checkpoint_dir}."
-        raise FileNotFoundError(msg)
-    log.debug("Found checkpoint at %s.", matches[-1])
-    return matches[-1]
+        """
+        object.__setattr__(self, "path", self.path.resolve())  # resolve path
+        if not self.path.is_file():
+            msg = f"Could not find checkpoint file {self.path}."
+            raise FileNotFoundError(msg)
 
+    @classmethod
+    def find_last(cls, checkpoint_dir: Path) -> "CheckpointFile":
+        """Find the checkpoint to resume training from in a directory of checkpoints.
 
-@contextmanager
-def suggest_upgrade_on_failure(checkpoint_file: Path) -> Generator[None]:
-    """Suggest upgrading a checkpoint if it cannot be loaded with weights_only=True.
+        Args:
+            checkpoint_dir: A directory that may contain checkpoints.
 
-    Raises:
-        OutdatedCheckpointError: If loading the checkpoint fails because it contains
-            objects other than plain Python types and tensors.
+        Returns:
+            The directory's ``last*.ckpt`` file.
 
-    """
-    try:
-        yield
-    except pickle.UnpicklingError as exc:
-        msg = (
-            f"Checkpoint {checkpoint_file} contains objects that cannot be loaded "
-            "safely, probably because it was saved by an older version of CryoCast "
-            "or by icenet-mp. Upgrade it with "
-            f"'cryocast checkpoint upgrade {checkpoint_file}'."
+        Raises:
+            FileNotFoundError: If the directory has no ``last*.ckpt`` file.
+
+        """
+        if not (matches := sorted(checkpoint_dir.glob("last*.ckpt"))):
+            msg = f"No resumable checkpoint (last*.ckpt) found in {checkpoint_dir}."
+            raise FileNotFoundError(msg)
+        log.debug("Found checkpoint at %s.", matches[-1])
+        return cls(matches[-1])
+
+    @property
+    def config_path(self) -> Path:
+        """The config saved alongside the checkpoint, in the run's files directory."""
+        return self.path.parent.parent / "files" / "model_config.yaml"
+
+    def load(self) -> dict[str, Any]:
+        """Load the checkpoint, allowing only plain Python types and tensors.
+
+        Raises:
+            OutdatedCheckpointError: If the checkpoint contains any other objects.
+
+        """
+        with self.suggest_upgrade_on_failure():
+            return torch.load(self.path, map_location="cpu", weights_only=True)
+
+    def load_config(self) -> DictConfig | None:
+        """Load the config saved alongside the checkpoint, migrating legacy settings.
+
+        Returns:
+            The checkpoint config, or None (with a warning) if it could not be loaded.
+
+        """
+        try:
+            ckpt_config = DictConfig(OmegaConf.load(self.config_path))
+        except (NotADirectoryError, FileNotFoundError):
+            log.warning(
+                "Could not load the checkpoint configuration from %s, so the values "
+                "from the provided config file will be used instead. This may cause "
+                "problems if the values differ from those used during training.",
+                self.config_path,
+            )
+            return None
+        log.debug("Loaded checkpoint configuration from %s.", self.config_path)
+
+        # Checkpoints from before 'predict' was split into 'variables' and 'window'
+        # are translated, since the current defaults would otherwise be used.
+        if (predict := ckpt_config.pop("predict", None)) is not None:
+            log.warning(
+                "Checkpoint configuration %s uses the legacy 'predict' key. This "
+                "has been translated into 'variables' and 'window' settings.",
+                self.config_path,
+            )
+            # Legacy checkpoints used every variable from every dataset group as
+            # input. A missing target variable list selected every variable in the
+            # target group, which is expressed as an empty list.
+            target = predict["target"]
+            if "variables" not in ckpt_config:
+                ckpt_config["variables"] = {
+                    "input": {},
+                    "target": {target["group_name"]: target.get("variables", [])},
+                }
+            if "window" not in ckpt_config:
+                ckpt_config["window"] = {
+                    "n_forecast_steps": predict.get("n_forecast_steps", 1),
+                    "n_history_steps": predict.get("n_history_steps", 1),
+                }
+        return ckpt_config
+
+    @contextmanager
+    def suggest_upgrade_on_failure(self) -> Generator[None]:
+        """Suggest upgrading the checkpoint if it cannot be loaded safely.
+
+        Raises:
+            OutdatedCheckpointError: If loading the checkpoint fails because it contains
+                objects other than plain Python types and tensors.
+
+        """
+        try:
+            yield
+        except pickle.UnpicklingError as exc:
+            msg = (
+                f"Checkpoint {self.path} contains objects that cannot be loaded "
+                "safely, probably because it was saved by an older version of CryoCast "
+                "or by icenet-mp. Upgrade it with "
+                f"'cryocast checkpoint upgrade {self.path}'."
+            )
+            raise OutdatedCheckpointError(msg) from exc
+
+    def upgrade(self) -> None:
+        """Upgrade a checkpoint saved by an older version of this code.
+
+        The checkpoint is rewritten so that it references ``cryocast`` classes and
+        contains only plain Python types, so that it can be loaded with
+        ``weights_only=True``. The ``files/model_config.yaml`` is also updated if
+        necessary. Each file is backed up to ``<name>.bak`` first.
+
+        Raises:
+            FileExistsError: If a backup already exists, e.g. because the file has
+                already been upgraded.
+
+        """
+        backup_path = _backup_path(self.path)
+
+        # Load the checkpoint, resolving any icenet_mp classes as their cryocast versions
+        pickle_module = SimpleNamespace(
+            **{**vars(pickle), "Unpickler": _LegacyPackageUnpickler}
         )
-        raise OutdatedCheckpointError(msg) from exc
-
-
-def load_checkpoint(checkpoint_file: Path) -> dict[str, Any]:
-    """Load a checkpoint, allowing only plain Python types and tensors.
-
-    Raises:
-        FileNotFoundError: If there is no file at the given path.
-        OutdatedCheckpointError: If the checkpoint contains any other objects.
-
-    """
-    _verify_checkpoint_file(checkpoint_file)
-    with suggest_upgrade_on_failure(checkpoint_file):
-        return torch.load(checkpoint_file, map_location="cpu", weights_only=True)
-
-
-def load_checkpoint_config(checkpoint_file: Path) -> DictConfig | None:
-    """Load the config saved alongside a checkpoint, migrating legacy settings.
-
-    Args:
-        checkpoint_file: Path to a checkpoint file in a run's ``checkpoints``
-            directory. The config is read from the run's ``files/model_config.yaml``.
-
-    Returns:
-        The checkpoint config, or None (with a warning) if it could not be loaded.
-
-    """
-    config_path = checkpoint_file.parent.parent / "files" / "model_config.yaml"
-    try:
-        ckpt_config = DictConfig(OmegaConf.load(config_path))
-    except (NotADirectoryError, FileNotFoundError):
-        log.warning(
-            "Could not load the checkpoint configuration from %s, so the values "
-            "from the provided config file will be used instead. This may cause "
-            "problems if the values differ from those used during training.",
-            config_path,
+        checkpoint = torch.load(
+            self.path,
+            map_location="cpu",
+            pickle_module=pickle_module,
+            weights_only=False,  # this is an older checkpoint that the user has chosen
         )
-        return None
-    log.debug("Loaded checkpoint configuration from %s.", config_path)
 
-    # Checkpoints from before 'predict' was split into 'variables' and 'window'
-    # are translated, since the current defaults would otherwise be used.
-    if (predict := ckpt_config.pop("predict", None)) is not None:
-        log.warning(
-            "Checkpoint configuration %s uses the legacy 'predict' key. This "
-            "has been translated into 'variables' and 'window' settings.",
-            config_path,
-        )
-        # Legacy checkpoints used every variable from every dataset group as input.
-        # A missing target variable list selected every variable in the target
-        # group, which is expressed as an empty list.
-        target = predict["target"]
-        if "variables" not in ckpt_config:
-            ckpt_config["variables"] = {
-                "input": {},
-                "target": {target["group_name"]: target.get("variables", [])},
-            }
-        if "window" not in ckpt_config:
-            ckpt_config["window"] = {
-                "n_forecast_steps": predict.get("n_forecast_steps", 1),
-                "n_history_steps": predict.get("n_history_steps", 1),
-            }
-    return ckpt_config
+        # Write the upgraded checkpoint before replacing the original
+        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
+        torch.save(_rename_legacy_package(to_plain_types(checkpoint)), tmp_path)
+        shutil.move(self.path, backup_path)
+        shutil.move(tmp_path, self.path)
+        log.info("Upgraded %s, keeping the original at %s.", self.path, backup_path)
+
+        # Update the run's model config if it references the legacy package
+        if self.config_path.is_file() and LEGACY_PACKAGE_PATTERN.search(
+            text := self.config_path.read_text()
+        ):
+            backup_path = _backup_path(self.config_path)
+            shutil.move(self.config_path, backup_path)
+            self.config_path.write_text(LEGACY_PACKAGE_PATTERN.sub("cryocast", text))
+            log.info(
+                "Upgraded %s, keeping the original at %s.",
+                self.config_path,
+                backup_path,
+            )
 
 
 def merge_checkpoint_config(config: DictConfig, ckpt_config: DictConfig) -> DictConfig:
@@ -231,54 +292,6 @@ def verify_model_matches_data(
         raise ValueError(msg)
 
 
-def upgrade_checkpoint(checkpoint_file: Path) -> None:
-    """Upgrade a checkpoint saved by an older version of this code.
-
-    The checkpoint is rewritten so that it references ``cryocast`` classes and contains
-    only plain Python types, so that it can be loaded with ``weights_only=True``. The
-    ``files/model_config.yaml`` is also updated if necessary. Each file is backed up to
-    ``<name>.bak`` first.
-
-    Args:
-        checkpoint_file: The path to the checkpoint to upgrade.
-
-    Raises:
-        FileExistsError: If a backup already exists, e.g. because the file has
-            already been upgraded.
-
-    """
-    _verify_checkpoint_file(checkpoint_file)
-    backup_path = _backup_path(checkpoint_file)
-
-    # Load the checkpoint, resolving any icenet_mp classes as their cryocast versions
-    pickle_module = SimpleNamespace(
-        **{**vars(pickle), "Unpickler": _LegacyPackageUnpickler}
-    )
-    checkpoint = torch.load(
-        checkpoint_file,
-        map_location="cpu",
-        pickle_module=pickle_module,
-        weights_only=False,  # this is an older checkpoint that the user has chosen
-    )
-
-    # Write the upgraded checkpoint before replacing the original
-    tmp_path = checkpoint_file.with_name(f"{checkpoint_file.name}.tmp")
-    torch.save(_rename_legacy_package(to_plain_types(checkpoint)), tmp_path)
-    shutil.move(checkpoint_file, backup_path)
-    shutil.move(tmp_path, checkpoint_file)
-    log.info("Upgraded %s, keeping the original at %s.", checkpoint_file, backup_path)
-
-    # Update the run's model config if it references the legacy package
-    config_path = checkpoint_file.parent.parent / "files" / "model_config.yaml"
-    if config_path.is_file() and LEGACY_PACKAGE_PATTERN.search(
-        text := config_path.read_text()
-    ):
-        backup_path = _backup_path(config_path)
-        shutil.move(config_path, backup_path)
-        config_path.write_text(LEGACY_PACKAGE_PATTERN.sub("cryocast", text))
-        log.info("Upgraded %s, keeping the original at %s.", config_path, backup_path)
-
-
 class _LegacyPackageUnpickler(pickle.Unpickler):
     """Resolve classes pickled as icenet_mp.X as cryocast.X."""
 
@@ -286,18 +299,6 @@ class _LegacyPackageUnpickler(pickle.Unpickler):
         if module.split(".", maxsplit=1)[0] == LEGACY_PACKAGE:
             module = "cryocast" + module.removeprefix(LEGACY_PACKAGE)
         return super().find_class(module, name)
-
-
-def _verify_checkpoint_file(checkpoint_file: Path) -> None:
-    """Check that a checkpoint file exists.
-
-    Raises:
-        FileNotFoundError: If there is no file at the given path.
-
-    """
-    if not checkpoint_file.is_file():
-        msg = f"Could not find checkpoint file {checkpoint_file}."
-        raise FileNotFoundError(msg)
 
 
 def _backup_path(path: Path) -> Path:

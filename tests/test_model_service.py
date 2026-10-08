@@ -14,6 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from cryocast.callbacks import MediaLoggingCallback, PredictionWriter
 from cryocast.model_service import ModelService
+from cryocast.model_service.checkpoints import CheckpointFile
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.types import DataSpace
@@ -219,8 +220,9 @@ class TestModelService:
         # Generate a checkpoint file and corresponding model_config.yaml
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True)
-        checkpoint_file = checkpoint_dir / "model.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = checkpoint_dir / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         files_dir = tmp_path / "files"
         files_dir.mkdir(parents=True)
@@ -250,8 +252,9 @@ class TestModelService:
         """Don't crash when the raw checkpoint dict has no 'epoch' key."""
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True)
-        checkpoint_file = checkpoint_dir / "model.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = checkpoint_dir / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         files_dir = tmp_path / "files"
         files_dir.mkdir(parents=True)
@@ -279,8 +282,9 @@ class TestModelService:
         """Take the model description from the checkpoint and the rest from config."""
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True)
-        checkpoint_file = checkpoint_dir / "last.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = checkpoint_dir / "last.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         ckpt_config = cfg_model_service.copy()
         ckpt_config["train"]["trainer"] = {"max_epochs": 10}
@@ -321,8 +325,9 @@ class TestModelService:
         """Warn and use the current config when there is no saved model_config.yaml."""
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True)
-        checkpoint_file = checkpoint_dir / "model.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = checkpoint_dir / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         # Deliberately do not create a "files/model_config.yaml" alongside it.
 
         with pytest.MonkeyPatch.context() as mp:
@@ -689,7 +694,7 @@ class TestModelService:
         "include_loss", [True, False], ids=["with-loss", "no-loss"]
     )
     def test_fit_configures_model_and_runs_trainer_fit(
-        self, *, include_loss: bool
+        self, tmp_path: Path, *, include_loss: bool
     ) -> None:
         """Apply the training config to the model and delegate to trainer.fit()."""
         service = ModelService.__new__(ModelService)
@@ -708,7 +713,9 @@ class TestModelService:
         trainer = MagicMock()
         trainer.max_epochs = 5
         trainer.num_devices = 1
-        checkpoint_file = Path("ckpt.ckpt")
+        path = tmp_path / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_build_trainer = MagicMock(return_value=trainer)
@@ -740,7 +747,7 @@ class TestModelService:
         trainer.fit.assert_called_once_with(
             model=model,
             datamodule=service.data_module_,
-            ckpt_path=checkpoint_file,
+            ckpt_path=checkpoint_file.path,
             weights_only=True,
         )
         assert result is trainer
@@ -824,6 +831,12 @@ class TestModelService:
         trainer.global_step = 17
         trainer.checkpoint_callbacks = []
         trainer.is_global_zero = True
+
+        def save_checkpoint(path: Path, **_kwargs: object) -> None:
+            path.parent.mkdir(parents=True)
+            path.write_text("checkpoint")
+
+        trainer.save_checkpoint.side_effect = save_checkpoint
         run_dir = tmp_path / "run"
 
         with pytest.MonkeyPatch.context() as mp:
@@ -832,7 +845,7 @@ class TestModelService:
 
         expected = run_dir / "checkpoints" / "processor.epoch=4-step=17.ckpt"
         trainer.save_checkpoint.assert_called_once_with(expected, weights_only=False)
-        assert result == expected
+        assert result == CheckpointFile(expected)
 
     def test_save_stage_checkpoint_moves_single_best_checkpoint(
         self, tmp_path: Path
@@ -855,7 +868,7 @@ class TestModelService:
             result = service._save_stage_checkpoint(trainer, "decoder")
 
         expected = run_dir / "checkpoints" / "decoder.best.ckpt"
-        assert result == expected
+        assert result == CheckpointFile(expected)
         assert expected.read_text() == "checkpoint"
         trainer.save_checkpoint.assert_not_called()
         trainer.strategy.barrier.assert_called_once_with()
@@ -884,7 +897,9 @@ class TestModelService:
         service.model_ = MagicMock()
         service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
-        checkpoint_file = tmp_path / "last.ckpt"
+        path = tmp_path / "last.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         service.checkpoint_file = checkpoint_file
 
         with pytest.MonkeyPatch.context() as mp:
@@ -964,8 +979,9 @@ class TestModelService:
         decoder_model = MagicMock()
 
         trainer = MagicMock()
-        checkpoint_file = tmp_path / "decoder.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = tmp_path / "decoder.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=decoder_model)
@@ -1011,8 +1027,9 @@ class TestModelService:
         service.data_module_.target_variable_indices = [0]
         service.data_module_.mask_directory = tmp_path
         encoder_models: list[EncoderStage] = [MagicMock()]
-        checkpoint_file = tmp_path / "decoder.epoch=2-step=10.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = tmp_path / "decoder.epoch=2-step=10.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         loaded_decoder = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
@@ -1023,7 +1040,7 @@ class TestModelService:
             )
 
         mock_load.assert_called_once_with(
-            checkpoint_file,
+            checkpoint_file.path,
             map_location="cpu",
             metrics=[MAE_METRIC_CFG],
             weights_only=True,
@@ -1072,14 +1089,16 @@ class TestModelService:
         service.data_module_.latitudes = {"input": [0.0]}
         service.data_module_.longitudes = {"input": [0.0]}
 
-        target_checkpoint_file = tmp_path / "encoder-target.epoch=3-step=9.ckpt"
-        target_checkpoint_file.write_text("checkpoint")
+        target_path = tmp_path / "encoder-target.epoch=3-step=9.ckpt"
+        target_path.write_text("checkpoint")
+        target_checkpoint_file = CheckpointFile(target_path)
 
         trained_encoder_model = MagicMock()
         loaded_target_model = MagicMock()
         trainer = MagicMock()
-        era5_checkpoint_file = tmp_path / "encoder-era5.ckpt"
-        era5_checkpoint_file.write_text("checkpoint")
+        era5_path = tmp_path / "encoder-era5.ckpt"
+        era5_path.write_text("checkpoint")
+        era5_checkpoint_file = CheckpointFile(era5_path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=trained_encoder_model)
@@ -1111,7 +1130,9 @@ class TestModelService:
         )
         trained_encoder_model.load_state_dict.assert_called_once_with("era5_state")
 
-        assert mock_load_from_checkpoint.call_args.args == (target_checkpoint_file,)
+        assert mock_load_from_checkpoint.call_args.args == (
+            target_checkpoint_file.path,
+        )
         load_kwargs = mock_load_from_checkpoint.call_args.kwargs
         assert load_kwargs["map_location"] == "cpu"
         assert load_kwargs["metrics"] == [MAE_METRIC_CFG]
@@ -1268,8 +1289,9 @@ class TestModelService:
         processor_model = MagicMock()
         processor_model.processor.data_space.chw = (4, 8, 8)
         trainer = MagicMock()
-        checkpoint_file = tmp_path / "processor.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = tmp_path / "processor.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=processor_model)
@@ -1311,8 +1333,9 @@ class TestModelService:
         service.data_module_.mask_directory = tmp_path
         decoder_model = MagicMock()
         target_encoder = MagicMock()
-        checkpoint_file = tmp_path / "processor.epoch=1-step=5.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = tmp_path / "processor.epoch=1-step=5.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         loaded_processor = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
@@ -1326,7 +1349,7 @@ class TestModelService:
             )
 
         mock_load.assert_called_once_with(
-            checkpoint_file,
+            checkpoint_file.path,
             map_location="cpu",
             metrics=[MAE_METRIC_CFG],
             weights_only=True,

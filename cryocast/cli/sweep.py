@@ -9,8 +9,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig
 from optuna.trial import TrialState
 
-from cryocast.model_service import ModelService
-from cryocast.model_service.checkpoints import find_checkpoint_file
+from cryocast.model_service import CheckpointFile, ModelService
 from cryocast.sweep import OptunaSweep
 
 from .hydra import hydra_adaptor
@@ -163,7 +162,7 @@ def trial(
             trainer = model_service.train_multistage(checkpoint_dir=checkpoint_dir)
         # For single-stage training, we resume from the most recent checkpoint
         elif checkpoint_dir:
-            checkpoint_file = find_checkpoint_file(checkpoint_dir)
+            checkpoint_file = CheckpointFile.find_last(checkpoint_dir)
             trainer = ModelService.from_checkpoint(config, checkpoint_file).train()
         # ... or if no checkpoint is provided, we start training from scratch
         else:

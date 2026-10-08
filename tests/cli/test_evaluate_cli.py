@@ -4,6 +4,7 @@ import pytest
 from omegaconf import DictConfig
 
 from cryocast.model_service import ModelService
+from cryocast.model_service.checkpoints import CheckpointFile
 
 from .conftest import CustomCliRunner
 
@@ -41,17 +42,17 @@ class TestEvaluateCLI:
     ) -> None:
         """Compose the config, resolve the checkpoint path, and run evaluate()."""
         service = FakeModelService()
-        captured: list[tuple[DictConfig, Path]] = []
+        captured: list[tuple[DictConfig, CheckpointFile]] = []
 
         def fake_from_checkpoint(
-            config: DictConfig, checkpoint_file: Path
+            config: DictConfig, checkpoint_file: CheckpointFile
         ) -> FakeModelService:
             captured.append((config, checkpoint_file))
             return service
 
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
-        checkpoint_file = tmp_path / "model.ckpt"
-        checkpoint_file.write_text("checkpoint")
+        path = tmp_path / "model.ckpt"
+        path.write_text("checkpoint")
 
         result = runner.call(
             [
@@ -59,13 +60,13 @@ class TestEvaluateCLI:
                 "--config-name",
                 "sample",
                 "--checkpoint",
-                str(checkpoint_file),
+                str(path),
             ]
         )
 
         assert result.exit_code == 0, result.output
         assert len(captured) == 1
-        assert captured[0][1] == checkpoint_file.resolve()
+        assert captured[0][1] == CheckpointFile(path.resolve())
         assert captured[0][0].model.name == "quick-test"
         assert (
             list(captured[0][0].evaluate.callbacks.activation_saver.layer_paths) == []
@@ -81,16 +82,17 @@ class TestEvaluateCLI:
     ) -> None:
         """A relative --checkpoint is resolved against the current directory."""
         service = FakeModelService()
-        captured: list[tuple[DictConfig, Path]] = []
+        captured: list[tuple[DictConfig, CheckpointFile]] = []
 
         def fake_from_checkpoint(
-            config: DictConfig, checkpoint_file: Path
+            config: DictConfig, checkpoint_file: CheckpointFile
         ) -> FakeModelService:
             captured.append((config, checkpoint_file))
             return service
 
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
         monkeypatch.chdir(tmp_path)
+        (tmp_path / "model.ckpt").write_text("checkpoint")
 
         result = runner.call(
             [
@@ -103,7 +105,7 @@ class TestEvaluateCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert captured[0][1] == (tmp_path / "model.ckpt").resolve()
+        assert captured[0][1] == CheckpointFile((tmp_path / "model.ckpt").resolve())
 
     def test_repeated_save_layer_flags_update_activation_saver_config(
         self,
@@ -112,6 +114,7 @@ class TestEvaluateCLI:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Repeat --save-layer to hook multiple submodules in one run."""
+        (tmp_path / "model.ckpt").write_text("checkpoint")
         service = FakeModelService()
         captured: list[DictConfig] = []
 
@@ -152,6 +155,7 @@ class TestEvaluateCLI:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Forward --save-predictions to the prediction writer as an enabled flag."""
+        (tmp_path / "model.ckpt").write_text("checkpoint")
         service = FakeModelService()
         captured: list[DictConfig] = []
 
