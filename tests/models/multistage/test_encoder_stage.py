@@ -96,18 +96,18 @@ class TestEncoderStage:
         tmp_path: Path,
     ) -> None:
         """The input data space is saved as a plain dict and restored on loading."""
-        checkpoint_path = tmp_path / "encoder.ckpt"
+        checkpoint_file = tmp_path / "encoder.ckpt"
         torch.save(
             {
                 "hyper_parameters": dict(encoder_stage.hparams),
                 "pytorch-lightning_version": lightning.__version__,
                 "state_dict": encoder_stage.state_dict(),
             },
-            checkpoint_path,
+            checkpoint_file,
         )
 
         loaded = EncoderStage.load_from_checkpoint(
-            checkpoint_path, metrics=cfg_metrics, weights_only=True
+            checkpoint_file, metrics=cfg_metrics, weights_only=True
         )
 
         assert isinstance(encoder_stage.hparams["data_space_in"], dict)

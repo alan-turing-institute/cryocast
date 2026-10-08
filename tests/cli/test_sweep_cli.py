@@ -331,7 +331,7 @@ class TestSweepTrialCLI:
                 r"Usage: cryocast sweep trial \[OPTIONS\]",
                 r"Run a single trial from a W&B sweep.",
                 r"--sweep-path\s+<path>\s+Full path to a local sweep directory",
-                r"--checkpoint-dir\s+<str>\s+Path to a directory of existing",
+                r"--checkpoint-dir\s+<path>\s+Path to a directory of existing",
                 r"--multistage\s+Train an EncodeProcessDecode model in",
                 r"--help\s+-h\s+Show this message and exit.",
             ],
@@ -431,9 +431,9 @@ class TestSweepTrialCLI:
         captured: list[Path] = []
 
         def fake_from_checkpoint(
-            _config: object, checkpoint_path: Path
+            _config: object, checkpoint_file: Path
         ) -> FakeModelService:
-            captured.append(checkpoint_path)
+            captured.append(checkpoint_file)
             return FakeModelService(trainer)
 
         def fail_from_config(_config: object) -> FakeModelService:
@@ -442,6 +442,8 @@ class TestSweepTrialCLI:
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
         monkeypatch.setattr(ModelService, "from_config", fail_from_config)
         checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir()
+        (checkpoint_dir / "last.ckpt").write_text("checkpoint")
 
         result = runner.call(
             [
@@ -455,7 +457,7 @@ class TestSweepTrialCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert captured == [checkpoint_dir.resolve()]
+        assert captured == [checkpoint_dir.resolve() / "last.ckpt"]
 
     def test_trial_marks_failed_when_no_unique_checkpoint_callback(
         self,

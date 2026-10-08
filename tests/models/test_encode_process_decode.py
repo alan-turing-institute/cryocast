@@ -464,14 +464,14 @@ class TestEncodeProcessDecode:
             max_steps=1,
         )
         trainer.fit(model, batches)
-        checkpoint_path = tmp_path / "model.ckpt"
-        trainer.save_checkpoint(checkpoint_path)
+        checkpoint_file = tmp_path / "model.ckpt"
+        trainer.save_checkpoint(checkpoint_file)
 
         assert (
-            torch.serialization.get_unsafe_globals_in_checkpoint(checkpoint_path) == []
+            torch.serialization.get_unsafe_globals_in_checkpoint(checkpoint_file) == []
         )
         loaded = EncodeProcessDecode.load_from_checkpoint(
-            checkpoint_path,
+            checkpoint_file,
             encoders=cfg_encoders,
             processor=cfg_processor,
             decoder=cfg_decoder,

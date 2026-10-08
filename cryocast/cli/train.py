@@ -6,6 +6,7 @@ import typer
 from omegaconf import DictConfig
 
 from cryocast.model_service import ModelService
+from cryocast.model_service.checkpoints import find_checkpoint_file
 
 from .hydra import hydra_adaptor
 
@@ -20,7 +21,7 @@ log = logging.getLogger(__name__)
 def train(
     config: DictConfig,
     checkpoint_dir: Annotated[
-        str | None,
+        Path | None,
         typer.Option(
             help=(
                 "Path to a directory of existing checkpoints to resume from. With "
@@ -44,14 +45,15 @@ def train(
     ] = False,
 ) -> None:
     """Train a model."""
-    resolved_ckpt_dir = Path(checkpoint_dir).resolve() if checkpoint_dir else None
+    checkpoint_dir = checkpoint_dir.resolve() if checkpoint_dir else None
     # For multistage training, we pass the directory of checkpoints to train_multistage
     if multistage:
         model_service = ModelService.from_config(config)
-        model_service.train_multistage(checkpoint_dir=resolved_ckpt_dir)
+        model_service.train_multistage(checkpoint_dir=checkpoint_dir)
     # For single-stage training, we resume from the most recent checkpoint
-    elif resolved_ckpt_dir:
-        ModelService.from_checkpoint(config, resolved_ckpt_dir).train()
+    elif checkpoint_dir:
+        checkpoint_file = find_checkpoint_file(checkpoint_dir)
+        ModelService.from_checkpoint(config, checkpoint_file).train()
     # ... or if no checkpoint is provided, we start training from scratch
     else:
         ModelService.from_config(config).train()

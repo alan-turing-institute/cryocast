@@ -28,7 +28,7 @@ class TestTrainCLI:
                 r"Usage: cryocast train \[OPTIONS\] \[overrides\]...",
                 r"Train a model",
                 r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
-                r"--checkpoint-dir\s+<str>\s+Path to a directory of existing",
+                r"--checkpoint-dir\s+<path>\s+Path to a directory of existing",
                 r"--config-name\s+<str>\s+Name of a file to load from the config",
                 r"--help\s+-h\s+Show this message and exit.",
                 r"--multistage\s+Train an EncodeProcessDecode model in",
@@ -112,9 +112,9 @@ class TestTrainCLI:
         captured: list[Path] = []
 
         def fake_from_checkpoint(
-            _config: DictConfig, checkpoint_path: Path
+            _config: DictConfig, checkpoint_file: Path
         ) -> FakeModelService:
-            captured.append(checkpoint_path)
+            captured.append(checkpoint_file)
             return service
 
         def fail_from_config(_config: DictConfig) -> FakeModelService:
@@ -123,6 +123,8 @@ class TestTrainCLI:
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
         monkeypatch.setattr(ModelService, "from_config", fail_from_config)
         checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir()
+        (checkpoint_dir / "last.ckpt").write_text("checkpoint")
 
         result = runner.call(
             [
@@ -135,7 +137,7 @@ class TestTrainCLI:
         )
 
         assert result.exit_code == 0, result.output
-        assert captured == [checkpoint_dir.resolve()]
+        assert captured == [checkpoint_dir.resolve() / "last.ckpt"]
         assert service.calls == [(None, False)]
 
     def test_checkpoint_dir_without_last_checkpoint_fails(

@@ -20,8 +20,8 @@ def upgrade(
     Each checkpoint is backed up to '<name>.bak' and rewritten so that it can be
     loaded safely. The run's 'files/model_config.yaml' is also updated if needed.
     """
-    for checkpoint in checkpoints:
-        upgrade_checkpoint(checkpoint.resolve())
+    for checkpoint_file in checkpoints:
+        upgrade_checkpoint(checkpoint_file.resolve())
 
 
 if __name__ == "__main__":

@@ -191,7 +191,7 @@ class TestBaseModel:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
         )
-        checkpoint_path = tmp_path / "legacy.ckpt"
+        checkpoint_file = tmp_path / "legacy.ckpt"
         torch.save(
             {
                 "state_dict": model.state_dict(),
@@ -202,15 +202,15 @@ class TestBaseModel:
                 },
                 "pytorch-lightning_version": lightning.__version__,
             },
-            checkpoint_path,
+            checkpoint_file,
         )
 
         with pytest.raises(TypeError, match="must be a mapping"):
-            FakeDataModel.load_from_checkpoint(checkpoint_path, weights_only=False)
+            FakeDataModel.load_from_checkpoint(checkpoint_file, weights_only=False)
 
         replacement = [metric_spec("mae", MAEPerForecastDay)]
         loaded = FakeDataModel.load_from_checkpoint(
-            checkpoint_path, metrics=replacement, weights_only=False
+            checkpoint_file, metrics=replacement, weights_only=False
         )
         assert set(loaded.test_metrics) == {"mae"}
         # Metric configs are supplied at load time, so are not saved in checkpoints

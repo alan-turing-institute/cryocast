@@ -44,13 +44,14 @@ class TestEvaluateCLI:
         captured: list[tuple[DictConfig, Path]] = []
 
         def fake_from_checkpoint(
-            config: DictConfig, checkpoint: Path
+            config: DictConfig, checkpoint_file: Path
         ) -> FakeModelService:
-            captured.append((config, checkpoint))
+            captured.append((config, checkpoint_file))
             return service
 
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
-        checkpoint = tmp_path / "model.ckpt"
+        checkpoint_file = tmp_path / "model.ckpt"
+        checkpoint_file.write_text("checkpoint")
 
         result = runner.call(
             [
@@ -58,13 +59,13 @@ class TestEvaluateCLI:
                 "--config-name",
                 "sample",
                 "--checkpoint",
-                str(checkpoint),
+                str(checkpoint_file),
             ]
         )
 
         assert result.exit_code == 0, result.output
         assert len(captured) == 1
-        assert captured[0][1] == checkpoint.resolve()
+        assert captured[0][1] == checkpoint_file.resolve()
         assert captured[0][0].model.name == "quick-test"
         assert (
             list(captured[0][0].evaluate.callbacks.activation_saver.layer_paths) == []
@@ -83,9 +84,9 @@ class TestEvaluateCLI:
         captured: list[tuple[DictConfig, Path]] = []
 
         def fake_from_checkpoint(
-            config: DictConfig, checkpoint: Path
+            config: DictConfig, checkpoint_file: Path
         ) -> FakeModelService:
-            captured.append((config, checkpoint))
+            captured.append((config, checkpoint_file))
             return service
 
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
