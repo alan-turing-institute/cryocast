@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -85,7 +84,7 @@ def evaluate(
             "enabled"
         ] = True
 
-    checkpoint_file = CheckpointFile(Path(checkpoint))
+    checkpoint_file = CheckpointFile(checkpoint)
     model = ModelService.from_checkpoint(config, checkpoint_file)
     model.evaluate()
 

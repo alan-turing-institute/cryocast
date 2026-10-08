@@ -28,30 +28,17 @@ class CheckpointFile:
 
     path: Path
 
-    def __post_init__(self) -> None:
+    def __init__(self, path: str | Path) -> None:
         """Resolve the checkpoint path and check that the file exists.
 
         Raises:
             FileNotFoundError: If there is no file at the given path.
 
         """
-        object.__setattr__(self, "path", self.path.resolve())  # resolve path
+        object.__setattr__(self, "path", Path(path).resolve())
         if not self.path.is_file():
             msg = f"Could not find checkpoint file {self.path}."
             raise FileNotFoundError(msg)
-
-    @classmethod
-    def _leaf_values(cls, cfg: object, prefix: str) -> dict[str, Any]:
-        """Flatten a config section to dotted keys, treating lists as single values."""
-        if isinstance(cfg, DictConfig):
-            cfg = OmegaConf.to_container(cfg, resolve=False)
-        if not isinstance(cfg, Mapping):
-            return {prefix: cfg}
-        return {
-            key: value
-            for name, item in cfg.items()
-            for key, value in cls._leaf_values(item, f"{prefix}.{name}").items()
-        }
 
     @classmethod
     def find_last(cls, checkpoint_dir: Path) -> "CheckpointFile":
@@ -78,15 +65,17 @@ class CheckpointFile:
         """The config saved alongside the checkpoint, in the files directory."""
         return self.path.parent.parent / "files" / "model_config.yaml"
 
-    def load(self) -> dict[str, Any]:
-        """Load the checkpoint, allowing only plain Python types and tensors.
-
-        Raises:
-            OutdatedCheckpointError: If the checkpoint contains any other objects.
-
-        """
-        with self.suggest_upgrade_on_failure():
-            return torch.load(self.path, map_location="cpu", weights_only=True)
+    def _flatten(self, cfg: object, prefix: str) -> dict[str, Any]:
+        """Flatten a config section to dotted keys, treating lists as single values."""
+        if isinstance(cfg, DictConfig):
+            cfg = OmegaConf.to_container(cfg, resolve=False)
+        if not isinstance(cfg, Mapping):
+            return {prefix: cfg}
+        return {
+            key: value
+            for name, item in cfg.items()
+            for key, value in self._flatten(item, f"{prefix}.{name}").items()
+        }
 
     def _load_config(self) -> DictConfig | None:
         """Load the config saved alongside the checkpoint.
@@ -120,6 +109,16 @@ class CheckpointFile:
             )
             raise OutdatedCheckpointError(msg)
         return ckpt_config
+
+    def load(self) -> dict[str, Any]:
+        """Load the checkpoint, allowing only plain Python types and tensors.
+
+        Raises:
+            OutdatedCheckpointError: If the checkpoint contains any other objects.
+
+        """
+        with self.suggest_upgrade_on_failure():
+            return torch.load(self.path, map_location="cpu", weights_only=True)
 
     def merge_config(self, config: DictConfig) -> DictConfig:
         """Combine the current config with the config that the checkpoint was trained with.
@@ -173,10 +172,10 @@ class CheckpointFile:
 
         replaced: dict[str, tuple[Any, Any]] = {}
         for section in sections:
-            used = self._leaf_values(combined.get(section, {}), section)
+            used = self._flatten(combined.get(section, {}), section)
             replaced |= {
                 key: (value, used.get(key, "unset"))
-                for key, value in self._leaf_values(
+                for key, value in self._flatten(
                     config.get(section, {}), section
                 ).items()
                 if value != used.get(key, "unset")
