@@ -316,72 +316,6 @@ class TestModelService:
         assert service.config["window"]["n_history_steps"] == 3
         assert service.checkpoint_path == checkpoint_path
 
-    def test_from_checkpoint_raises_without_last_checkpoint_in_dir(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """Reject a checkpoint directory with no resumable ``last*.ckpt`` file."""
-        (tmp_path / "epoch=3-step=10.ckpt").write_text("checkpoint")
-
-        with pytest.raises(FileNotFoundError, match=r"last\*.ckpt"):
-            ModelService.from_checkpoint(cfg_model_service, tmp_path)
-
-    def test_from_checkpoint_raises_when_checkpoint_missing(
-        self, tmp_path: Path
-    ) -> None:
-        missing_path = tmp_path / "missing.ckpt"
-
-        with pytest.raises(FileNotFoundError, match="Could not find checkpoint file"):
-            ModelService.from_checkpoint(DictConfig({}), missing_path)
-
-    @pytest.mark.parametrize(
-        ("attribute", "value", "match"),
-        [
-            ("n_history_steps", 2, "n_history_steps is 3 in the model but 2"),
-            ("n_forecast_steps", 5, "n_forecast_steps is 2 in the model but 5"),
-            (
-                "input_spaces",
-                [DataSpace(4, "input", (20, 20))],
-                "input 'input' is DataSpace\\(channels=5.* but DataSpace\\(channels=4",
-            ),
-            (
-                "input_spaces",
-                [DataSpace(5, "input", (20, 20)), DataSpace(2, "extra", (20, 20))],
-                "input 'extra' is missing in the model",
-            ),
-            (
-                "output_space",
-                DataSpace(2, "output", (10, 10)),
-                "output is DataSpace\\(channels=1.* but DataSpace\\(channels=2",
-            ),
-        ],
-        ids=["history", "forecast", "input-channels", "extra-input", "output"],
-    )
-    def test_verify_model_matches_data_raises_on_mismatch(
-        self, attribute: str, value: object, match: str
-    ) -> None:
-        """Report how the configured data differs from the checkpointed model."""
-        data_module = FakeCommonDataModule(DictConfig({}))
-        setattr(data_module, attribute, value)
-        service = ModelService.__new__(ModelService)
-        service.model_ = FakeModel()  # type: ignore[assignment]
-        service.data_module_ = data_module  # type: ignore[assignment]
-
-        with pytest.raises(ValueError, match=match):
-            service._verify_model_matches_data()
-
-    def test_verify_model_matches_data_ignores_input_order(self) -> None:
-        """Inputs are matched by name, so their order does not matter."""
-        spaces = [DataSpace(5, "a", (20, 20)), DataSpace(2, "b", (20, 20))]
-        model = FakeModel()
-        model.input_spaces = spaces  # type: ignore[misc]
-        data_module = FakeCommonDataModule(DictConfig({}))
-        data_module.input_spaces = spaces[::-1]
-        service = ModelService.__new__(ModelService)
-        service.model_ = model  # type: ignore[assignment]
-        service.data_module_ = data_module  # type: ignore[assignment]
-
-        service._verify_model_matches_data()
-
     def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
         self,
         cfg_model_service: DictConfig,
@@ -409,7 +343,7 @@ class TestModelService:
                 lambda *_a, **_k: {"epoch": 3},
             )
             with caplog.at_level(
-                logging.WARNING, logger="cryocast.model_service.checkpoint_config"
+                logging.WARNING, logger="cryocast.model_service.checkpoints"
             ):
                 service = ModelService.from_checkpoint(
                     cfg_model_service, checkpoint_path
@@ -796,7 +730,7 @@ class TestModelService:
                 lambda: False,
             )
             result = service._fit(
-                config=config, job_stage="processor", ckpt_path=ckpt_path
+                config=config, job_stage="processor", ckpt_file_path=ckpt_path
             )
 
         assert model.optimizer_cfg == "optimizer_cfg"
@@ -811,7 +745,7 @@ class TestModelService:
             model=model,
             datamodule=service.data_module_,
             ckpt_path=ckpt_path,
-            weights_only=False,
+            weights_only=True,
         )
         assert result is trainer
 
@@ -882,7 +816,7 @@ class TestModelService:
             mp.setattr(service, "_fit", mock_fit)
             service.train()
 
-        mock_fit.assert_called_once_with(config="train_config", ckpt_path=None)
+        mock_fit.assert_called_once_with(config="train_config", ckpt_file_path=None)
 
     def test_save_stage_checkpoint_saves_when_no_best_checkpoint(
         self, tmp_path: Path
@@ -962,7 +896,9 @@ class TestModelService:
             mp.setattr(service, "_fit", mock_fit)
             service.train()
 
-        mock_fit.assert_called_once_with(config="train_config", ckpt_path=ckpt_path)
+        mock_fit.assert_called_once_with(
+            config="train_config", ckpt_file_path=ckpt_path
+        )
 
     def test_train_multistage_rejects_non_encode_process_decode_model(self) -> None:
         service = ModelService.__new__(ModelService)
@@ -1091,7 +1027,7 @@ class TestModelService:
             checkpoint_path,
             map_location="cpu",
             metrics=[MAE_METRIC_CFG],
-            weights_only=False,
+            weights_only=True,
             decoder=service.config_["model"]["decoder"],
             encoders=encoder_models,
             target_dataset_name="target",
@@ -1177,7 +1113,7 @@ class TestModelService:
         load_kwargs = mock_load_from_checkpoint.call_args.kwargs
         assert load_kwargs["map_location"] == "cpu"
         assert load_kwargs["metrics"] == [MAE_METRIC_CFG]
-        assert load_kwargs["weights_only"] is False
+        assert load_kwargs["weights_only"] is True
         assert load_kwargs["latitudes_fn"]() == service.data_module_.latitudes
         assert load_kwargs["longitudes_fn"]() == service.data_module_.longitudes
 
@@ -1388,7 +1324,7 @@ class TestModelService:
             checkpoint_path,
             map_location="cpu",
             metrics=[MAE_METRIC_CFG],
-            weights_only=False,
+            weights_only=True,
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
             target_encoder=target_encoder,

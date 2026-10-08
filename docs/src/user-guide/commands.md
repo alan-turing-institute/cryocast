@@ -159,6 +159,16 @@ evaluate:
 Output directories, styling, and animation parameters can be altered by changing `config.evaluate.callbacks.plotting.plot_spec`.
 Any of these can be overridden at the command line.
 
+## `checkpoint upgrade`
+
+```bash
+uv run cryocast checkpoint upgrade PATH_TO_A_CHECKPOINT [PATH_TO_ANOTHER_CHECKPOINT ...]
+```
+
+Upgrades checkpoints saved by older versions of CryoCast, or by its predecessor icenet-mp, so that they can be loaded safely.
+Each checkpoint is backed up to `<name>.bak` before being rewritten, and the run's `files/model_config.yaml` is also updated if it refers to `icenet_mp`.
+Upgrading a checkpoint a second time is refused, so that the original backup is never overwritten.
+
 ## `feature-importance`
 
 ```bash

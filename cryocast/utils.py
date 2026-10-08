@@ -11,6 +11,8 @@ from lightning.pytorch.loggers import WandbLogger
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from wandb.wandb_run import Run
 
+from cryocast.types import DataSpace
+
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
@@ -117,8 +119,8 @@ def to_list(value: str | Sequence[str]) -> list[str]:
     return value if isinstance(value, list) else list(value)
 
 
-def to_plain_types(value: object) -> object:
-    """Recursively convert enums, paths and OmegaConf containers to plain Python types.
+def to_plain_types(value: object) -> object:  # noqa: PLR0911
+    """Recursively convert enums, paths, DataSpaces and OmegaConf containers to plain types.
 
     This is useful for values that need to be stored, for example in checkpoints, which
     can then be loaded without needing to import the original classes.
@@ -127,6 +129,8 @@ def to_plain_types(value: object) -> object:
         return value.value
     if isinstance(value, PurePath):
         return str(value)
+    if isinstance(value, DataSpace):
+        return to_plain_types(value.to_dict())
     if isinstance(value, DictConfig | ListConfig):
         return to_plain_types(OmegaConf.to_container(value, resolve=True))
     if isinstance(value, Mapping):

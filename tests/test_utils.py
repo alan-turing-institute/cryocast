@@ -13,7 +13,7 @@ from lightning.pytorch.loggers import WandbLogger
 from omegaconf import DictConfig, ListConfig
 from wandb.wandb_run import Run
 
-from cryocast.types import Hemisphere
+from cryocast.types import DataSpace, Hemisphere
 from cryocast.utils import (
     datetime_from_npdatetime,
     get_device_name,
@@ -317,6 +317,15 @@ class TestToPlainTypes:
 
         assert result == "north"
         assert type(result) is str
+
+    def test_converts_data_space_to_dict(self) -> None:
+        """Replace a DataSpace with a plain dict that can recreate it."""
+        space = DataSpace(channels=2, name="era5", shape=(432, 432))
+
+        result = to_plain_types(space)
+
+        assert type(result) is dict
+        assert DataSpace.from_dict(result) == space
 
     def test_converts_path_to_string(self) -> None:
         """Replace a path with its string form."""
