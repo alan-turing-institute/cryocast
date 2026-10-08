@@ -57,9 +57,7 @@ rows, cols = torch.meshgrid(
 grid_xy = torch.stack((cols, rows), dim=-1)
 
 # Two time steps, two sensors. The sensors move between timesteps.
-positions = torch.tensor(
-    [[[[0.1, 0.3], [0.7, 0.8]], [[0.2, 0.3], [0.8, 0.8]]]]
-)
+positions = torch.tensor([[[[0.1, 0.3], [0.7, 0.8]], [[0.2, 0.3], [0.8, 0.8]]]])
 values = torch.tensor([[[[0.2], [0.8]], [[0.4], [0.9]]]])
 valid = torch.tensor([[[True, True], [True, False]]])
 

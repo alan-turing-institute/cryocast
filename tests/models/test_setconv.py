@@ -135,21 +135,25 @@ class TestSetConv:
         assert torch.count_nonzero(output) == 0
 
     @pytest.mark.parametrize(
-        ("kwargs", "match"),
+        ("lengthscale", "chunk_size", "eps", "match"),
         [
-            ({"lengthscale": 0.0}, "lengthscale"),
-            ({"lengthscale": -1.0}, "lengthscale"),
-            ({"lengthscale": float("nan")}, "lengthscale"),
-            ({"lengthscale": float("inf")}, "lengthscale"),
-            ({"lengthscale": 0.1, "chunk_size": 0}, "chunk_size"),
-            ({"lengthscale": 0.1, "eps": 0.0}, "eps"),
+            (0.0, 2048, 1e-8, "lengthscale"),
+            (-1.0, 2048, 1e-8, "lengthscale"),
+            (float("nan"), 2048, 1e-8, "lengthscale"),
+            (float("inf"), 2048, 1e-8, "lengthscale"),
+            (0.1, 0, 1e-8, "chunk_size"),
+            (0.1, 2048, 0.0, "eps"),
         ],
     )
     def test_rejects_invalid_parameters(
-        self, kwargs: dict[str, float | int], match: str
+        self,
+        lengthscale: float,
+        chunk_size: int,
+        eps: float,
+        match: str,
     ) -> None:
         with pytest.raises(ValueError, match=match):
-            SetConv(**kwargs)
+            SetConv(lengthscale=lengthscale, chunk_size=chunk_size, eps=eps)
 
     @pytest.mark.parametrize(
         ("values", "positions", "grid", "match"),
