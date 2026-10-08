@@ -13,7 +13,7 @@ class TestCheckpointCLI:
             ["checkpoint", "upgrade", "--help"],
             expected_patterns=[
                 r"Usage: cryocast checkpoint upgrade \[OPTIONS\] {checkpoints}...",
-                r"Upgrade checkpoints saved by older versions of CryoCast or by",
+                r"Upgrade checkpoints saved by older versions of the code.",
                 r"checkpoints\s+<path>\s+One or more checkpoint files to upgrade",
                 r"--help\s+-h\s+Show this message and exit.",
             ],

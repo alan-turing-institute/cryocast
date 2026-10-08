@@ -15,7 +15,7 @@ def upgrade(
         list[Path], typer.Argument(help="One or more checkpoint files to upgrade")
     ],
 ) -> None:
-    """Upgrade checkpoints saved by older versions of CryoCast or by icenet-mp.
+    """Upgrade checkpoints saved by older versions of the code.
 
     Each checkpoint, and the run's 'files/model_config.yaml', is rewritten so that it
     can be loaded safely, after backing up the original to '<name>.bak'. Files that

@@ -16,6 +16,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from cryocast.exceptions import OutdatedCheckpointError
+from cryocast.types import DataSpace
 from cryocast.utils import to_plain_types
 
 log = logging.getLogger(__name__)
@@ -221,13 +222,24 @@ class LegacyCheckpointFile:
     _PACKAGE: ClassVar[str] = "icenet_mp"
     _PACKAGE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(rf"\b{_PACKAGE}(?=\.)")
 
+    class _LegacyDataSpace(DataSpace):
+        """A DataSpace that can be unpickled from its legacy public attributes."""
+
+        def __setstate__(self, state: dict[str, Any]) -> None:
+            """Initialise from 'channels', 'name' and 'shape', with or without '_'."""
+            super().__init__(
+                **{key.removeprefix("_"): value for key, value in state.items()}
+            )
+
     class _Unpickler(pickle.Unpickler):
-        """Update legacy class names to the equivalent cryocast.X name."""
+        """Update legacy classes to the equivalent cryocast.X class."""
 
         def find_class(self, module: str, name: str) -> Any:  # noqa: ANN401
             if module.split(".", maxsplit=1)[0] == LegacyCheckpointFile._PACKAGE:
                 module = "cryocast" + module.removeprefix(LegacyCheckpointFile._PACKAGE)
-            return super().find_class(module, name)
+            cls = super().find_class(module, name)
+            # DataSpace attributes have since been made private
+            return LegacyCheckpointFile._LegacyDataSpace if cls is DataSpace else cls
 
     def __init__(self, checkpoint_file: CheckpointFile) -> None:
         """Wrap a checkpoint file that may need upgrading."""

@@ -290,19 +290,35 @@ class TestMergeConfig:
 
 
 def _save_legacy_checkpoint(path: Path) -> CheckpointFile:
-    """Save a checkpoint as icenet-mp did, with enums, paths and OmegaConf objects."""
+    """Save a legacy checkpoint, with enums, paths, DataSpaces and OmegaConf objects."""
 
     class Hemisphere(StrEnum):
         NORTH = "north"
 
-    # Pickle Hemisphere as icenet_mp.types.enums.Hemisphere, as icenet-mp did
+    class DataSpace:
+        """A DataSpace with public attributes."""
+
+        def __init__(self, channels: int, name: str, shape: tuple[int, int]) -> None:
+            self.channels = channels
+            self.name = name
+            self.shape = shape
+
+    # Pickle these as icenet_mp.types.X classes
     Hemisphere.__module__ = "icenet_mp.types.enums"
     Hemisphere.__qualname__ = "Hemisphere"
-    module = ModuleType(Hemisphere.__module__)
+    DataSpace.__module__ = "icenet_mp.types.complex_datatypes"
+    DataSpace.__qualname__ = "DataSpace"
+    module = ModuleType("icenet_mp")
     module.Hemisphere = Hemisphere  # type: ignore[attr-defined]
+    module.DataSpace = DataSpace  # type: ignore[attr-defined]
     path.parent.mkdir(parents=True, exist_ok=True)
     with pytest.MonkeyPatch.context() as mp:
-        for name in ("icenet_mp", "icenet_mp.types", "icenet_mp.types.enums"):
+        for name in (
+            "icenet_mp",
+            "icenet_mp.types",
+            "icenet_mp.types.enums",
+            "icenet_mp.types.complex_datatypes",
+        ):
             mp.setitem(sys.modules, name, module)
         torch.save(
             {
@@ -310,6 +326,7 @@ def _save_legacy_checkpoint(path: Path) -> CheckpointFile:
                 "hyper_parameters": {
                     "hemisphere": Hemisphere.NORTH,
                     "loss": DictConfig({"_target_": "icenet_mp.losses.MAELoss"}),
+                    "output_space": DataSpace(1, "sic", (432, 432)),
                 },
                 "state_dict": {"weight": torch.ones(2)},
             },
@@ -340,6 +357,7 @@ class TestUpgrade:
         assert checkpoint["hyper_parameters"] == {
             "hemisphere": "north",
             "loss": {"_target_": "cryocast.losses.MAELoss"},
+            "output_space": {"channels": 1, "name": "sic", "shape": [432, 432]},
         }
         assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
         assert (tmp_path / "checkpoints" / "last.ckpt.bak").is_file()
