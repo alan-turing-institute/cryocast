@@ -18,7 +18,6 @@ from cryocast.callbacks import (
     PredictionWriter,
     UnconditionalCheckpoint,
 )
-from cryocast.checkpoint_config import load_checkpoint_config, merge_checkpoint_config
 from cryocast.compatibility.torch import (
     patch_interpolate_antialias,
     patch_open_file_limit,
@@ -27,6 +26,8 @@ from cryocast.data import CommonDataModule
 from cryocast.models import BaseModel, EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
+
+from .checkpoint_config import load_checkpoint_config, merge_checkpoint_config
 
 log = logging.getLogger(__name__)
 

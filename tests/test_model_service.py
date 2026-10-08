@@ -164,10 +164,17 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(os, "environ", os.environ.copy())
             mock_seed_everything = MagicMock()
-            mp.setattr("cryocast.model_service.seed_everything", mock_seed_everything)
-            mp.setattr("cryocast.model_service.patch_open_file_limit", MagicMock())
             mp.setattr(
-                "cryocast.model_service.patch_interpolate_antialias", MagicMock()
+                "cryocast.model_service.model_service.seed_everything",
+                mock_seed_everything,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.patch_open_file_limit",
+                MagicMock(),
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.patch_interpolate_antialias",
+                MagicMock(),
             )
             service = ModelService(config)
 
@@ -182,9 +189,13 @@ class TestModelService:
         mock_instantiate.return_value = FakeModel()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
+                mock_instantiate,
             )
             service = ModelService.from_config(cfg_model_service)
             assert isinstance(service.model, FakeModel)
@@ -216,13 +227,17 @@ class TestModelService:
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.model_service.torch.load",
+                lambda *_a, **_k: {"epoch": 3},
             )
             service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
             assert isinstance(service.model, FakeModel)
@@ -243,12 +258,17 @@ class TestModelService:
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
-            mp.setattr("cryocast.model_service.torch.load", lambda *_a, **_k: {})
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.load", lambda *_a, **_k: {}
+            )
             service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
 
         assert service.model.checkpoint_epoch is None
@@ -276,12 +296,17 @@ class TestModelService:
         current_config["window"]["n_history_steps"] = 99
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
-            mp.setattr("cryocast.model_service.torch.load", lambda *_a, **_k: {})
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.load", lambda *_a, **_k: {}
+            )
             service = ModelService.from_checkpoint(
                 current_config, checkpoints_dir if test_from_dir else checkpoint_path
             )
@@ -371,15 +396,21 @@ class TestModelService:
         # Deliberately do not create a "files/model_config.yaml" alongside it.
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.model_service.torch.load",
+                lambda *_a, **_k: {"epoch": 3},
             )
-            with caplog.at_level(logging.WARNING, logger="cryocast.checkpoint_config"):
+            with caplog.at_level(
+                logging.WARNING, logger="cryocast.model_service.checkpoint_config"
+            ):
                 service = ModelService.from_checkpoint(
                     cfg_model_service, checkpoint_path
                 )
@@ -397,7 +428,8 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "cryocast.model_service.get_wandb_run", lambda _trainer: wandb_run
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: wandb_run,
             )
             result = service.build_run_directory(trainer)
 
@@ -412,11 +444,17 @@ class TestModelService:
         trainer = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
             mp.setattr(
-                "cryocast.model_service.get_timestamp", lambda: "20260101-000000"
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: None,
             )
-            mp.setattr("cryocast.model_service.generate_id", lambda: "abc123")
+            mp.setattr(
+                "cryocast.model_service.model_service.get_timestamp",
+                lambda: "20260101-000000",
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.generate_id", lambda: "abc123"
+            )
             result = service.build_run_directory(trainer)
 
         expected = tmp_path / "training" / "local" / "run-20260101-000000-abc123"
@@ -438,15 +476,15 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: deterministic_enabled,
             )
             mp.setattr(
-                "cryocast.model_service.torch.is_deterministic_algorithms_warn_only_enabled",
+                "cryocast.model_service.model_service.torch.is_deterministic_algorithms_warn_only_enabled",
                 lambda: warn_only_enabled,
             )
             with pytest.raises(ValueError, match=match):
@@ -468,21 +506,29 @@ class TestModelService:
 
         with (
             pytest.MonkeyPatch.context() as mp,
-            caplog.at_level(logging.WARNING, logger="cryocast.model_service"),
+            caplog.at_level(
+                logging.WARNING, logger="cryocast.model_service.model_service"
+            ),
         ):
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 1)
+            mp.setattr(
+                "cryocast.model_service.model_service.suggested_max_num_workers",
+                lambda _n: 1,
+            )
             mp.setattr(
                 service, "build_run_directory", lambda _trainer: tmp_path / "run"
             )
-            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr(
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: None,
+            )
             service.build_trainer(config=config, project="train")
 
         assert "No callbacks have been set" in caplog.text
@@ -518,16 +564,22 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 4)
+            mp.setattr(
+                "cryocast.model_service.model_service.suggested_max_num_workers",
+                lambda _n: 4,
+            )
             mp.setattr(service, "build_run_directory", lambda _trainer: run_dir)
-            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr(
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: None,
+            )
             result = service.build_trainer(
                 config=config, project="train", job_stage="processor"
             )
@@ -587,16 +639,21 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mock_instantiate = MagicMock(side_effect=fake_instantiate)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
+                mock_instantiate,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 1)
+            mp.setattr(
+                "cryocast.model_service.model_service.suggested_max_num_workers",
+                lambda _n: 1,
+            )
             mp.setattr(service, "build_run_directory", lambda _trainer: run_dir)
             mp.setattr(
-                "cryocast.model_service.get_wandb_run", lambda _trainer: wandb_run
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: wandb_run,
             )
             service.build_trainer(config=config, project="train")
 
@@ -669,7 +726,10 @@ class TestModelService:
             mock_data_module_cls = MagicMock(
                 return_value=FakeCommonDataModule(cfg_model_service)
             )
-            mp.setattr("cryocast.model_service.CommonDataModule", mock_data_module_cls)
+            mp.setattr(
+                "cryocast.model_service.model_service.CommonDataModule",
+                mock_data_module_cls,
+            )
             first = service.data_module
             second = service.data_module
 
@@ -723,9 +783,18 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mock_build_trainer = MagicMock(return_value=trainer)
             mp.setattr(service, "build_trainer", mock_build_trainer)
-            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: False)
-            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: False)
-            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: False)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.cuda.is_available",
+                lambda: False,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.mps.is_available",
+                lambda: False,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.xpu.is_available",
+                lambda: False,
+            )
             result = service._fit(
                 config=config, job_stage="processor", ckpt_path=ckpt_path
             )
@@ -758,15 +827,33 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(service, "build_trainer", MagicMock(return_value=trainer))
-            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: True)
-            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: True)
-            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: True)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.cuda.is_available",
+                lambda: True,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.mps.is_available",
+                lambda: True,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.xpu.is_available",
+                lambda: True,
+            )
             mock_cuda_empty = MagicMock()
             mock_mps_empty = MagicMock()
             mock_xpu_empty = MagicMock()
-            mp.setattr("cryocast.model_service.torch.cuda.empty_cache", mock_cuda_empty)
-            mp.setattr("cryocast.model_service.torch.mps.empty_cache", mock_mps_empty)
-            mp.setattr("cryocast.model_service.torch.xpu.empty_cache", mock_xpu_empty)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.cuda.empty_cache",
+                mock_cuda_empty,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.mps.empty_cache",
+                mock_mps_empty,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.xpu.empty_cache",
+                mock_xpu_empty,
+            )
             service._fit(config=config)
 
         mock_cuda_empty.assert_called_once_with()
@@ -955,7 +1042,7 @@ class TestModelService:
                 service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
             )
             mp.setattr(
-                "cryocast.model_service.torch.load",
+                "cryocast.model_service.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "decoder_state"},
             )
             result = service.train_stage_decoder(
@@ -1068,7 +1155,7 @@ class TestModelService:
                 service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
             )
             mp.setattr(
-                "cryocast.model_service.torch.load",
+                "cryocast.model_service.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "era5_state"},
             )
             result = service.train_stage_encoders(
@@ -1253,7 +1340,7 @@ class TestModelService:
                 service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
             )
             mp.setattr(
-                "cryocast.model_service.torch.load",
+                "cryocast.model_service.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "processor_state"},
             )
             result = service.train_stage_processor(

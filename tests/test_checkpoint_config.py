@@ -5,7 +5,10 @@ from typing import Any
 import pytest
 from omegaconf import DictConfig, OmegaConf
 
-from cryocast.checkpoint_config import load_checkpoint_config, merge_checkpoint_config
+from cryocast.model_service.checkpoint_config import (
+    load_checkpoint_config,
+    merge_checkpoint_config,
+)
 
 
 def _save_run_config(run_dir: Path, config: DictConfig) -> Path:
@@ -28,7 +31,9 @@ class TestLoadCheckpointConfig:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Warn and return None when there is no saved model_config.yaml."""
-        with caplog.at_level(logging.WARNING, logger="cryocast.checkpoint_config"):
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoint_config"
+        ):
             result = load_checkpoint_config(tmp_path / "checkpoints" / "last.ckpt")
 
         assert result is None
@@ -65,7 +70,9 @@ class TestLoadCheckpointConfig:
         }
         checkpoint_path = _save_run_config(tmp_path, legacy_config)
 
-        with caplog.at_level(logging.WARNING, logger="cryocast.checkpoint_config"):
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoint_config"
+        ):
             ckpt_config = load_checkpoint_config(checkpoint_path)
 
         assert ckpt_config is not None
@@ -175,7 +182,9 @@ class TestMergeCheckpointConfig:
         )
         config = DictConfig(OmegaConf.merge(ckpt_config, overrides))
 
-        with caplog.at_level(logging.WARNING, logger="cryocast.checkpoint_config"):
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoint_config"
+        ):
             merge_checkpoint_config(config, ckpt_config)
 
         for message in expected:
@@ -190,7 +199,9 @@ class TestMergeCheckpointConfig:
         ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", "depth": 6}})
         config = DictConfig({"model": {"name": "quick-test", "depth": 2}})
 
-        with caplog.at_level(logging.WARNING, logger="cryocast.checkpoint_config"):
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoint_config"
+        ):
             merge_checkpoint_config(config, ckpt_config)
 
         assert len(caplog.records) == 1
