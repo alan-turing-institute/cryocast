@@ -193,6 +193,46 @@ class TestOptunaSweepAsk:
         assert [v for _, v in slow_overrides] != [v for _, v in concurrent_overrides]
 
 
+class TestOptunaSweepResume:
+    """Tests for OptunaSweep.resume."""
+
+    def test_overrides_and_params_are_the_trained_values(self, tmp_path: Path) -> None:
+        sampler = build_sampler(CONFIG, tmp_path)
+        trained_values = {
+            "train.optimizer.lr": 0.0003,
+            "loss.delta": 1.5,
+            "model.name": "cnn_unet_cnn",
+        }
+        config_path = tmp_path / "trained_config.yaml"
+        OmegaConf.save(
+            OmegaConf.create(
+                {
+                    "train": {"optimizer": {"lr": 0.0003}},
+                    "loss": {"delta": 1.5},
+                    "model": {"name": "cnn_unet_cnn"},
+                }
+            ),
+            config_path,
+        )
+
+        trial, overrides = sampler.resume(config_path)
+
+        assert {p.name: value for p, value in overrides} == trained_values
+        assert sampler.study.trials[trial.number].params == trained_values
+
+    def test_raises_for_a_parameter_missing_from_the_config(
+        self, tmp_path: Path
+    ) -> None:
+        sampler = build_sampler(CONFIG, tmp_path)
+        config_path = tmp_path / "trained_config.yaml"
+        OmegaConf.save(OmegaConf.create({"model": {"name": "unet"}}), config_path)
+
+        with pytest.raises(ValueError, match=r"'train.optimizer.lr', 'loss.delta'"):
+            sampler.resume(config_path)
+
+        assert sampler.study.get_trials() == []
+
+
 class TestOptunaSweepGenerateTrialConfig:
     """Tests for OptunaSweep.generate_trial_config."""
 

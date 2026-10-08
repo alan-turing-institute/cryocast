@@ -7,7 +7,7 @@ import torch
 import wandb
 import yaml
 from lightning.pytorch.callbacks import ModelCheckpoint
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from optuna.trial import TrialState
 
 from cryocast.model_service import ModelService
@@ -66,6 +66,21 @@ def _build_study(tmp_path: Path, n_completed: int = 1) -> tuple[Path, int | None
         sampler.tell(trial, 0.5)
         trial_number = trial.number
     return study_path, trial_number
+
+
+def _build_run_directory(tmp_path: Path, lr: float) -> Path:
+    """Create a run directory trained with learning rate `lr`.
+
+    Returns its (empty) checkpoints directory.
+    """
+    run_directory = tmp_path / "run"
+    (run_directory / "checkpoints").mkdir(parents=True)
+    (run_directory / "files").mkdir()
+    OmegaConf.save(
+        OmegaConf.create({"train": {"optimizer": {"lr": lr}}}),
+        run_directory / "files" / "model_config.yaml",
+    )
+    return run_directory / "checkpoints"
 
 
 class TestSweepCLI:
@@ -442,8 +457,7 @@ class TestSweepTrialCLI:
 
         monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
         monkeypatch.setattr(ModelService, "from_config", fail_from_config)
-        checkpoint_dir = tmp_path / "checkpoints"
-        checkpoint_dir.mkdir()
+        checkpoint_dir = _build_run_directory(tmp_path, lr=0.0003)
         (checkpoint_dir / "last.ckpt").write_text("checkpoint")
 
         result = runner.call(
@@ -459,6 +473,74 @@ class TestSweepTrialCLI:
 
         assert result.exit_code == 0, result.output
         assert captured == [CheckpointFile(checkpoint_dir.resolve() / "last.ckpt")]
+
+    @pytest.mark.parametrize(
+        "extra_args", [[], ["--multistage"]], ids=["single-stage", "multistage"]
+    )
+    def test_resumed_trial_records_the_parameters_it_was_trained_with(
+        self,
+        extra_args: list[str],
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The study must not record newly sampled values for a resumed model."""
+        study_path, _ = _build_study(tmp_path, n_completed=0)
+        checkpoint = MagicMock(spec=ModelCheckpoint)
+        checkpoint.best_model_score = torch.tensor(0.42)
+        trainer = FakeTrainer(checkpoint_callbacks=[checkpoint])
+        configs: list[DictConfig] = []
+
+        def fake_service(config: DictConfig, *_args: object) -> FakeModelService:
+            configs.append(config)
+            return FakeModelService(trainer)
+
+        monkeypatch.setattr(ModelService, "from_checkpoint", fake_service)
+        monkeypatch.setattr(ModelService, "from_config", fake_service)
+        checkpoint_dir = _build_run_directory(tmp_path, lr=0.0003)
+        (checkpoint_dir / "last.ckpt").write_text("checkpoint")
+
+        result = runner.call(
+            [
+                "sweep",
+                "trial",
+                "--sweep-path",
+                str(study_path),
+                "--checkpoint-dir",
+                str(checkpoint_dir),
+                *extra_args,
+            ]
+        )
+
+        assert result.exit_code == 0, result.output
+        [trial] = OptunaSweep.from_path(study_path).study.get_trials()
+        assert trial.params == {"train.optimizer.lr": 0.0003}
+        cfg_path = (checkpoint_dir.parent / "files" / "model_config.yaml").resolve()
+        assert trial.user_attrs == {"resumed_from": str(cfg_path)}
+        assert configs[0].train.optimizer.lr == 0.0003
+
+    def test_resuming_without_a_run_config_does_not_start_a_trial(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+    ) -> None:
+        study_path, _ = _build_study(tmp_path, n_completed=0)
+        checkpoint_dir = tmp_path / "run" / "checkpoints"
+        checkpoint_dir.mkdir(parents=True)
+
+        result = runner.call(
+            [
+                "sweep",
+                "trial",
+                "--sweep-path",
+                str(study_path),
+                "--checkpoint-dir",
+                str(checkpoint_dir),
+            ]
+        )
+
+        assert isinstance(result.exception, FileNotFoundError)
+        assert OptunaSweep.from_path(study_path).study.get_trials() == []
 
     def test_trial_marks_failed_when_no_unique_checkpoint_callback(
         self,

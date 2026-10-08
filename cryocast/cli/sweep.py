@@ -140,7 +140,14 @@ def trial(
     """Run a single trial from a W&B sweep."""
     # Load the Optuna sweep, start a trial, and get its parameter overrides
     sweep = OptunaSweep.from_path(sweep_path)
-    trial, overrides = sweep.ask()
+    checkpoint_dir = checkpoint_dir.resolve() if checkpoint_dir else None
+    if checkpoint_dir:
+        # If we have a checkpoint directory, resume the trial from the existing config
+        trial, overrides = sweep.resume(
+            checkpoint_dir.parent / "files" / "model_config.yaml"
+        )
+    else:
+        trial, overrides = sweep.ask()
 
     try:
         # Generate a merged config for this trial
@@ -155,7 +162,6 @@ def trial(
         os.environ["WANDB_PROJECT"] = "train"
 
         # Train the model for this trial
-        checkpoint_dir = checkpoint_dir.resolve() if checkpoint_dir else None
         # For multistage training, we pass the directory of checkpoints to train_multistage
         if multistage:
             model_service = ModelService.from_config(config)
