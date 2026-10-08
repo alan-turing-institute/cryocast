@@ -1,4 +1,5 @@
 import logging
+import os
 import pickle
 import sys
 from enum import StrEnum
@@ -72,6 +73,22 @@ class TestFindLast:
         checkpoint_file = CheckpointFile.find_last(checkpoint_dir)
 
         assert checkpoint_file.path == checkpoint_dir / "last.ckpt"
+
+    def test_finds_most_recently_modified_checkpoint(self, tmp_path: Path) -> None:
+        """Pick the newest ``last*.ckpt`` file, not the last one alphabetically."""
+        for mtime, name in enumerate(("last-v2.ckpt", "last-v10.ckpt", "last.ckpt")):
+            (path := tmp_path / name).write_text("checkpoint")
+            os.utime(path, ns=(mtime, mtime))
+
+        assert CheckpointFile.find_last(tmp_path).path == tmp_path / "last.ckpt"
+
+    def test_finds_highest_version_when_modified_together(self, tmp_path: Path) -> None:
+        """Pick the highest Lightning version when modification times are equal."""
+        for name in ("last.ckpt", "last-v2.ckpt", "last-v10.ckpt"):
+            (path := tmp_path / name).write_text("checkpoint")
+            os.utime(path, ns=(0, 0))
+
+        assert CheckpointFile.find_last(tmp_path).path == tmp_path / "last-v10.ckpt"
 
     def test_raises_without_last_checkpoint_in_directory(self, tmp_path: Path) -> None:
         """Reject a directory with no resumable ``last*.ckpt`` file."""
