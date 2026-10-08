@@ -7,7 +7,8 @@ from omegaconf import DictConfig
 
 from cryocast.model_service import ModelService
 
-from .hydra import hydra_adaptor
+from .evaluation_overrides import apply_evaluation_model_overrides
+from .hydra import HydraInvocation, hydra_adaptor
 
 # Create the typer app
 evaluation_cli = typer.Typer(help="Evaluate models")
@@ -70,6 +71,7 @@ def evaluate(
             ),
         ),
     ] = False,
+    hydra_invocation: HydraInvocation | None = None,
 ) -> None:
     """Evaluate a pre-trained model."""
     # If activation saving is enabled, then add requested layers
@@ -86,6 +88,7 @@ def evaluate(
         ] = True
 
     model = ModelService.from_checkpoint(config, Path(checkpoint).resolve())
+    apply_evaluation_model_overrides(model, config, hydra_invocation)
     model.evaluate()
 
 
