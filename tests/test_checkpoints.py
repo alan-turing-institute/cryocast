@@ -12,6 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from cryocast.model_service.checkpoints import (
     CheckpointFile,
+    LegacyCheckpointFile,
     OutdatedCheckpointError,
     verify_model_matches_data,
 )
@@ -113,7 +114,7 @@ class TestLoad:
         with pytest.raises(OutdatedCheckpointError):
             checkpoint_file.load()
 
-        checkpoint_file.upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade()
 
         assert checkpoint_file.load()["hyper_parameters"]["hemisphere"] == "north"
 
@@ -138,52 +139,20 @@ class TestMergeConfig:
         assert combined is cfg_model_service
         assert "Could not load the checkpoint configuration" in caplog.text
 
-    @pytest.mark.parametrize(
-        ("legacy_target", "expected_target"),
-        [
-            (
-                {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
-                {"sic-ssmis": ["ice_conc"]},
-            ),
-            ({"group_name": "sic-ssmis"}, {"sic-ssmis": []}),
-            ({"group_name": "sic-ssmis", "variables": []}, {"sic-ssmis": []}),
-        ],
-        ids=["explicit-variables", "missing-variables", "empty-variables"],
-    )
-    def test_translates_legacy_predict_config(
-        self,
-        legacy_target: dict[str, Any],
-        expected_target: dict[str, Any],
-        cfg_model_service: DictConfig,
-        tmp_path: Path,
-        caplog: pytest.LogCaptureFixture,
+    def test_refuses_legacy_predict_config(
+        self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
-        """Translate configs that predate the 'variables'/'window' split."""
+        """Suggest upgrading configs that predate the 'variables'/'window' split."""
         legacy_config = cfg_model_service.copy()
-        del legacy_config["variables"]
-        del legacy_config["window"]
-        legacy_config["predict"] = {
-            "target": legacy_target,
-            "n_forecast_steps": 7,
-            "n_history_steps": 4,
-        }
+        legacy_config["predict"] = {"target": {"group_name": "sic-ssmis"}}
         checkpoint_file = _save_run_config(tmp_path, legacy_config)
 
-        with caplog.at_level(
-            logging.WARNING, logger="cryocast.model_service.checkpoints"
-        ):
-            combined = checkpoint_file.merge_config(DictConfig({}))
+        with pytest.raises(
+            OutdatedCheckpointError, match="legacy 'predict' key"
+        ) as exc:
+            checkpoint_file.merge_config(cfg_model_service)
 
-        assert "uses the legacy 'predict' key" in caplog.text
-        assert "predict" not in combined
-        assert OmegaConf.to_container(combined["variables"]) == {
-            "input": {},
-            "target": expected_target,
-        }
-        assert OmegaConf.to_container(combined["window"]) == {
-            "n_forecast_steps": 7,
-            "n_history_steps": 4,
-        }
+        assert f"cryocast checkpoint upgrade {checkpoint_file.path}" in str(exc.value)
 
     def test_model_and_window_from_checkpoint_and_the_rest_from_config(
         self, cfg_model_service: DictConfig, tmp_path: Path
@@ -410,6 +379,12 @@ def _save_legacy_checkpoint(path: Path) -> CheckpointFile:
     return CheckpointFile(path)
 
 
+def _save_legacy_config(checkpoint_file: CheckpointFile, text: str) -> None:
+    """Save a run's model_config.yaml as text, as an older version would have done."""
+    checkpoint_file.config_path.parent.mkdir(exist_ok=True)
+    checkpoint_file.config_path.write_text(text)
+
+
 class TestUpgrade:
     def test_upgraded_checkpoint_loads_with_weights_only(self, tmp_path: Path) -> None:
         """Upgrade to plain types that reference cryocast, keeping a backup."""
@@ -417,7 +392,7 @@ class TestUpgrade:
             tmp_path / "checkpoints" / "last.ckpt"
         )
 
-        checkpoint_file.upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade()
 
         checkpoint = torch.load(checkpoint_file.path, weights_only=True)
         assert (
@@ -430,23 +405,63 @@ class TestUpgrade:
         assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
         assert (tmp_path / "checkpoints" / "last.ckpt.bak").is_file()
 
-    def test_upgrades_legacy_model_config(self, tmp_path: Path) -> None:
+    def test_upgrades_legacy_package_in_config(self, tmp_path: Path) -> None:
         """Rewrite icenet_mp references in the run's model config, keeping a backup."""
         checkpoint_file = _save_legacy_checkpoint(
             tmp_path / "checkpoints" / "last.ckpt"
         )
         legacy_config = "model:\n  _target_: icenet_mp.models.EncodeProcessDecode\n"
-        checkpoint_file.config_path.parent.mkdir()
-        checkpoint_file.config_path.write_text(legacy_config)
+        _save_legacy_config(checkpoint_file, legacy_config)
 
-        checkpoint_file.upgrade()
+        LegacyCheckpointFile(checkpoint_file).upgrade()
 
-        assert checkpoint_file.config_path.read_text() == legacy_config.replace(
-            "icenet_mp", "cryocast"
-        )
+        assert OmegaConf.load(checkpoint_file.config_path) == {
+            "model": {"_target_": "cryocast.models.EncodeProcessDecode"}
+        }
         assert (tmp_path / "files" / "model_config.yaml.bak").read_text() == (
             legacy_config
         )
+
+    @pytest.mark.parametrize(
+        ("legacy_target", "expected_target"),
+        [
+            (
+                {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
+                {"sic-ssmis": ["ice_conc"]},
+            ),
+            ({"group_name": "sic-ssmis"}, {"sic-ssmis": []}),
+            ({"group_name": "sic-ssmis", "variables": []}, {"sic-ssmis": []}),
+        ],
+        ids=["explicit-variables", "missing-variables", "empty-variables"],
+    )
+    def test_translates_legacy_predict_config(
+        self,
+        legacy_target: dict[str, Any],
+        expected_target: dict[str, Any],
+        tmp_path: Path,
+    ) -> None:
+        """Replace the 'predict' config with 'variables' and 'window' configs."""
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
+        legacy_config = {
+            "model": {"name": "dc-gsta-dc"},
+            "predict": {
+                "target": legacy_target,
+                "n_forecast_steps": 7,
+                "n_history_steps": 4,
+            },
+        }
+        _save_legacy_config(checkpoint_file, OmegaConf.to_yaml(legacy_config))
+
+        LegacyCheckpointFile(checkpoint_file).upgrade()
+
+        assert OmegaConf.load(checkpoint_file.config_path) == {
+            "model": {"name": "dc-gsta-dc"},
+            # Legacy checkpoints used every variable from every dataset as input
+            "variables": {"input": {}, "target": expected_target},
+            "window": {"n_forecast_steps": 7, "n_history_steps": 4},
+        }
 
     def test_upgrades_several_checkpoints_from_one_run(self, tmp_path: Path) -> None:
         """Upgrade every checkpoint in a run, with its model config upgraded once."""
@@ -454,29 +469,65 @@ class TestUpgrade:
             _save_legacy_checkpoint(tmp_path / "checkpoints" / name)
             for name in ("epoch=1.ckpt", "last.ckpt")
         ]
-        config_path = checkpoint_files[0].config_path
-        config_path.parent.mkdir()
-        config_path.write_text("model:\n  _target_: icenet_mp.models.Persistence\n")
+        legacy_config = "model:\n  _target_: icenet_mp.models.Persistence\n"
+        _save_legacy_config(checkpoint_files[0], legacy_config)
 
         for checkpoint_file in checkpoint_files:
-            checkpoint_file.upgrade()
+            LegacyCheckpointFile(checkpoint_file).upgrade()
 
         for checkpoint_file in checkpoint_files:
             assert not torch.serialization.get_unsafe_globals_in_checkpoint(
                 checkpoint_file.path
             )
-        assert "icenet_mp" not in config_path.read_text()
+        assert "icenet_mp" not in checkpoint_files[0].config_path.read_text()
+        assert (tmp_path / "files" / "model_config.yaml.bak").read_text() == (
+            legacy_config
+        )
 
-    def test_refuses_to_overwrite_backup(self, tmp_path: Path) -> None:
-        """Refuse to upgrade twice, which would overwrite the original backup."""
+    def test_upgrading_twice_changes_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Leave files that are already up to date unchanged."""
         checkpoint_file = _save_legacy_checkpoint(
             tmp_path / "checkpoints" / "last.ckpt"
         )
-        checkpoint_file.upgrade()
-        upgraded = checkpoint_file.path.read_bytes()
+        _save_legacy_config(
+            checkpoint_file, "predict:\n  target:\n    group_name: sic\n"
+        )
+        LegacyCheckpointFile(checkpoint_file).upgrade()
+        upgraded = [
+            path.read_bytes()
+            for path in (checkpoint_file.path, checkpoint_file.config_path)
+        ]
 
-        with pytest.raises(FileExistsError, match="already been upgraded"):
-            checkpoint_file.upgrade()
+        with caplog.at_level(logging.INFO, logger="cryocast.model_service.checkpoints"):
+            LegacyCheckpointFile(checkpoint_file).upgrade()
 
-        assert checkpoint_file.path.read_bytes() == upgraded
-        assert not list(checkpoint_file.path.parent.glob("*.tmp"))
+        assert [
+            path.read_bytes()
+            for path in (checkpoint_file.path, checkpoint_file.config_path)
+        ] == upgraded
+        assert caplog.text.count("is already up to date") == 2
+        assert not list(tmp_path.rglob("*.tmp"))
+
+    def test_finishes_partly_upgraded_run_keeping_original_backup(
+        self, tmp_path: Path
+    ) -> None:
+        """Upgrade a config whose checkpoint is current, keeping the earlier backup."""
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        torch.save({"state_dict": {"weight": torch.ones(2)}}, path)
+        checkpoint_file = CheckpointFile(path)
+        original_config = "predict:\n  target:\n    group_name: icenet_mp.sic\n"
+        partly_upgraded_config = "predict:\n  target:\n    group_name: sic\n"
+        _save_legacy_config(checkpoint_file, partly_upgraded_config)
+        backup_path = tmp_path / "files" / "model_config.yaml.bak"
+        backup_path.write_text(original_config)
+        checkpoint = path.read_bytes()
+
+        LegacyCheckpointFile(checkpoint_file).upgrade()
+
+        assert "predict" not in OmegaConf.load(checkpoint_file.config_path)
+        assert backup_path.read_text() == original_config
+        assert path.read_bytes() == checkpoint
+        assert not (tmp_path / "checkpoints" / "last.ckpt.bak").exists()
