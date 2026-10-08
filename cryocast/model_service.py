@@ -23,7 +23,12 @@ from cryocast.compatibility.torch import (
     patch_open_file_limit,
 )
 from cryocast.data import CommonDataModule
-from cryocast.models import BaseModel, EncodeProcessDecode
+from cryocast.models import (
+    BaseModel,
+    Downscaler,
+    DownscalingPipeline,
+    EncodeProcessDecode,
+)
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
 
@@ -73,6 +78,11 @@ class ModelService:
         # Construct the model
         OmegaConf.resolve(config["train"])  # resolve training config interpolations
         log.info("Building a new '%s' model...", builder.config["model"]["_target_"])
+        model_data_kwargs = (
+            {"variable_names": builder.data_module.variable_names}
+            if config["model"]["_target_"] == "cryocast.models.Downscaler"
+            else {}
+        )
         builder.model_ = hydra.utils.instantiate(
             config["model"],
             channel_names=builder.data_module.target_variables,
@@ -92,6 +102,7 @@ class ModelService:
             target_variable_indices=builder.data_module.target_variable_indices,
             _convert_="object",
             _recursive_=False,
+            **model_data_kwargs,
         )
 
         return builder
@@ -138,13 +149,18 @@ class ModelService:
             builder.config["model"]["_target_"]
         )
         log.info("Loading a trained %s model...", builder.config["model"]["name"])
-        # For each of the keyword arguments that we know this model class ignores, we
-        # attempt to load them from the model config rather than the checkpoint.
+        # For each keyword argument that this model class excludes from checkpoint
+        # hyperparameters, prefer the current model config where available. Downscalers
+        # also need data-dependent channel names, which are reconstructed from the
+        # configured datasets rather than stored in the model config.
         non_checkpoint_kwargs = {
             key: builder.config["model"][key]
             for key in model_cls.ignored_hparams
             if key in builder.config["model"]
         }
+        if issubclass(model_cls, Downscaler):
+            non_checkpoint_kwargs["variable_names"] = builder.data_module.variable_names
+
         builder.model_ = model_cls.load_from_checkpoint(
             checkpoint_path,
             latitudes_fn=lambda: builder.data_module.latitudes,
@@ -473,6 +489,18 @@ class ModelService:
                 callback.mask_dir = self.data_module.mask_directory
 
         return trainer
+
+    def build_downscaling_pipeline(
+        self, downscaler_service: "ModelService"
+    ) -> DownscalingPipeline:
+        """Combine this forecast model with a trained spatial downscaler."""
+        if not isinstance(downscaler_service.model, Downscaler):
+            msg = (
+                "downscaler_service must contain a Downscaler model, got "
+                f"{type(downscaler_service.model).__name__}."
+            )
+            raise TypeError(msg)
+        return DownscalingPipeline(self.model, downscaler_service.model)
 
     def evaluate(self) -> None:
         """Evaluate a trained model."""

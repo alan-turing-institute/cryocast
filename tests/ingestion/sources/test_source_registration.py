@@ -15,6 +15,7 @@ from anemoi.datasets.create.sources import source_registry
 
 from cryocast.ingestion.sources import (
     ArgoSource,
+    CDSSource,
     FTPSource,
     SyntheticSource,
     register_sources,
@@ -27,6 +28,7 @@ class TestSourceRegistration:
     EXPECTED_SOURCES: ClassVar[dict] = {
         "ftp": FTPSource,
         "argo": ArgoSource,
+        "cds": CDSSource,
         "synthetic": SyntheticSource,
     }
 
@@ -58,6 +60,31 @@ class TestSourceRegistration:
             "Recipe.model_fields is empty after register_sources() — "
             "model_rebuild() may have failed silently."
         )
+
+    def test_recipe_accepts_registered_cds_source(self) -> None:
+        """The rebuilt recipe model accepts the CDS source configuration."""
+        register_sources()
+        recipe = Recipe(
+            dates=StartEndDates(
+                start=datetime.datetime(2024, 1, 1, 12, 0, 0),
+                end=datetime.datetime(2024, 1, 2, 12, 0, 0),
+                frequency=datetime.timedelta(hours=24),
+            ),
+            input={
+                "cds": {
+                    "dataset": "reanalysis-pan-carra",
+                    "time_from_dates": True,
+                    "request": {
+                        "level_type": "single_levels",
+                        "variable": ["sea_ice_area_fraction"],
+                        "product_type": "analysis",
+                        "data_format": "grib",
+                        "area": [81.0, 15.0, 76.0, 35.0],
+                    },
+                }
+            },
+        )
+        assert type(recipe.input).__name__ == "cds"
 
     def test_recipe_accepts_registered_synthetic_source(self) -> None:
         """The rebuilt recipe model accepts the synthetic source configuration."""

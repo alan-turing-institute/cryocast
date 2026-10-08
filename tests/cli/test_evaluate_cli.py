@@ -18,6 +18,19 @@ class FakeModelService:
 
 
 class TestEvaluateCLI:
+    def test_downscaling_help(self, runner: CustomCliRunner) -> None:
+        runner.check_output(
+            ["evaluate-downscaling", "--help"],
+            expected_patterns=[
+                r"Usage: cryocast evaluate-downscaling \[OPTIONS\] \[overrides\]...",
+                r"Compare a trained downscaler with its geographic interpolation baseline",
+                r"--checkpoint\s+<str>\s+Path of a trained downscaler checkpoint",
+                r"--high-frequency-cutoff\s+<float>",
+                r"--max-batches\s+<int>",
+                r"--config-name\s+<str>",
+            ],
+        )
+
     def test_help(self, runner: CustomCliRunner) -> None:
         runner.check_output(
             ["evaluate", "--help"],

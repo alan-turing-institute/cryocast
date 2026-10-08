@@ -11,7 +11,7 @@ from .single_dataset import SingleDataset
 
 
 class CombinedDataset(Dataset):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         datasets: Sequence[SingleDataset],
         target_group_name: str,
@@ -19,6 +19,7 @@ class CombinedDataset(Dataset):
         *,
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
+        target_offset_steps: int | None = None,
         climatology: ArrayTCHW | None = None,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
@@ -31,8 +32,11 @@ class CombinedDataset(Dataset):
             datasets: The datasets to combine.
             target_group_name: The name of the target dataset.
             target_variables: The names of the target variables.
-            n_forecast_steps: The number of forecast steps.
+            n_forecast_steps: The number of target steps.
             n_history_steps: The number of history steps.
+            target_offset_steps: Offset from the input start date to the first target
+                step. Defaults to n_history_steps for standard forecasting. Set to 0
+                for contemporaneous paired tasks such as spatial downscaling.
             climatology: Optional [366, C, H, W] table of calendar-day means of the
                 target variables (29 February holds its own slot). When given, each
                 batch also contains a ``climatology`` key holding the calendar-day
@@ -45,6 +49,9 @@ class CombinedDataset(Dataset):
         # Store the number of forecast and history steps
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
+        self.target_offset_steps = (
+            n_history_steps if target_offset_steps is None else target_offset_steps
+        )
 
         # Optional climatology table (calendar-day means of the target variables)
         self.climatology = climatology
@@ -61,6 +68,19 @@ class CombinedDataset(Dataset):
             msg = f"Cannot combine datasets with different frequencies: {frequencies}."
             raise ValueError(msg)
         self.frequency = frequencies[0]
+
+    @property
+    def target_offset_steps(self) -> int:
+        """Return the target offset, defaulting to legacy forecast behaviour."""
+        return getattr(self, "_target_offset_steps", self.n_history_steps)
+
+    @target_offset_steps.setter
+    def target_offset_steps(self, value: int) -> None:
+        """Set the non-negative target offset in source-frequency steps."""
+        if value < 0:
+            msg = "target_offset_steps must be greater than or equal to 0."
+            raise ValueError(msg)
+        self._target_offset_steps = value
 
     @cached_property
     def dates(self) -> list[np.datetime64]:
@@ -130,7 +150,7 @@ class CombinedDataset(Dataset):
             for ds in self.inputs
         }
         batch["target"] = self.target.get_tchw_slice(
-            start_date + self.n_history_steps * self.frequency,
+            start_date + self.target_offset_steps * self.frequency,
             self.n_forecast_steps,
             check=False,
         )
@@ -164,7 +184,7 @@ class CombinedDataset(Dataset):
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive forecast dates for a given start date."""
         return [
-            start_date + (idx + self.n_history_steps) * self.frequency
+            start_date + (idx + self.target_offset_steps) * self.frequency
             for idx in range(self.n_forecast_steps)
         ]
 
