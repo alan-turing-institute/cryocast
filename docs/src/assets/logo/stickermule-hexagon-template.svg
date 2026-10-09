@@ -31,15 +31,15 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="3.36"
-     inkscape:cx="362.35119"
-     inkscape:cy="352.97619"
-     inkscape:window-width="1728"
-     inkscape:window-height="957"
-     inkscape:window-x="0"
-     inkscape:window-y="33"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="layer-MC2">
+     inkscape:zoom="3.1395541"
+     inkscape:cx="382.37914"
+     inkscape:cy="372.02735"
+     inkscape:window-width="1920"
+     inkscape:window-height="923"
+     inkscape:window-x="-1"
+     inkscape:window-y="30"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="logo">
     <inkscape:page
        x="0"
        y="0"
@@ -59,11 +59,20 @@
        id="logo"
        transform="matrix(1.0545,0,0,1.0545,306.02765,250.32277)"
        style="display:inline">
+      <rect
+         style="display:inline;fill:#eaf2f5;fill-opacity:1;stroke-width:0.616634"
+         id="rect299"
+         width="177.91559"
+         height="109.01809"
+         x="7.7436466"
+         y="18.069925"
+         inkscape:label="logo-ice" />
       <path
          id="logo-ice"
-         d="m 14.496749,112 23.486012,-8 16.775723,14 18.453296,-18 18.453295,14 16.775725,-18 18.4533,14 15.09814,-18 20.13087,14 20.13087,-10 V 230 H 14.496749 Z"
+         d="m 7.7436467,112 24.9081823,-8 17.791558,14 19.570715,-18 19.570715,14 17.791553,-18 19.57073,14 16.01238,-18 21.34988,14 21.34988,-10 V 230 H 7.7436467 Z"
          fill="#0b2233"
-         style="stroke-width:0.915852" />
+         style="display:inline;stroke-width:0.943174"
+         inkscape:label="logo-sea" />
       <path
          id="logo-route"
          d="M 12.077,80.777 31.153153,87.261261 48,82.594595 68.198199,65.243244 93.351352,79.045045 107.49549,58.09009 141.2072,48.018018 l 6.2883,21.837838 24.9009,11.099099 13.3766,-11.366108"
@@ -76,7 +85,8 @@
          stroke-linejoin="round" />
       <g
          id="auv-group"
-         transform="rotate(-10,270.89625,39.03315)">
+         transform="rotate(-10,270.89625,39.03315)"
+         inkscape:label="auv-group">
         <path
            id="logo-auv-track"
            d="m 30,132 q 40,-8 74,10"
@@ -93,7 +103,8 @@
            height="10"
            rx="5"
            fill="#eaf2f5"
-           transform="rotate(30)" />
+           transform="rotate(30)"
+           inkscape:label="logo-auv" />
       </g>
     </g>
     <g
@@ -129,7 +140,9 @@
   <g
      id="layer-MC1"
      inkscape:groupmode="layer"
-     inkscape:label="Cut line">
+     inkscape:label="Cut line"
+     style="display:inline"
+     sodipodi:insensitive="true">
     <path
        id="path1"
        d="M 0,0 -62.354,-36 -124.708,0 V 72 L -62.354,108 0,72 Z"
@@ -140,7 +153,8 @@
      id="layer-MC2"
      inkscape:groupmode="layer"
      inkscape:label="Instructions"
-     style="display:inline">
+     style="display:inline"
+     sodipodi:insensitive="true">
     <path
        id="path2"
        d="M 0,0 H 612 V 792 H 0 Z M 235.645,467.083 V 548.32 L 306,588.938 376.354,548.32 V 467.083 L 306,426.464 Z"
