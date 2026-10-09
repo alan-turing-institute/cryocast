@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
+from cryocast.cli.hydra import HydraInvocation
 from cryocast.model_service import ModelService
 
 from .conftest import CustomCliRunner
@@ -18,6 +19,56 @@ class FakeModelService:
 
 
 class TestEvaluateCLI:
+    def test_hydra_metadata_is_passed_only_to_evaluate(
+        self,
+        tmp_path: Path,
+        runner: CustomCliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pass exactly the user's explicit Hydra override expressions internally."""
+        service = FakeModelService()
+        invocations: list[HydraInvocation | None] = []
+
+        def fake_from_checkpoint(
+            _config: DictConfig, _checkpoint: Path
+        ) -> FakeModelService:
+            return service
+
+        def record(
+            _service: FakeModelService,
+            _config: DictConfig,
+            invocation: HydraInvocation | None,
+        ) -> None:
+            invocations.append(invocation)
+
+        monkeypatch.setattr(ModelService, "from_checkpoint", fake_from_checkpoint)
+        monkeypatch.setattr(
+            "cryocast.cli.evaluate.apply_evaluation_model_overrides", record
+        )
+        result = runner.call(
+            [
+                "evaluate",
+                "--config-name",
+                "demo_north",
+                "--checkpoint",
+                str(tmp_path / "model.ckpt"),
+                "++model.processor.ddim_steps=50",
+                "++model.processor.eta=0.0",
+            ]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert service.evaluate_calls == 1
+        assert invocations == [
+            HydraInvocation(
+                config_name="demo_north",
+                overrides=(
+                    "++model.processor.ddim_steps=50",
+                    "++model.processor.eta=0.0",
+                ),
+            )
+        ]
+
     def test_help(self, runner: CustomCliRunner) -> None:
         runner.check_output(
             ["evaluate", "--help"],
