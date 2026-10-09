@@ -14,7 +14,6 @@ Create a search-space YAML, e.g. `example.sweep.yaml`:
 
 ```yaml
 name: example
-n_trials: 8
 sampler: tpe
 seed: 0
 parameters:

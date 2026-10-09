@@ -16,7 +16,6 @@ pytestmark = pytest.mark.filterwarnings(
 
 CONFIG: dict[str, Any] = {
     "name": "example",
-    "n_trials": 6,
     "sampler": "qmc",
     "seed": 0,
     "parameters": {
@@ -54,7 +53,6 @@ class TestOptunaSweepInit:
     def test_attributes_set_from_config(self) -> None:
         sampler = OptunaSweep(CONFIG)
         assert sampler.name == CONFIG["name"]
-        assert sampler.n_trials == CONFIG["n_trials"]
         assert sampler.seed == CONFIG["seed"]
         assert sampler.metric == {"name": "validation_loss.min", "goal": "minimize"}
         assert sampler.parameters == CONFIG["parameters"]
@@ -224,8 +222,11 @@ class TestOptunaSweepResume:
         config_path = tmp_path / "trained_config.yaml"
         OmegaConf.save(OmegaConf.create({"model": {"name": "unet"}}), config_path)
 
-        with pytest.raises(ValueError, match=r"'train.optimizer.lr', 'loss.delta'"):
+        with pytest.raises(ValueError, match="Could not find parameter") as exc_info:
             sampler.resume(config_path)
+        assert "'train.optimizer.lr'" in str(exc_info.value)
+        assert "'loss.delta'" in str(exc_info.value)
+        assert "'model.name'" not in str(exc_info.value)
 
         assert sampler.study.get_trials() == []
 

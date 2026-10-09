@@ -92,7 +92,8 @@ def summarise(
     importances = sweep.parameter_importances()
     if not importances:
         log.info(
-            "Could not estimate parameter importance for %d trials", sweep.n_trials
+            "Could not estimate parameter importance for %d completed trial(s)",
+            n_completed,
         )
         return
     log.info("Parameter importance:")

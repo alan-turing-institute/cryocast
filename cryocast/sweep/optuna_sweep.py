@@ -27,7 +27,6 @@ class OptunaSweep:
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize an OptunaSweep from a parsed YAML dict."""
         self.name: str = config["name"]
-        self.n_trials: int = config["n_trials"]
         self.seed: int = config.get("seed", 0)
         self.parameters: dict[str, Any] = config["parameters"]
         self.sampler_cls = config["sampler"]
@@ -171,7 +170,6 @@ class OptunaSweep:
         optuna_cfg = {
             "entity": self.entity,
             "metric": self.metric,
-            "n_trials": self.n_trials,
             "name": self.name,
             "parameters": self.parameters,
             "sampler": self.sampler_cls,

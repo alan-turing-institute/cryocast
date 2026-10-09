@@ -43,7 +43,6 @@ def _build_study(tmp_path: Path, n_completed: int = 1) -> tuple[Path, int | None
     """
     cfg_sweep = {
         "name": "example",
-        "n_trials": 3,
         "sampler": "random",
         "seed": 0,
         "entity": "test-entity",
@@ -123,7 +122,6 @@ class TestSweepInitialiseCLI:
             yaml.safe_dump(
                 {
                     "name": "example",
-                    "n_trials": 3,
                     "sampler": "random",
                     "parameters": {
                         "train.optimizer.lr": {
@@ -162,7 +160,6 @@ class TestSweepInitialiseCLI:
         saved_sweep_cfg = yaml.safe_load((study_path / "optuna.yaml").read_text())
         assert saved_sweep_cfg["entity"] == "turing-seaice"
         assert saved_sweep_cfg["name"] == "example"
-        assert saved_sweep_cfg["n_trials"] == 3
 
     def test_initialise_rejects_an_unresolvable_parameter(
         self,
@@ -174,7 +171,6 @@ class TestSweepInitialiseCLI:
             yaml.safe_dump(
                 {
                     "name": "example",
-                    "n_trials": 3,
                     "sampler": "random",
                     "parameters": {
                         "train.optimizer.does_not_exist": {
