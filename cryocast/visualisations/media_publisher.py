@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import replace
 from datetime import datetime
 from io import BytesIO
 from typing import TypeVar
@@ -8,7 +9,7 @@ from typing import TypeVar
 import numpy as np
 from PIL.ImageFile import ImageFile
 
-from cryocast.data import CombinedDataset, SingleDataset
+from cryocast.data import SingleDataset
 from cryocast.exceptions import InvalidArrayError, VideoRenderError
 from cryocast.types import (
     ArrayHW,
@@ -37,28 +38,26 @@ class MediaPublisher:
     def __init__(
         self,
         *,
-        dataset: CombinedDataset,
         plot_spec: PlotSpec,
         land_mask: LandMask,
         model_name: str | None = None,
         trained_epochs: int | None = None,
+        training_metadata: Metadata,
     ) -> None:
         """Build a publisher bound to one dataset/plot_spec/land_mask context.
 
         Args:
-            dataset: The training dataset; may be different from the one plotted.
             plot_spec: Plotting specification (difference settings, timestep, etc.).
             land_mask: Land mask to apply when rendering panels.
             model_name: Model name, shown in the footer if given.
             trained_epochs: The number of epochs trained for.
+            training_metadata: Description of the data that the model was trained on.
 
         """
         self.idx_date = plot_spec.selected_timestep
         self.panel_renderer = PanelRenderer(
             land_mask,
-            Metadata.from_dataset(
-                dataset, model_name=model_name, trained_epochs=trained_epochs
-            ),
+            replace(training_metadata, model=model_name, trained_epochs=trained_epochs),
             plot_spec,
         )
 
