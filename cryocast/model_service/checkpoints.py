@@ -196,13 +196,14 @@ class CheckpointFile:
                 if value != used.get(key, "unset")
             }
         if replaced:
-            log.warning(
-                "Using settings from the checkpoint rather than the current config: %s.",
-                "; ".join(
-                    f"{key}={reprlib.repr(used)} (configured as {reprlib.repr(configured)})"
-                    for key, (configured, used) in replaced.items()
-                ),
-            )
+            log.warning("Overriding config file with values from the checkpoint:")
+            for key, (configured, used) in replaced.items():
+                log.warning(
+                    "  %s=%s (config has %s)",
+                    key,
+                    reprlib.repr(used),
+                    reprlib.repr(configured),
+                )
 
         return combined
 

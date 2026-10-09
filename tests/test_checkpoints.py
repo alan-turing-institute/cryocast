@@ -272,15 +272,15 @@ class TestMergeConfig:
         [
             (
                 {"window": {"n_history_steps": 7}},
-                ["window.n_history_steps=3 (configured as 7)"],
+                ["window.n_history_steps=3 (config has 7)"],
             ),
             (
                 {"model": {"processor": {"n_blocks": 8}}},
-                ["model.processor.n_blocks=6 (configured as 8)"],
+                ["model.processor.n_blocks=6 (config has 8)"],
             ),
             (
                 {"variables": {"input": {"era5": ["2t"]}}},
-                ["variables.input.era5='unset' (configured as ['2t'])"],
+                ["variables.input.era5='unset' (config has ['2t'])"],
             ),
             ({"window": {"batch_size": 8}}, []),
             ({"train": {"max_epochs": 8}}, []),
