@@ -1,16 +1,26 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
 import torch
+from lightning import Trainer
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
+from torch.utils.data import DataLoader
 
 from cryocast.losses import LeadTimeWeightedLoss
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
 from cryocast.models.processors import BaseProcessor
-from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
+from cryocast.types import (
+    DataSpace,
+    Hemisphere,
+    ProcessorOutput,
+    RolloutSpace,
+    TensorNCHW,
+    TensorNTCHW,
+)
 
 
 class _ScaledEncoder(BaseEncoder):
@@ -405,3 +415,68 @@ class TestEncodeProcessDecode:
 
         # The unused target encoder must be frozen (e.g. so that DDP does not fail)
         assert not any(p.requires_grad for p in model.target_encoder.parameters())
+
+    def test_checkpoint_loads_with_weights_only(
+        self,
+        cfg_decoder: DictConfig,
+        cfg_encoders: DictConfig,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        cfg_processor: DictConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Checkpoints contain only types that torch can load with weights_only."""
+        model = EncodeProcessDecode(
+            name="weights-only",
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            hemisphere=Hemisphere.NORTH,
+            input_spaces=[cfg_input_space],
+            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+            metrics=[],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=cfg_output_space,
+            optimizer=DictConfig({"_target_": "torch.optim.Adam", "lr": 1e-3}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            target_variable_indices=[0],
+        )
+        samples: list[dict[str, torch.Tensor]] = [
+            {
+                cfg_input_space["name"]: torch.rand(1, 4, 16, 16),
+                "target": torch.rand(1, 1, 16, 16),
+            }
+        ]
+        # A list of samples is a valid map-style dataset
+        batches: DataLoader[dict[str, torch.Tensor]] = DataLoader(
+            samples,  # type: ignore[arg-type]
+            batch_size=1,
+        )
+        trainer = Trainer(
+            accelerator="cpu",
+            default_root_dir=tmp_path,
+            enable_model_summary=False,
+            enable_progress_bar=False,
+            limit_val_batches=0,
+            logger=False,
+            max_steps=1,
+        )
+        trainer.fit(model, batches)
+        checkpoint_file = tmp_path / "model.ckpt"
+        trainer.save_checkpoint(checkpoint_file)
+
+        assert (
+            torch.serialization.get_unsafe_globals_in_checkpoint(checkpoint_file) == []
+        )
+        loaded = EncodeProcessDecode.load_from_checkpoint(
+            checkpoint_file,
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            metrics=[],
+            weights_only=True,
+        )
+        assert loaded.hemisphere is Hemisphere.NORTH
+        assert loaded.rollout_space is RolloutSpace.LATENT

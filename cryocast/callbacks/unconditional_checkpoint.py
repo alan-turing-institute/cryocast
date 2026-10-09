@@ -20,15 +20,15 @@ class UnconditionalCheckpoint(Callback):
         self._on_train_end = on_train_end
 
     @property
-    def dirpath(self) -> str | Path | None:
+    def dirpath(self) -> str | None:
         """Return the directory path where checkpoints are saved."""
-        return self.impl.dirpath
+        return str(self.impl.dirpath) if self.impl.dirpath is not None else None
 
     @dirpath.setter
     def dirpath(self, value: str | Path | None) -> None:
         """Set the directory path where checkpoints are saved."""
         if value:
-            self.impl.dirpath = Path(value).absolute()
+            self.impl.dirpath = str(Path(value).absolute())
 
     def on_train_end(self, trainer: Trainer, pl_module: LightningModule) -> None:  # noqa: ARG002
         """Called when training ends."""
@@ -49,4 +49,4 @@ class UnconditionalCheckpoint(Callback):
             filepath = Path(dirpath) / filepath
         # Ensure that all distributed processes agree on the filepath then save
         filepath = Path(trainer.strategy.broadcast(str(filepath)))
-        trainer.save_checkpoint(filepath)
+        trainer.save_checkpoint(filepath, weights_only=False)

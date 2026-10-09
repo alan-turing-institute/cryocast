@@ -27,7 +27,6 @@ class OptunaSweep:
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize an OptunaSweep from a parsed YAML dict."""
         self.name: str = config["name"]
-        self.n_trials: int = config["n_trials"]
         self.seed: int = config.get("seed", 0)
         self.parameters: dict[str, Any] = config["parameters"]
         self.sampler_cls = config["sampler"]
@@ -159,27 +158,8 @@ class OptunaSweep:
         )
         return DictConfig(OmegaConf.merge(base_config, wandb_overrides))
 
-    def validate_parameters(self, model_cfg: DictConfig) -> None:
-        """Check that every configured parameter resolves against `model_cfg`."""
-        probe_config = model_cfg.copy()
-        OmegaConf.set_struct(probe_config, value=True)
-        errors: list[str] = []
-        for parameter in self._built_parameters:
-            try:
-                OmegaConf.update(
-                    probe_config,
-                    parameter.name,
-                    parameter.probe_value(),
-                    merge=True,
-                )
-            except OmegaConfBaseException as exc:
-                errors.append(f"'{parameter.name}': {exc}")
-        if errors:
-            msg = "Invalid sweep parameter(s):\n" + "\n".join(errors)
-            raise ValueError(msg)
-
     def initialise_study(self, model_cfg: DictConfig, sweep_id: str) -> None:
-        """Create the Optuna study directory and save the model and sweep configs."""
+        """Create the Optuna study and save the model and sweep configs alongside it."""
         # Generate study and storage paths
         sweep_base = (Path(model_cfg.get("base_path"))).resolve() / "sweeps"
         self._study_name = sweep_id
@@ -190,7 +170,6 @@ class OptunaSweep:
         optuna_cfg = {
             "entity": self.entity,
             "metric": self.metric,
-            "n_trials": self.n_trials,
             "name": self.name,
             "parameters": self.parameters,
             "sampler": self.sampler_cls,
@@ -201,6 +180,9 @@ class OptunaSweep:
 
         # Save the model config to the study path
         OmegaConf.save(model_cfg, self.study_path / "model_config.yaml")
+
+        # Avoid race-conditions by creating the Optuna study here
+        _ = self.study
 
     def initialise_sweep(self, model_cfg: DictConfig) -> str:
         """Generate a new W&B sweep."""
@@ -239,6 +221,41 @@ class OptunaSweep:
         except (ValueError, RuntimeError):
             return {}
 
+    def resume(
+        self, config_path: Path
+    ) -> tuple[Trial, list[tuple[Parameter, int | float | str]]]:
+        """Resume a trial for a model that has already been partially trained.
+
+        Each parameter takes the value from the config that the model was trained with,
+        rather than a newly sampled one. These values are queued as a new trial, which
+        is then started. This happens under a single lock acquisition, so that no
+        concurrent trial can claim the values.
+
+        Raises:
+            ValueError: If any parameter is missing from the config.
+
+        """
+        existing_config = OmegaConf.load(config_path)
+        existing_values = {
+            parameter.name: OmegaConf.select(existing_config, parameter.name)
+            for parameter in self._built_parameters
+        }
+        if missing := [
+            name for name, value in existing_values.items() if value is None
+        ]:
+            msg = f"Could not find parameter(s) {missing} in {config_path}."
+            raise ValueError(msg)
+        with self.sampler.lock(self.study):
+            self.study.enqueue_trial(existing_values)
+            # Register the trial and its parameters with the study
+            trial = self.study.ask()
+            overrides = [
+                (parameter, parameter.suggest(trial))
+                for parameter in self._built_parameters
+            ]
+            trial.set_user_attr("resumed_from", str(config_path))
+            return trial, overrides
+
     def tell(
         self,
         trial: Trial | int,
@@ -253,3 +270,22 @@ class OptunaSweep:
         """
         with self.sampler.lock(self.study):
             return self.study.tell(trial, values, state, skip_if_finished)
+
+    def validate_parameters(self, model_cfg: DictConfig) -> None:
+        """Check that every configured parameter resolves against `model_cfg`."""
+        probe_config = model_cfg.copy()
+        OmegaConf.set_struct(probe_config, value=True)
+        errors: list[str] = []
+        for parameter in self._built_parameters:
+            try:
+                OmegaConf.update(
+                    probe_config,
+                    parameter.name,
+                    parameter.probe_value(),
+                    merge=True,
+                )
+            except OmegaConfBaseException as exc:
+                errors.append(f"'{parameter.name}': {exc}")
+        if errors:
+            msg = "Invalid sweep parameter(s):\n" + "\n".join(errors)
+            raise ValueError(msg)

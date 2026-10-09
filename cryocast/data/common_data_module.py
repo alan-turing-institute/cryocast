@@ -336,14 +336,9 @@ class CommonDataModule(LightningDataModule):
         shuffle: bool = True,
     ) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct train dataloader."""
-        dataset = self.training_dataset
-        log.info(
-            "Loaded training dataset with %d dates between %s and %s.",
-            len(dataset),
-            dataset.start_date,
-            dataset.end_date,
+        return DataLoader(
+            self.training_dataset, shuffle=shuffle, **self._common_dataloader_kwargs
         )
-        return DataLoader(dataset, shuffle=shuffle, **self._common_dataloader_kwargs)
 
     def val_dataloader(self) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct validation dataloader."""

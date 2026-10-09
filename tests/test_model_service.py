@@ -14,6 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from cryocast.callbacks import MediaLoggingCallback, PredictionWriter
 from cryocast.model_service import ModelService
+from cryocast.model_service.checkpoints import CheckpointFile
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.types import DataSpace
@@ -40,11 +41,16 @@ class FakeCommonDataModule:
 class FakeModel:
     ignored_hparams: ClassVar[frozenset[str]] = frozenset()
     metrics: list[dict[str, Any]] | None = None
+    # Matches the data described by FakeCommonDataModule
+    input_spaces: ClassVar[list[DataSpace]] = [DataSpace(5, "input", (20, 20))]
+    n_forecast_steps = 2
+    n_history_steps = 3
+    output_space = DataSpace(1, "output", (10, 10))
 
     @classmethod
     def load_from_checkpoint(
         cls,
-        checkpoint_path: str | Path,
+        checkpoint_file: str | Path,
         *,
         mask_dir: str | None = None,
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
@@ -55,7 +61,7 @@ class FakeModel:
     ) -> "FakeModel":
         del (
             mask_dir,
-            checkpoint_path,
+            checkpoint_file,
             latitudes_fn,
             longitudes_fn,
             map_location,
@@ -159,10 +165,17 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(os, "environ", os.environ.copy())
             mock_seed_everything = MagicMock()
-            mp.setattr("cryocast.model_service.seed_everything", mock_seed_everything)
-            mp.setattr("cryocast.model_service.patch_open_file_limit", MagicMock())
             mp.setattr(
-                "cryocast.model_service.patch_interpolate_antialias", MagicMock()
+                "cryocast.model_service.model_service.seed_everything",
+                mock_seed_everything,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.patch_open_file_limit",
+                MagicMock(),
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.patch_interpolate_antialias",
+                MagicMock(),
             )
             service = ModelService(config)
 
@@ -177,9 +190,13 @@ class TestModelService:
         mock_instantiate.return_value = FakeModel()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
+                mock_instantiate,
             )
             service = ModelService.from_config(cfg_model_service)
             assert isinstance(service.model, FakeModel)
@@ -201,25 +218,30 @@ class TestModelService:
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
         # Generate a checkpoint file and corresponding model_config.yaml
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True)
+        path = checkpoint_dir / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         files_dir = tmp_path / "files"
         files_dir.mkdir(parents=True)
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.model_service.torch.load",
+                lambda *_a, **_k: {"epoch": 3},
             )
-            service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
+            service = ModelService.from_checkpoint(DictConfig({}), checkpoint_file)
             assert isinstance(service.model, FakeModel)
             assert service.config == cfg_model_service
             assert service.model.checkpoint_epoch == 3
@@ -228,243 +250,109 @@ class TestModelService:
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
         """Don't crash when the raw checkpoint dict has no 'epoch' key."""
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True)
+        path = checkpoint_dir / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         files_dir = tmp_path / "files"
         files_dir.mkdir(parents=True)
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
-            mp.setattr("cryocast.model_service.torch.load", lambda *_a, **_k: {})
-            service = ModelService.from_checkpoint(DictConfig({}), checkpoint_path)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.load", lambda *_a, **_k: {}
+            )
+            service = ModelService.from_checkpoint(DictConfig({}), checkpoint_file)
 
         assert service.model.checkpoint_epoch is None
 
-    def test_from_checkpoint_config_overloads(
+    def test_from_checkpoint_config_precedence(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
-        # Generate a checkpoint file and corresponding model_config.yaml
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        """Take the model description from the checkpoint and the rest from config."""
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True)
+        path = checkpoint_dir / "last.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
-        files_dir = tmp_path / "files"
-        files_dir.mkdir(parents=True)
-        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
-            mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
-                lambda _target: FakeModel,
-            )
-            mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
-            )
-            service = ModelService.from_checkpoint(
-                DictConfig(
-                    {
-                        "reporting": {"loggers": "will_overwrite"},
-                        "model": {"name": "will_not_overwrite"},
-                    }
-                ),
-                checkpoint_path,
-            )
-            assert isinstance(service.model, FakeModel)
-
-            expected_config = cfg_model_service.copy()
-            expected_config["reporting"]["loggers"] = "will_overwrite"
-            assert service.config == expected_config
-            assert service.config["model"]["name"] != "will_not_overwrite"
-
-    def test_from_checkpoint_variables_replaced_not_merged(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """Checkpoint variables win outright rather than being unioned with the CLI."""
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
-
-        ckpt_variables = {
-            "input": {"sic-ssmis": ["ice_conc"]},
-            "target": {"sic-ssmis": ["ice_conc"]},
-        }
         ckpt_config = cfg_model_service.copy()
-        ckpt_config["variables"] = ckpt_variables
+        ckpt_config["train"]["trainer"] = {"max_epochs": 10}
         files_dir = tmp_path / "files"
         files_dir.mkdir(parents=True)
         OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
 
+        current_config = cfg_model_service.copy()
+        current_config["train"]["trainer"] = {"max_epochs": 200}
+        current_config["model"]["name"] = "will_not_overwrite"
+        current_config["window"]["n_history_steps"] = 99
+
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.model_service.torch.load", lambda *_a, **_k: {}
             )
-            service = ModelService.from_checkpoint(
-                DictConfig(
-                    {
-                        "variables": {
-                            "input": {
-                                "era5": ["2t"],
-                                "float-argo": ["TEMP"],
-                                "sic-osisaf": ["ice_conc"],
-                            },
-                            "target": {"sic-osisaf": ["ice_conc"]},
-                        }
-                    }
-                ),
-                checkpoint_path,
-            )
+            service = ModelService.from_checkpoint(current_config, checkpoint_file)
 
-        assert OmegaConf.to_container(service.config["variables"]) == ckpt_variables
+        assert service.config["train"]["trainer"]["max_epochs"] == 200
+        assert service.config["model"]["name"] == "mock-model"
+        assert service.config["window"]["n_history_steps"] == 3
+        assert service.checkpoint_file == checkpoint_file
 
-    def test_from_checkpoint_batch_size_from_current_config(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """Batch size comes from the current config; other window keys do not."""
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
-
-        files_dir = tmp_path / "files"
-        files_dir.mkdir(parents=True)
-        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
-
-        cli_config = cfg_model_service.copy()
-        cli_config["window"] = {
-            "batch_size": 1,
-            "n_forecast_steps": 7,
-            "n_history_steps": 1,
-        }
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
-            mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
-                lambda _target: FakeModel,
-            )
-            mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
-            )
-            service = ModelService.from_checkpoint(cli_config, checkpoint_path)
-
-        assert OmegaConf.to_container(service.config["window"]) == {
-            "batch_size": 1,
-            "n_forecast_steps": 2,
-            "n_history_steps": 3,
-        }
-
-    @pytest.mark.parametrize(
-        ("legacy_target", "expected_target"),
-        [
-            (
-                {"group_name": "sic-ssmis", "variables": ["ice_conc"]},
-                {"sic-ssmis": ["ice_conc"]},
-            ),
-            ({"group_name": "sic-ssmis"}, {"sic-ssmis": []}),
-            ({"group_name": "sic-ssmis", "variables": []}, {"sic-ssmis": []}),
-        ],
-        ids=["explicit-variables", "missing-variables", "empty-variables"],
-    )
-    def test_from_checkpoint_translates_legacy_predict_config(
+    def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
         self,
-        legacy_target: dict[str, Any],
-        expected_target: dict[str, Any],
         cfg_model_service: DictConfig,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Translate checkpoints whose config predates the 'variables'/'window' split."""
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
-
-        ckpt_config = cfg_model_service.copy()
-        del ckpt_config["variables"]
-        del ckpt_config["window"]
-        ckpt_config["predict"] = {
-            "target": legacy_target,
-            "n_forecast_steps": 7,
-            "n_history_steps": 4,
-        }
-        files_dir = tmp_path / "files"
-        files_dir.mkdir(parents=True)
-        OmegaConf.save(ckpt_config, files_dir / "model_config.yaml")
-
-        with (
-            pytest.MonkeyPatch.context() as mp,
-            caplog.at_level(logging.WARNING, logger="cryocast.model_service"),
-        ):
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
-            mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
-                lambda _target: FakeModel,
-            )
-            mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
-            )
-            service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
-
-        assert "uses the legacy 'predict' key" in caplog.text
-        assert "predict" not in service.config
-        assert OmegaConf.to_container(service.config["variables"]) == {
-            "input": {},
-            "target": expected_target,
-        }
-        assert service.config["window"]["n_forecast_steps"] == 7
-        assert service.config["window"]["n_history_steps"] == 4
-        assert (
-            service.config["window"]["batch_size"]
-            == cfg_model_service["window"]["batch_size"]
-        )
-
-    def test_from_checkpoint_raises_when_checkpoint_missing(
-        self, tmp_path: Path
-    ) -> None:
-        missing_path = tmp_path / "missing.ckpt"
-
-        with pytest.raises(FileNotFoundError, match="does not exist"):
-            ModelService.from_checkpoint(DictConfig({}), missing_path)
-
-    def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """Use the CLI config unmerged when no checkpoint-side model_config.yaml exists."""
-        checkpoints_dir = tmp_path / "checkpoints"
-        checkpoints_dir.mkdir(parents=True)
-        checkpoint_path = checkpoints_dir / "model.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        """Warn and use the current config when there is no saved model_config.yaml."""
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True)
+        path = checkpoint_dir / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         # Deliberately do not create a "files/model_config.yaml" alongside it.
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.CommonDataModule", FakeCommonDataModule)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.get_class",
+                "cryocast.model_service.model_service.CommonDataModule",
+                FakeCommonDataModule,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.hydra.utils.get_class",
                 lambda _target: FakeModel,
             )
             mp.setattr(
-                "cryocast.model_service.torch.load", lambda *_a, **_k: {"epoch": 3}
+                "cryocast.model_service.model_service.torch.load",
+                lambda *_a, **_k: {"epoch": 3},
             )
-            service = ModelService.from_checkpoint(cfg_model_service, checkpoint_path)
+            with caplog.at_level(
+                logging.WARNING, logger="cryocast.model_service.checkpoints"
+            ):
+                service = ModelService.from_checkpoint(
+                    cfg_model_service, checkpoint_file
+                )
 
         assert isinstance(service.model, FakeModel)
         assert service.config == cfg_model_service
+        assert "Could not load the checkpoint configuration" in caplog.text
 
     def test_build_run_directory_uses_wandb_sync_dir(self, tmp_path: Path) -> None:
         service = ModelService.__new__(ModelService)
@@ -475,7 +363,8 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "cryocast.model_service.get_wandb_run", lambda _trainer: wandb_run
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: wandb_run,
             )
             result = service.build_run_directory(trainer)
 
@@ -490,11 +379,17 @@ class TestModelService:
         trainer = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
             mp.setattr(
-                "cryocast.model_service.get_timestamp", lambda: "20260101-000000"
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: None,
             )
-            mp.setattr("cryocast.model_service.generate_id", lambda: "abc123")
+            mp.setattr(
+                "cryocast.model_service.model_service.get_timestamp",
+                lambda: "20260101-000000",
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.generate_id", lambda: "abc123"
+            )
             result = service.build_run_directory(trainer)
 
         expected = tmp_path / "training" / "local" / "run-20260101-000000-abc123"
@@ -516,15 +411,15 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: deterministic_enabled,
             )
             mp.setattr(
-                "cryocast.model_service.torch.is_deterministic_algorithms_warn_only_enabled",
+                "cryocast.model_service.model_service.torch.is_deterministic_algorithms_warn_only_enabled",
                 lambda: warn_only_enabled,
             )
             with pytest.raises(ValueError, match=match):
@@ -546,21 +441,29 @@ class TestModelService:
 
         with (
             pytest.MonkeyPatch.context() as mp,
-            caplog.at_level(logging.WARNING, logger="cryocast.model_service"),
+            caplog.at_level(
+                logging.WARNING, logger="cryocast.model_service.model_service"
+            ),
         ):
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 1)
+            mp.setattr(
+                "cryocast.model_service.model_service.suggested_max_num_workers",
+                lambda _n: 1,
+            )
             mp.setattr(
                 service, "build_run_directory", lambda _trainer: tmp_path / "run"
             )
-            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr(
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: None,
+            )
             service.build_trainer(config=config, project="train")
 
         assert "No callbacks have been set" in caplog.text
@@ -596,16 +499,22 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate",
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
                 lambda *_a, **_k: fake_trainer,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 4)
+            mp.setattr(
+                "cryocast.model_service.model_service.suggested_max_num_workers",
+                lambda _n: 4,
+            )
             mp.setattr(service, "build_run_directory", lambda _trainer: run_dir)
-            mp.setattr("cryocast.model_service.get_wandb_run", lambda _trainer: None)
+            mp.setattr(
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: None,
+            )
             result = service.build_trainer(
                 config=config, project="train", job_stage="processor"
             )
@@ -613,7 +522,7 @@ class TestModelService:
         service.data_module_.assign_workers.assert_called_once_with(4)
         assert (run_dir / "files" / "model_config.yaml").exists()
         assert plotting_callback.prefix == "processor"
-        assert checkpoint_callback.dirpath == run_dir / "checkpoints"
+        assert checkpoint_callback.dirpath == str(run_dir / "checkpoints")
         assert (
             enabled_prediction_writer.output_path
             == run_dir / "files" / "predictions.nc"
@@ -665,16 +574,21 @@ class TestModelService:
         with pytest.MonkeyPatch.context() as mp:
             mock_instantiate = MagicMock(side_effect=fake_instantiate)
             mp.setattr(
-                "cryocast.model_service.hydra.utils.instantiate", mock_instantiate
+                "cryocast.model_service.model_service.hydra.utils.instantiate",
+                mock_instantiate,
             )
             mp.setattr(
-                "cryocast.model_service.torch.are_deterministic_algorithms_enabled",
+                "cryocast.model_service.model_service.torch.are_deterministic_algorithms_enabled",
                 lambda: False,
             )
-            mp.setattr("cryocast.model_service.suggested_max_num_workers", lambda _n: 1)
+            mp.setattr(
+                "cryocast.model_service.model_service.suggested_max_num_workers",
+                lambda _n: 1,
+            )
             mp.setattr(service, "build_run_directory", lambda _trainer: run_dir)
             mp.setattr(
-                "cryocast.model_service.get_wandb_run", lambda _trainer: wandb_run
+                "cryocast.model_service.model_service.get_wandb_run",
+                lambda _trainer: wandb_run,
             )
             service.build_trainer(config=config, project="train")
 
@@ -747,7 +661,10 @@ class TestModelService:
             mock_data_module_cls = MagicMock(
                 return_value=FakeCommonDataModule(cfg_model_service)
             )
-            mp.setattr("cryocast.model_service.CommonDataModule", mock_data_module_cls)
+            mp.setattr(
+                "cryocast.model_service.model_service.CommonDataModule",
+                mock_data_module_cls,
+            )
             first = service.data_module
             second = service.data_module
 
@@ -777,7 +694,7 @@ class TestModelService:
         "include_loss", [True, False], ids=["with-loss", "no-loss"]
     )
     def test_fit_configures_model_and_runs_trainer_fit(
-        self, *, include_loss: bool
+        self, tmp_path: Path, *, include_loss: bool
     ) -> None:
         """Apply the training config to the model and delegate to trainer.fit()."""
         service = ModelService.__new__(ModelService)
@@ -796,16 +713,27 @@ class TestModelService:
         trainer = MagicMock()
         trainer.max_epochs = 5
         trainer.num_devices = 1
-        ckpt_path = Path("ckpt.ckpt")
+        path = tmp_path / "model.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_build_trainer = MagicMock(return_value=trainer)
             mp.setattr(service, "build_trainer", mock_build_trainer)
-            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: False)
-            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: False)
-            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: False)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.cuda.is_available",
+                lambda: False,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.mps.is_available",
+                lambda: False,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.xpu.is_available",
+                lambda: False,
+            )
             result = service._fit(
-                config=config, job_stage="processor", ckpt_path=ckpt_path
+                config=config, job_stage="processor", checkpoint_file=checkpoint_file
             )
 
         assert model.optimizer_cfg == "optimizer_cfg"
@@ -817,7 +745,10 @@ class TestModelService:
             config=config, job_stage="processor", project="train"
         )
         trainer.fit.assert_called_once_with(
-            model=model, datamodule=service.data_module_, ckpt_path=ckpt_path
+            model=model,
+            datamodule=service.data_module_,
+            ckpt_path=checkpoint_file.path,
+            weights_only=True,
         )
         assert result is trainer
 
@@ -833,15 +764,33 @@ class TestModelService:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(service, "build_trainer", MagicMock(return_value=trainer))
-            mp.setattr("cryocast.model_service.torch.cuda.is_available", lambda: True)
-            mp.setattr("cryocast.model_service.torch.mps.is_available", lambda: True)
-            mp.setattr("cryocast.model_service.torch.xpu.is_available", lambda: True)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.cuda.is_available",
+                lambda: True,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.mps.is_available",
+                lambda: True,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.xpu.is_available",
+                lambda: True,
+            )
             mock_cuda_empty = MagicMock()
             mock_mps_empty = MagicMock()
             mock_xpu_empty = MagicMock()
-            mp.setattr("cryocast.model_service.torch.cuda.empty_cache", mock_cuda_empty)
-            mp.setattr("cryocast.model_service.torch.mps.empty_cache", mock_mps_empty)
-            mp.setattr("cryocast.model_service.torch.xpu.empty_cache", mock_xpu_empty)
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.cuda.empty_cache",
+                mock_cuda_empty,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.mps.empty_cache",
+                mock_mps_empty,
+            )
+            mp.setattr(
+                "cryocast.model_service.model_service.torch.xpu.empty_cache",
+                mock_xpu_empty,
+            )
             service._fit(config=config)
 
         mock_cuda_empty.assert_called_once_with()
@@ -863,13 +812,14 @@ class TestModelService:
         service.model_ = MagicMock()
         service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
+        service.checkpoint_file = None
 
         with pytest.MonkeyPatch.context() as mp:
             mock_fit = MagicMock()
             mp.setattr(service, "_fit", mock_fit)
             service.train()
 
-        mock_fit.assert_called_once_with(config="train_config", ckpt_path=None)
+        mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
 
     def test_save_stage_checkpoint_saves_when_no_best_checkpoint(
         self, tmp_path: Path
@@ -881,6 +831,12 @@ class TestModelService:
         trainer.global_step = 17
         trainer.checkpoint_callbacks = []
         trainer.is_global_zero = True
+
+        def save_checkpoint(path: Path, **_kwargs: object) -> None:
+            path.parent.mkdir(parents=True)
+            path.write_text("checkpoint")
+
+        trainer.save_checkpoint.side_effect = save_checkpoint
         run_dir = tmp_path / "run"
 
         with pytest.MonkeyPatch.context() as mp:
@@ -889,7 +845,7 @@ class TestModelService:
 
         expected = run_dir / "checkpoints" / "processor.epoch=4-step=17.ckpt"
         trainer.save_checkpoint.assert_called_once_with(expected, weights_only=False)
-        assert result == expected
+        assert result == CheckpointFile(expected)
 
     def test_save_stage_checkpoint_moves_single_best_checkpoint(
         self, tmp_path: Path
@@ -912,7 +868,7 @@ class TestModelService:
             result = service._save_stage_checkpoint(trainer, "decoder")
 
         expected = run_dir / "checkpoints" / "decoder.best.ckpt"
-        assert result == expected
+        assert result == CheckpointFile(expected)
         assert expected.read_text() == "checkpoint"
         trainer.save_checkpoint.assert_not_called()
         trainer.strategy.barrier.assert_called_once_with()
@@ -935,48 +891,25 @@ class TestModelService:
             with pytest.raises(ValueError, match="2 checkpoints"):
                 service._save_stage_checkpoint(trainer, "encoder")
 
-    def test_train_standard_mode_rejects_checkpoint_dir_without_last_ckpt(
-        self, tmp_path: Path
-    ) -> None:
-        """Reject a checkpoint directory with no resumable ``last*.ckpt`` file."""
+    def test_train_resumes_from_loaded_checkpoint(self, tmp_path: Path) -> None:
+        """Resume training from the checkpoint that the model was loaded from."""
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock()
         service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
-
-        with pytest.raises(FileNotFoundError, match=r"last\*.ckpt"):
-            service.train(checkpoint_dir=tmp_path)
-
-    def test_train_standard_mode_resumes_from_last_checkpoint(
-        self, tmp_path: Path
-    ) -> None:
-        """Resume single-stage training from the ``last*.ckpt`` file if present."""
-        service = ModelService.__new__(ModelService)
-        service.model_ = MagicMock()
-        service.model_.multistage_only = False
-        service.config_ = DictConfig({"train": "train_config"})
-        ckpt_path = tmp_path / "last.ckpt"
-        ckpt_path.write_text("checkpoint")
+        path = tmp_path / "last.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
+        service.checkpoint_file = checkpoint_file
 
         with pytest.MonkeyPatch.context() as mp:
             mock_fit = MagicMock()
             mp.setattr(service, "_fit", mock_fit)
-            service.train(checkpoint_dir=tmp_path)
+            service.train()
 
-        mock_fit.assert_called_once_with(config="train_config", ckpt_path=ckpt_path)
-
-    def test_train_delegates_to_multistage_when_requested(self, tmp_path: Path) -> None:
-        service = ModelService.__new__(ModelService)
-        service.model_ = MagicMock()
-        trainer = MagicMock()
-
-        with pytest.MonkeyPatch.context() as mp:
-            mock_train_multistage = MagicMock(return_value=trainer)
-            mp.setattr(service, "train_multistage", mock_train_multistage)
-            result = service.train(checkpoint_dir=tmp_path, multistage=True)
-
-        mock_train_multistage.assert_called_once_with(checkpoint_dir=tmp_path)
-        assert result is trainer
+        mock_fit.assert_called_once_with(
+            config="train_config", checkpoint_file=checkpoint_file
+        )
 
     def test_train_multistage_rejects_non_encode_process_decode_model(self) -> None:
         service = ModelService.__new__(ModelService)
@@ -1046,17 +979,21 @@ class TestModelService:
         decoder_model = MagicMock()
 
         trainer = MagicMock()
-        ckpt_path = tmp_path / "decoder.ckpt"
+        path = tmp_path / "decoder.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=decoder_model)
             mp.setattr(DecoderStage, "from_template", mock_from_template)
             mp.setattr(service, "_fit", MagicMock(return_value=trainer))
             mp.setattr(
-                service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
+                service,
+                "_save_stage_checkpoint",
+                MagicMock(return_value=checkpoint_file),
             )
             mp.setattr(
-                "cryocast.model_service.torch.load",
+                "cryocast.model_service.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "decoder_state"},
             )
             result = service.train_stage_decoder(
@@ -1090,8 +1027,9 @@ class TestModelService:
         service.data_module_.target_variable_indices = [0]
         service.data_module_.mask_directory = tmp_path
         encoder_models: list[EncoderStage] = [MagicMock()]
-        checkpoint_path = tmp_path / "decoder.epoch=2-step=10.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        path = tmp_path / "decoder.epoch=2-step=10.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         loaded_decoder = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
@@ -1102,10 +1040,10 @@ class TestModelService:
             )
 
         mock_load.assert_called_once_with(
-            checkpoint_path,
+            checkpoint_file.path,
             map_location="cpu",
             metrics=[MAE_METRIC_CFG],
-            weights_only=False,
+            weights_only=True,
             decoder=service.config_["model"]["decoder"],
             encoders=encoder_models,
             target_dataset_name="target",
@@ -1151,13 +1089,16 @@ class TestModelService:
         service.data_module_.latitudes = {"input": [0.0]}
         service.data_module_.longitudes = {"input": [0.0]}
 
-        checkpoint_path = tmp_path / "encoder-target.epoch=3-step=9.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        target_path = tmp_path / "encoder-target.epoch=3-step=9.ckpt"
+        target_path.write_text("checkpoint")
+        target_checkpoint_file = CheckpointFile(target_path)
 
         trained_encoder_model = MagicMock()
         loaded_target_model = MagicMock()
         trainer = MagicMock()
-        ckpt_path = tmp_path / "encoder-era5.ckpt"
+        era5_path = tmp_path / "encoder-era5.ckpt"
+        era5_path.write_text("checkpoint")
+        era5_checkpoint_file = CheckpointFile(era5_path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=trained_encoder_model)
@@ -1166,10 +1107,12 @@ class TestModelService:
             mp.setattr(EncoderStage, "load_from_checkpoint", mock_load_from_checkpoint)
             mp.setattr(service, "_fit", MagicMock(return_value=trainer))
             mp.setattr(
-                service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
+                service,
+                "_save_stage_checkpoint",
+                MagicMock(return_value=era5_checkpoint_file),
             )
             mp.setattr(
-                "cryocast.model_service.torch.load",
+                "cryocast.model_service.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "era5_state"},
             )
             result = service.train_stage_encoders(
@@ -1187,11 +1130,13 @@ class TestModelService:
         )
         trained_encoder_model.load_state_dict.assert_called_once_with("era5_state")
 
-        assert mock_load_from_checkpoint.call_args.args == (checkpoint_path,)
+        assert mock_load_from_checkpoint.call_args.args == (
+            target_checkpoint_file.path,
+        )
         load_kwargs = mock_load_from_checkpoint.call_args.kwargs
         assert load_kwargs["map_location"] == "cpu"
         assert load_kwargs["metrics"] == [MAE_METRIC_CFG]
-        assert load_kwargs["weights_only"] is False
+        assert load_kwargs["weights_only"] is True
         assert load_kwargs["latitudes_fn"]() == service.data_module_.latitudes
         assert load_kwargs["longitudes_fn"]() == service.data_module_.longitudes
 
@@ -1344,17 +1289,21 @@ class TestModelService:
         processor_model = MagicMock()
         processor_model.processor.data_space.chw = (4, 8, 8)
         trainer = MagicMock()
-        ckpt_path = tmp_path / "processor.ckpt"
+        path = tmp_path / "processor.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mock_from_template = MagicMock(return_value=processor_model)
             mp.setattr(ProcessorStage, "from_template", mock_from_template)
             mp.setattr(service, "_fit", MagicMock(return_value=trainer))
             mp.setattr(
-                service, "_save_stage_checkpoint", MagicMock(return_value=ckpt_path)
+                service,
+                "_save_stage_checkpoint",
+                MagicMock(return_value=checkpoint_file),
             )
             mp.setattr(
-                "cryocast.model_service.torch.load",
+                "cryocast.model_service.model_service.torch.load",
                 lambda *_a, **_k: {"state_dict": "processor_state"},
             )
             result = service.train_stage_processor(
@@ -1384,8 +1333,9 @@ class TestModelService:
         service.data_module_.mask_directory = tmp_path
         decoder_model = MagicMock()
         target_encoder = MagicMock()
-        checkpoint_path = tmp_path / "processor.epoch=1-step=5.ckpt"
-        checkpoint_path.write_text("checkpoint")
+        path = tmp_path / "processor.epoch=1-step=5.ckpt"
+        path.write_text("checkpoint")
+        checkpoint_file = CheckpointFile(path)
         loaded_processor = MagicMock()
 
         with pytest.MonkeyPatch.context() as mp:
@@ -1399,13 +1349,80 @@ class TestModelService:
             )
 
         mock_load.assert_called_once_with(
-            checkpoint_path,
+            checkpoint_file.path,
             map_location="cpu",
             metrics=[MAE_METRIC_CFG],
-            weights_only=False,
+            weights_only=True,
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
             target_encoder=target_encoder,
             mask_dir=str(tmp_path),
         )
         assert result is loaded_processor
+
+
+def _describe_data(**overrides: object) -> SimpleNamespace:
+    """Describe a model or data module with the attributes that are compared."""
+    attributes: dict[str, object] = {
+        "input_spaces": [DataSpace(5, "input", (20, 20))],
+        "n_forecast_steps": 2,
+        "n_history_steps": 3,
+        "output_space": DataSpace(1, "output", (10, 10)),
+    }
+    return SimpleNamespace(**(attributes | overrides))
+
+
+def _service_with(model: SimpleNamespace, data_module: SimpleNamespace) -> ModelService:
+    """Build a ModelService around a model and a data module."""
+    service = ModelService.__new__(ModelService)
+    service.model_ = model  # type: ignore[assignment]
+    service.data_module_ = data_module  # type: ignore[assignment]
+    return service
+
+
+class TestVerifyModelMatchesData:
+    def test_accepts_matching_data(self) -> None:
+        """Accept data that matches the model."""
+        _service_with(_describe_data(), _describe_data())._verify_model_matches_data()
+
+    def test_ignores_input_order(self) -> None:
+        """Inputs are matched by name, so their order does not matter."""
+        spaces = [DataSpace(5, "a", (20, 20)), DataSpace(2, "b", (20, 20))]
+        service = _service_with(
+            _describe_data(input_spaces=spaces),
+            _describe_data(input_spaces=spaces[::-1]),
+        )
+
+        service._verify_model_matches_data()
+
+    @pytest.mark.parametrize(
+        ("overrides", "match"),
+        [
+            ({"n_history_steps": 2}, "n_history_steps is 3 in the model but 2"),
+            ({"n_forecast_steps": 5}, "n_forecast_steps is 2 in the model but 5"),
+            (
+                {"input_spaces": [DataSpace(4, "input", (20, 20))]},
+                r"input 'input' is DataSpace\(channels=5.* but DataSpace\(channels=4",
+            ),
+            (
+                {
+                    "input_spaces": [
+                        DataSpace(5, "input", (20, 20)),
+                        DataSpace(2, "extra", (20, 20)),
+                    ]
+                },
+                "input 'extra' is missing in the model",
+            ),
+            (
+                {"output_space": DataSpace(2, "output", (10, 10))},
+                r"output is DataSpace\(channels=1.* but DataSpace\(channels=2",
+            ),
+        ],
+        ids=["history", "forecast", "input-channels", "extra-input", "output"],
+    )
+    def test_raises_on_mismatch(self, overrides: dict[str, object], match: str) -> None:
+        """Report how the data differs from the model."""
+        service = _service_with(_describe_data(), _describe_data(**overrides))
+
+        with pytest.raises(ValueError, match=match):
+            service._verify_model_matches_data()

@@ -85,7 +85,7 @@ class TestActivationSaver:
         saver.on_test_batch_end(mock_trainer, mock_module, None, batch, 7)
 
         payload_path = tmp_path / "batch_00007.pt"
-        payload = torch.load(payload_path, weights_only=False)
+        payload = torch.load(payload_path, weights_only=True)
 
         assert payload["batch_idx"] == 7
         assert payload["layer_paths"] == ["0"]

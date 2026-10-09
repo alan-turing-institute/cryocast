@@ -1,5 +1,6 @@
 import re
 import time
+from collections import OrderedDict
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import ModuleType
@@ -10,8 +11,10 @@ import pytest
 import torch
 from lightning import Trainer
 from lightning.pytorch.loggers import WandbLogger
+from omegaconf import DictConfig, ListConfig
 from wandb.wandb_run import Run
 
+from cryocast.types import DataSpace, Hemisphere
 from cryocast.utils import (
     datetime_from_npdatetime,
     get_device_name,
@@ -24,6 +27,7 @@ from cryocast.utils import (
     safe_nanmin,
     sanitise_filename,
     to_list,
+    to_plain_types,
 )
 
 
@@ -305,3 +309,90 @@ class TestSanitiseFilename:
     def test_leaves_safe_characters_unchanged(self) -> None:
         """Leave letters, digits, underscores, periods and hyphens untouched."""
         assert sanitise_filename("Safe-Name_123.png") == "Safe-Name_123.png"
+
+
+class TestToPlainTypes:
+    def test_converts_str_enum_to_its_value(self) -> None:
+        """Replace a StrEnum with its plain string value."""
+        result = to_plain_types(Hemisphere.NORTH)
+
+        assert result == "north"
+        assert type(result) is str
+
+    def test_converts_data_space_to_dict(self) -> None:
+        """Replace a DataSpace with a plain dict that can recreate it."""
+        space = DataSpace(channels=2, name="era5", shape=(432, 432))
+
+        result = to_plain_types(space)
+
+        assert type(result) is dict
+        assert DataSpace.from_dict(result) == space
+
+    def test_converts_path_to_string(self) -> None:
+        """Replace a path with its string form."""
+        result = to_plain_types(Path("a/b"))
+
+        assert result == "a/b"
+        assert type(result) is str
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (DictConfig({"a": 1, "b": "${a}"}), {"a": 1, "b": 1}),
+            (ListConfig([1, {"c": 2}]), [1, {"c": 2}]),
+        ],
+        ids=["dictconfig", "listconfig"],
+    )
+    def test_converts_omegaconf_containers_with_resolution(
+        self, value: object, expected: object
+    ) -> None:
+        """Replace OmegaConf containers with resolved dicts and lists."""
+        result = to_plain_types(value)
+
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_converts_values_nested_in_plain_containers(self) -> None:
+        """Convert values nested inside dicts, lists and tuples, keeping their types."""
+        value = {
+            "spaces": [DictConfig({"name": "era5"})],
+            "pair": (Hemisphere.SOUTH, 1),
+        }
+
+        result = to_plain_types(value)
+
+        assert result == {"spaces": [{"name": "era5"}], "pair": ("south", 1)}
+        assert isinstance(result, dict)
+        assert type(result["spaces"][0]) is dict
+        assert type(result["pair"]) is tuple
+
+    def test_keeps_state_dict_metadata(self) -> None:
+        """Keep a state dict as an OrderedDict with its '_metadata' attribute."""
+        state_dict = torch.nn.BatchNorm1d(2).state_dict()
+
+        result = to_plain_types(state_dict)
+
+        assert type(result) is OrderedDict
+        assert list(result) == list(state_dict)
+        assert result._metadata == state_dict._metadata  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(np.float64(0.5), 0.5), (np.int64(3), 3), (np.bool_(True), True)],  # noqa: FBT003,
+        ids=["float64", "int64", "bool"],
+    )
+    def test_converts_numpy_scalars_to_python_scalars(
+        self, value: np.generic, expected: object
+    ) -> None:
+        """Replace NumPy scalars, which need numpy to unpickle, with Python scalars."""
+        result = to_plain_types(value)
+
+        assert result == expected
+        assert type(result) is type(expected)
+
+    @pytest.mark.parametrize(
+        "value", [1, 0.5, "text", None], ids=lambda v: type(v).__name__
+    )
+    def test_leaves_other_values_unchanged(self, value: object) -> None:
+        """Return values of any other type unchanged."""
+        assert to_plain_types(value) is value

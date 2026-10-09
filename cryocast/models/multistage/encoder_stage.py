@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class EncoderStage(BaseModel):
     def __init__(
         self,
-        data_space_in: DataSpace,
+        data_space_in: DataSpace | DictConfig | dict[str, Any],
         encoder: DictConfig,
         decoder: DictConfig,
         latent_space: tuple[int, int],
@@ -27,6 +27,9 @@ class EncoderStage(BaseModel):
     ) -> None:
         """Initialise an EncoderStage with a trainable encoder and a disposable decoder."""
         super().__init__(**kwargs)
+        # The data space is stored in checkpoints as a plain dict
+        if not isinstance(data_space_in, DataSpace):
+            data_space_in = DataSpace.from_dict(data_space_in)
 
         # This stage trains on a single time step so lead-time weighting is a no-op
         if isinstance(self.loss_fn, LeadTimeWeightedLoss):

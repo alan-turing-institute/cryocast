@@ -27,6 +27,8 @@ from cryocast.models import BaseModel, EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
 
+from .checkpoints import CheckpointFile
+
 log = logging.getLogger(__name__)
 
 
@@ -61,12 +63,21 @@ class ModelService:
             )
         patch_open_file_limit()
 
+        self.checkpoint_file: CheckpointFile | None = None
         self.data_module_: CommonDataModule | None = None
         self.model_: BaseModel | None = None
 
     @classmethod
     def from_config(cls, config: DictConfig) -> "ModelService":
-        """Build a new ModelService by instantiating a model from a configuration."""
+        """Build a new ModelService by instantiating a model from a configuration.
+
+        Args:
+            config: The current configuration.
+
+        Returns:
+            A new ModelService instance with a model built from the provided config.
+
+        """
         # Load the model configuration
         builder = cls(config)
 
@@ -98,42 +109,34 @@ class ModelService:
 
     @classmethod
     def from_checkpoint(
-        cls, config: DictConfig, checkpoint_path: Path
+        cls, config: DictConfig, checkpoint_file: CheckpointFile
     ) -> "ModelService":
-        """Build a new ModelService by loading a model from a checkpoint."""
-        # Verify the checkpoint path
-        if checkpoint_path.is_file():
-            log.debug("Found checkpoint at %s.", checkpoint_path)
-        else:
-            msg = f"Checkpoint file {checkpoint_path} does not exist."
-            raise FileNotFoundError(msg)
+        """Build a new ModelService by loading a model from a checkpoint.
 
-        # Build a combined model configuration where the command line config takes
-        # precedence except for the "model", "train", "variables" and "window" keys
-        # which are related to training the model. The exception to this is
-        # "window.batch_size", which is also taken from the command line config.
-        config_path = checkpoint_path.parent.parent / "files" / "model_config.yaml"
-        try:
-            # Load the model configuration from the checkpoint directory
-            ckpt_config = cls._migrate_legacy_config(config_path)
-            log.debug("Loaded checkpoint configuration from %s.", config_path)
-            combined_cfg = DictConfig(OmegaConf.merge(ckpt_config, config))
-            for key in ("model", "train", "window"):
-                combined_cfg[key] = OmegaConf.merge(
-                    combined_cfg.get(key, {}), ckpt_config.get(key, {})
-                )
-            # We must use the same variables that the checkpoint was trained with
-            if "variables" in ckpt_config:
-                combined_cfg["variables"] = ckpt_config["variables"]
-            # Batch size does not affect the trained model, so this can be overridden
-            if "batch_size" in config.get("window", {}):
-                combined_cfg["window"]["batch_size"] = config["window"]["batch_size"]
-        except (NotADirectoryError, FileNotFoundError):
-            combined_cfg = config
-            log.debug("Could not load checkpoint configuration from %s.", config_path)
+        The model is loaded with the "model", "variables" and "window" configs that
+        it was trained with, apart from "window.batch_size". Everything else is taken
+        from the current config. Calling `train` on the resulting ModelService will
+        resume training from the checkpoint. To resume from a directory of
+        checkpoints, find its checkpoint file with `CheckpointFile.find_last` first.
+
+        Args:
+            config: The current configuration.
+            checkpoint_file: The checkpoint file to load.
+
+        Returns:
+            A new ModelService instance with a model loaded from the provided
+            checkpoint.
+
+        """
+        # Load the checkpoint first, so that an outdated one fails before anything else
+        checkpoint = checkpoint_file.load()
+
+        # Use the config that the checkpoint was trained with, where available
+        combined_cfg = checkpoint_file.merge_config(config)
 
         # Load the model from checkpoint
         builder = cls(combined_cfg)
+        builder.checkpoint_file = checkpoint_file
         model_cls: type[BaseModel] = hydra.utils.get_class(
             builder.config["model"]["_target_"]
         )
@@ -146,50 +149,55 @@ class ModelService:
             if key in builder.config["model"]
         }
         builder.model_ = model_cls.load_from_checkpoint(
-            checkpoint_path,
+            checkpoint_file.path,
             latitudes_fn=lambda: builder.data_module.latitudes,
             longitudes_fn=lambda: builder.data_module.longitudes,
             map_location="cpu",  # Lightning will move this to the correct device
             mask_dir=str(builder.data_module.mask_directory),
             metrics=combined_cfg["reporting"]["metrics"],
-            weights_only=False,
+            weights_only=True,
             **non_checkpoint_kwargs,
         )
-        # Load the current epoch from the checkpoint
-        builder.model_.checkpoint_epoch = torch.load(
-            checkpoint_path, map_location="cpu", weights_only=False
-        ).get("epoch")
+        builder.model_.checkpoint_epoch = checkpoint.get("epoch")
 
+        builder._verify_model_matches_data()
         return builder
 
-    @staticmethod
-    def _migrate_legacy_config(ckpt_config_path: Path) -> DictConfig:
-        """Load a YAML config file, migrating legacy settings to the current format."""
-        ckpt_config = DictConfig(OmegaConf.load(ckpt_config_path))
+    def _verify_model_matches_data(self) -> None:
+        """Check that the data has the shape that the model was trained with.
 
-        # Checkpoints from before 'predict' was split into 'variables' and 'window'
-        # are translated, since the current defaults would otherwise be used.
-        if (predict := ckpt_config.pop("predict", None)) is not None:
-            log.warning(
-                "Checkpoint configuration %s uses the legacy 'predict' key. This "
-                "has been translated into 'variables' and 'window' settings.",
-                ckpt_config_path,
+        Inputs are matched by name, since models look up each input by its name.
+
+        Raises:
+            ValueError: If the input spaces, output space or window lengths differ.
+
+        """
+        model_inputs = {space.name: space for space in self.model.input_spaces}
+        data_inputs = {space.name: space for space in self.data_module.input_spaces}
+        mismatches = [
+            f"input '{name}' is {model_inputs.get(name, 'missing')} in the model but "
+            f"{data_inputs.get(name, 'missing')} in the data"
+            for name in sorted(model_inputs.keys() | data_inputs.keys())
+            if model_inputs.get(name) != data_inputs.get(name)
+        ]
+        if self.model.output_space != self.data_module.output_space:
+            mismatches.append(
+                f"output is {self.model.output_space} in the model but "
+                f"{self.data_module.output_space} in the data"
             )
-            # Legacy checkpoints used every variable from every dataset group as input.
-            # A missing target variable list selected every variable in the target
-            # group, which is expressed as an empty list.
-            target = predict["target"]
-            if "variables" not in ckpt_config:
-                ckpt_config["variables"] = {
-                    "input": {},
-                    "target": {target["group_name"]: target.get("variables", [])},
-                }
-            if "window" not in ckpt_config:
-                ckpt_config["window"] = {
-                    "n_forecast_steps": predict.get("n_forecast_steps", 1),
-                    "n_history_steps": predict.get("n_history_steps", 1),
-                }
-        return ckpt_config
+        mismatches.extend(
+            f"{key} is {getattr(self.model, key)} in the model but "
+            f"{getattr(self.data_module, key)} in the data"
+            for key in ("n_history_steps", "n_forecast_steps")
+            if getattr(self.model, key) != getattr(self.data_module, key)
+        )
+        if mismatches:
+            msg = (
+                "The checkpointed model does not match the configured data: "
+                + "; ".join(mismatches)
+                + ". Check the 'variables' and 'window' settings."
+            )
+            raise ValueError(msg)
 
     @property
     def config(self) -> DictConfig:
@@ -220,7 +228,7 @@ class ModelService:
         model: BaseModel | None = None,
         config: DictConfig,
         job_stage: str | None = None,
-        ckpt_path: Path | None = None,
+        checkpoint_file: CheckpointFile | None = None,
     ) -> Trainer:
         """Build a trainer and run trainer.fit() for the given config and stage.
 
@@ -228,7 +236,7 @@ class ModelService:
             model: Model to train. Defaults to ``self.model`` if not provided.
             config: Job-specific config section (e.g. ``self.config["train"]``).
             job_stage: Label passed to ``MediaLoggingCallback.prefix`` and used in log messages.
-            ckpt_path: Optional checkpoint to load training state from.
+            checkpoint_file: Optional checkpoint file to load training state from.
 
         Returns:
             The trainer after fitting, so callers can save checkpoints or inspect
@@ -254,7 +262,10 @@ class ModelService:
             get_device_name(trainer.accelerator.name()),
         )
         trainer.fit(
-            model=current_model, datamodule=self.data_module, ckpt_path=ckpt_path
+            model=current_model,
+            datamodule=self.data_module,
+            ckpt_path=checkpoint_file.path if checkpoint_file else None,
+            weights_only=True,
         )
 
         # Explicitly release cached device memory rather than delegating this to the
@@ -281,7 +292,9 @@ class ModelService:
             ),
         )
 
-    def _save_stage_checkpoint(self, trainer: Trainer, stage_name: str) -> Path:
+    def _save_stage_checkpoint(
+        self, trainer: Trainer, stage_name: str
+    ) -> CheckpointFile:
         """Save a stage checkpoint at a predictable path.
 
         Args:
@@ -289,13 +302,13 @@ class ModelService:
             stage_name: Name of the training stage (e.g. "encoder-era5").
 
         Returns:
-            The path to the saved checkpoint.
+            The saved checkpoint.
 
         If a best checkpoint is available, it will be moved to the desired path.
 
         """
-        ckpt_dir = self.build_run_directory(trainer) / "checkpoints"
-        ckpt_name = f"{stage_name}.epoch={trainer.current_epoch}-step={trainer.global_step}.ckpt"
+        checkpoint_dir = self.build_run_directory(trainer) / "checkpoints"
+        checkpoint_name = f"{stage_name}.epoch={trainer.current_epoch}-step={trainer.global_step}.ckpt"
         # Check for existing best checkpoints
         best_model_paths = set(
             filter(
@@ -308,21 +321,27 @@ class ModelService:
         )
         if not best_model_paths:
             # Save a new checkpoint at the desired path
-            trainer.save_checkpoint(ckpt_dir / ckpt_name, weights_only=False)
+            trainer.save_checkpoint(
+                checkpoint_dir / checkpoint_name, weights_only=False
+            )
         elif len(best_model_paths) == 1:
             # Move a checkpoint that already exists to the desired path
             best_model_path = Path(best_model_paths.pop())
-            ckpt_name = f"{stage_name}.{best_model_path.name}"
+            checkpoint_name = f"{stage_name}.{best_model_path.name}"
             if trainer.is_global_zero:
-                shutil.move(best_model_path, ckpt_dir / ckpt_name)
+                shutil.move(best_model_path, checkpoint_dir / checkpoint_name)
             # Ensure all ranks see the moved file before proceeding
             trainer.strategy.barrier()
         else:
             msg = f"Cannot determine which of {len(best_model_paths)} checkpoints to save."
             raise ValueError(msg)
         if trainer.is_global_zero:
-            log.info("Saved %s checkpoint to %s.", stage_name, ckpt_dir / ckpt_name)
-        return ckpt_dir / ckpt_name
+            log.info(
+                "Saved %s checkpoint to %s.",
+                stage_name,
+                checkpoint_dir / checkpoint_name,
+            )
+        return CheckpointFile(checkpoint_dir / checkpoint_name)
 
     def build_run_directory(self, trainer: Trainer) -> Path:
         """Get run directory from Wandb or generate one in the same format."""
@@ -460,7 +479,7 @@ class ModelService:
                     callback.__class__.__name__,
                     run_directory / "checkpoints",
                 )
-                callback.dirpath = run_directory / "checkpoints"
+                callback.dirpath = str(run_directory / "checkpoints")
             # Set prediction output path for the prediction writer, if enabled
             if isinstance(callback, PredictionWriter) and callback.enabled:
                 output_path = run_directory / "files" / "predictions.nc"
@@ -493,20 +512,11 @@ class ModelService:
             datamodule=self.data_module,
         )
 
-    def train(
-        self, *, checkpoint_dir: Path | None = None, multistage: bool = False
-    ) -> Trainer:
-        """Train a model.
+    def train(self) -> Trainer:
+        """Train a model in a single stage.
 
-        Args:
-            checkpoint_dir: For multistage training, a directory of existing per-stage
-                checkpoints to skip completed stages. For single-stage training, if the
-                directory contains a ``last*.ckpt`` file, training will resume from it.
-            multistage: Whether to train an ``EncodeProcessDecode`` model in stages.
-
+        If this ModelService was loaded from a checkpoint, training resumes from it.
         """
-        if multistage:
-            return self.train_multistage(checkpoint_dir=checkpoint_dir)
         if self.model.multistage_only:
             msg = (
                 "This model cannot be trained in standard mode. The most likely "
@@ -514,15 +524,13 @@ class ModelService:
                 "training. Use `cryocast train --multistage` instead."
             )
             raise ValueError(msg)
-        ckpt_path = None
-        if checkpoint_dir is not None:
-            matches = sorted(checkpoint_dir.glob("last*.ckpt"))
-            if not matches:
-                msg = f"No resumable checkpoint (last*.ckpt) found in {checkpoint_dir}."
-                raise FileNotFoundError(msg)
-            ckpt_path = matches[-1]
-            log.info("Resuming single-stage training from %s.", ckpt_path)
-        return self._fit(config=self.config["train"], ckpt_path=ckpt_path)
+        if self.checkpoint_file:
+            log.info(
+                "Resuming single-stage training from %s.", self.checkpoint_file.path
+            )
+        return self._fit(
+            config=self.config["train"], checkpoint_file=self.checkpoint_file
+        )
 
     def train_multistage(self, *, checkpoint_dir: Path | None = None) -> Trainer:
         """Train an EncodeProcessDecode model in multiple stages.
@@ -592,22 +600,23 @@ class ModelService:
         if checkpoint_dir is not None and (
             matches := sorted(checkpoint_dir.glob("decoder.epoch=*-step=*.ckpt"))
         ):
-            checkpoint_path = matches[-1]
+            checkpoint_file = CheckpointFile(matches[-1])
             log.info(
                 "Skipping training for decoder. Loaded checkpoint from %s.",
-                checkpoint_path,
+                checkpoint_file.path,
             )
-            return DecoderStage.load_from_checkpoint(
-                checkpoint_path,
-                decoder=self.config["model"]["decoder"],
-                encoders=encoder_models,
-                map_location="cpu",  # Lightning will move this to the correct device
-                mask_dir=str(self.data_module.mask_directory),
-                metrics=self.config["reporting"]["metrics"],
-                target_dataset_name=self.data_module.target_group_name,
-                target_variable_indices=self.data_module.target_variable_indices,
-                weights_only=False,
-            )
+            with checkpoint_file.suggest_upgrade_on_failure():
+                return DecoderStage.load_from_checkpoint(
+                    checkpoint_file.path,
+                    decoder=self.config["model"]["decoder"],
+                    encoders=encoder_models,
+                    map_location="cpu",  # Lightning will move this to the correct device
+                    mask_dir=str(self.data_module.mask_directory),
+                    metrics=self.config["reporting"]["metrics"],
+                    target_dataset_name=self.data_module.target_group_name,
+                    target_variable_indices=self.data_module.target_variable_indices,
+                    weights_only=True,
+                )
 
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
@@ -623,11 +632,9 @@ class ModelService:
             decoder_model.decoder.data_space_out.chw,
         )
         trainer = self._fit(model=decoder_model, config=train_cfg, job_stage="decoder")
-        ckpt_path = self._save_stage_checkpoint(trainer, "decoder")
+        checkpoint_file = self._save_stage_checkpoint(trainer, "decoder")
         # Reload the best weights into the decoder model
-        decoder_model.load_state_dict(
-            torch.load(ckpt_path, weights_only=False)["state_dict"]
-        )
+        decoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
         return decoder_model
 
     def train_stage_encoders(
@@ -657,22 +664,23 @@ class ModelService:
                     checkpoint_dir.glob(f"encoder-{encoder.name}.epoch=*-step=*.ckpt")
                 )
             ):
-                checkpoint_path = matches[-1]
+                checkpoint_file = CheckpointFile(matches[-1])
                 log.info(
                     "Skipping training for encoder '%s'. Loaded checkpoint from %s.",
                     encoder.name,
-                    checkpoint_path,
+                    checkpoint_file.path,
                 )
-                encoder_models.append(
-                    EncoderStage.load_from_checkpoint(
-                        checkpoint_path,
-                        latitudes_fn=lambda: self.data_module.latitudes,
-                        longitudes_fn=lambda: self.data_module.longitudes,
-                        map_location="cpu",  # Lightning will move this to the correct device
-                        metrics=self.config["reporting"]["metrics"],
-                        weights_only=False,
+                with checkpoint_file.suggest_upgrade_on_failure():
+                    encoder_models.append(
+                        EncoderStage.load_from_checkpoint(
+                            checkpoint_file.path,
+                            latitudes_fn=lambda: self.data_module.latitudes,
+                            longitudes_fn=lambda: self.data_module.longitudes,
+                            map_location="cpu",  # Lightning will move this to the correct device
+                            metrics=self.config["reporting"]["metrics"],
+                            weights_only=True,
+                        )
                     )
-                )
                 continue
 
             encoder_model = EncoderStage.from_template(
@@ -694,11 +702,11 @@ class ModelService:
                 config=train_cfg,
                 job_stage=f"encoder-{encoder.name}",
             )
-            ckpt_path = self._save_stage_checkpoint(trainer, f"encoder-{encoder.name}")
-            # Reload the best weights into the encoder model
-            encoder_model.load_state_dict(
-                torch.load(ckpt_path, weights_only=False)["state_dict"]
+            checkpoint_file = self._save_stage_checkpoint(
+                trainer, f"encoder-{encoder.name}"
             )
+            # Reload the best weights into the encoder model
+            encoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
             encoder_models.append(encoder_model)
 
         return encoder_models
@@ -736,21 +744,22 @@ class ModelService:
         if checkpoint_dir is not None and (
             matches := sorted(checkpoint_dir.glob("processor.epoch=*-step=*.ckpt"))
         ):
-            checkpoint_path = matches[-1]
+            checkpoint_file = CheckpointFile(matches[-1])
             log.info(
                 "Skipping training for processor. Loaded checkpoint from %s.",
-                checkpoint_path,
+                checkpoint_file.path,
             )
-            return ProcessorStage.load_from_checkpoint(
-                checkpoint_path,
-                decoder_model=decoder_model,
-                map_location="cpu",  # Lightning will move this to the correct device
-                mask_dir=str(self.data_module.mask_directory),
-                metrics=self.config["reporting"]["metrics"],
-                processor=self.config["model"]["processor"],
-                target_encoder=target_encoder,
-                weights_only=False,
-            )
+            with checkpoint_file.suggest_upgrade_on_failure():
+                return ProcessorStage.load_from_checkpoint(
+                    checkpoint_file.path,
+                    decoder_model=decoder_model,
+                    map_location="cpu",  # Lightning will move this to the correct device
+                    mask_dir=str(self.data_module.mask_directory),
+                    metrics=self.config["reporting"]["metrics"],
+                    processor=self.config["model"]["processor"],
+                    target_encoder=target_encoder,
+                    weights_only=True,
+                )
 
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
@@ -768,9 +777,7 @@ class ModelService:
         trainer = self._fit(
             model=processor_model, config=train_cfg, job_stage="processor"
         )
-        ckpt_path = self._save_stage_checkpoint(trainer, "processor")
+        checkpoint_file = self._save_stage_checkpoint(trainer, "processor")
         # Reload the best weights into the processor model
-        processor_model.load_state_dict(
-            torch.load(ckpt_path, weights_only=False)["state_dict"]
-        )
+        processor_model.load_state_dict(checkpoint_file.load()["state_dict"])
         return processor_model
