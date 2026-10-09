@@ -3,3 +3,9 @@ defaults:
   - /base
   - override /model: cnn_convlstm_cnn
   - _self_
+
+# Custom learning rate and weight decay
+train:
+  optimizer:
+    lr: 5e-04
+    weight_decay: 1e-03
