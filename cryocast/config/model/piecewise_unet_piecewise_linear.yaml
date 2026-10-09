@@ -24,6 +24,8 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
+  kernel_size: 3
+  norm_type: batchnorm
   start_out_channels: 64
 
 decoder:
@@ -32,6 +34,7 @@ decoder:
   conv_subblocks_final: 0
   mask_type: active
   restrict_range: clamp
+  use_hann_window: true
   use_final_normalisation: false
   skip_connection:
     method: none
