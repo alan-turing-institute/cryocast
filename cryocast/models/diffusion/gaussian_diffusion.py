@@ -206,15 +206,4 @@ class GaussianDiffusion:
             self.sqrt_one_minus_alphas_cumprod, t, x_start.shape
         )
 
-        # For t=0, return exactly x_start (no noise)
-        is_t0 = (
-            (t == 0)
-            .to(dtype=x_start.dtype, device=x_start.device)
-            .view(-1, *([1] * (len(x_start.shape) - 1)))
-        )
-
-        noisy = (
-            sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
-        )
-
-        return noisy * (1 - is_t0) + x_start * is_t0
+        return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
