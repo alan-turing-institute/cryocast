@@ -32,11 +32,11 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.ConvLSTMProcessor
-  hidden_channels: 128
+  hidden_channels: 64
   kernel_size: 3
-  n_layers: 2
-  dropout: 0.1
-  residual: true
+  n_layers: 3
+  dropout: 0.0
+  residual: false
 
 decoder:
   _target_: cryocast.models.decoders.CNNDecoder
@@ -47,4 +47,4 @@ decoder:
   restrict_range: sigmoid
   scale_factor: 3
   skip_connection:
-    method: none
+    method: additive
