@@ -41,6 +41,9 @@ class ResidualUpsample(nn.Module):
 
         """
         super().__init__()
+        if factor < 1:
+            msg = f"factor must be >= 1, got {factor}"
+            raise ValueError(msg)
         if pixel_shuffle:
             self.parametric: nn.Module = WeightedUpsample(
                 in_channels, out_channels=out_channels, upsample_factor=factor, **kwargs
