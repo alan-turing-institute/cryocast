@@ -1,6 +1,8 @@
 import logging
+from pathlib import Path
 from typing import Any
 
+import lightning
 import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -86,6 +88,30 @@ class TestEncoderStage:
         self, encoder_stage: EncoderStage
     ) -> None:
         assert set(encoder_stage.validation_metrics.keys()) == {"mae", "rmse", "ssim"}
+
+    def test_checkpoint_loads_with_weights_only(
+        self,
+        encoder_stage: EncoderStage,
+        cfg_metrics: list[dict[str, Any]],
+        tmp_path: Path,
+    ) -> None:
+        """The input data space is saved as a plain dict and restored on loading."""
+        checkpoint_file = tmp_path / "encoder.ckpt"
+        torch.save(
+            {
+                "hyper_parameters": dict(encoder_stage.hparams),
+                "pytorch-lightning_version": lightning.__version__,
+                "state_dict": encoder_stage.state_dict(),
+            },
+            checkpoint_file,
+        )
+
+        loaded = EncoderStage.load_from_checkpoint(
+            checkpoint_file, metrics=cfg_metrics, weights_only=True
+        )
+
+        assert isinstance(encoder_stage.hparams["data_space_in"], dict)
+        assert loaded.encoder.data_space_in == encoder_stage.encoder.data_space_in
 
     def test_dataset_name_returns_input_space_name(
         self, encoder_stage: EncoderStage

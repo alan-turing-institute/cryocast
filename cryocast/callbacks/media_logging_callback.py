@@ -15,6 +15,7 @@ from cryocast.data import CombinedDataset
 from cryocast.models import BaseModel
 from cryocast.types import (
     ArrayTHW,
+    Metadata,
     ModelStepOutput,
     PlotSpec,
     SupportsImageLogging,
@@ -240,13 +241,19 @@ class MediaLoggingCallback(Callback):
         # Use checkpoint epoch during testing and current epoch otherwise
         epoch = pl_module.checkpoint_epoch if trainer.testing else trainer.current_epoch
 
+        # If the model has saved training metadata then use that. If not, then load the
+        # metadata for the current training dataset.
+        training_metadata = pl_module.training_metadata or Metadata.from_dataset(
+            getattr(datamodule, "training_dataset", dataset)
+        )
+
         # Construct a publisher to handle the actual plotting and logging of media.
         publisher = MediaPublisher(
-            dataset=getattr(datamodule, "training_dataset", dataset),
             land_mask=self._land_mask_cache[land_mask_path],
             model_name=self._model_name,
             plot_spec=replace(self._plot_spec, hemisphere=pl_module.hemisphere),
             trained_epochs=None if epoch is None else epoch + 1,
+            training_metadata=training_metadata,
         )
 
         # Load dates from the dataset
