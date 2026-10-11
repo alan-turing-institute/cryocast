@@ -80,3 +80,27 @@ class TestPatchOpenFileLimit:
         monkeypatch.setattr(torch.multiprocessing, "set_sharing_strategy", calls.append)
         patch_open_file_limit()
         assert calls == ["file_system"]
+
+    @pytest.mark.parametrize("error", [RuntimeError, ValueError])
+    def test_warns_if_multiprocessing_sharing_strategy_fails(
+        self,
+        error: type[Exception],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An unavailable sharing strategy warns without failing application startup."""
+        monkeypatch.setattr(
+            resource,
+            "getrlimit",
+            lambda _: (MIN_OPEN_FILE_LIMIT, resource.RLIM_INFINITY),
+        )
+
+        def fail_strategy(_strategy: str) -> None:
+            msg = "sharing strategy not supported"
+            raise error(msg)
+
+        monkeypatch.setattr(
+            torch.multiprocessing, "set_sharing_strategy", fail_strategy
+        )
+        patch_open_file_limit()
+        assert "Could not set torch sharing strategy" in caplog.text
