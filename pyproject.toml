@@ -164,6 +164,7 @@ constraint-dependencies = [
     "eckitlib<=2.1.0.21", # required by anemoi-datasets
     "erddapy!=3.3.0,!=3.3.1", # required by argopy. argopy<=1.4.0 requires erddapy.erddapy._quote_string_constraints which are removed in 3.3.0
     "odclib<=1.6.3.21", # required by anemoi-datasets
+    "urllib3>=2.8.0", # Fixes GitHub advisories: GHSA-pq67-6m6q-mj2v, GHSA-8988-9cw3-xx77, GHSA-qccp-gfcp-xxvc, GHSA-vxq7-64xx-v4gw, GHSA-gm62-xv2j-4w53, GHSA-2xpw-w6gg-jr37, GHSA-38jv-5279-wg99
 ]
 
 [tool.uv.build-backend]
