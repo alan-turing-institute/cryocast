@@ -160,6 +160,7 @@ max-args = 6
 
 [tool.uv]
 constraint-dependencies = [
+    "aiohttp>=3.14.1", # Fixes GitHub advisories: GHSA-2fqr-mr3j-6wp8, GHSA-9x8q-7h8h-wcw9, GHSA-69f9-5gxw-wvc2, GHSA-mqqc-3gqh-h2x8, GHSA-fh55-r93g-j68g, GHSA-54jq-c3m8-4m76, GHSA-2vrm-gr82-f7m5, GHSA-mwh4-6h8g-pg8w, GHSA-966j-vmvw-g2g9, GHSA-4m7w-qmgq-4wj5, GHSA-3wq7-rqq7-wx6j, GHSA-m6qw-4cw2-hm4m, GHSA-hcc4-c3v8-rx92, GHSA-63hf-3vf5-4wqf, GHSA-hpj7-wq8m-9hgp, GHSA-c427-h43c-vf67, GHSA-hg6j-4rv6-33pg, GHSA-jg22-mg44-37j8, GHSA-jj3x-wxrx-4x23, GHSA-g84x-mcqj-x9qq, GHSA-6jhg-hg63-jvvf, GHSA-g3cq-j2xw-wf74, GHSA-4fvr-rgm6-gqmc, GHSA-p998-jp59-783m, GHSA-xcgm-r5h9-7989, GHSA-63hw-fmq6-xxg2, GHSA-m5qp-6w8w-w647, GHSA-w2fm-2cpv-w7v5, GHSA-6mq8-rvhq-8wgg
     "eckitlib<=2.1.0.21", # required by anemoi-datasets
     "erddapy!=3.3.0,!=3.3.1", # required by argopy. argopy<=1.4.0 requires erddapy.erddapy._quote_string_constraints which are removed in 3.3.0
     "odclib<=1.6.3.21", # required by anemoi-datasets
