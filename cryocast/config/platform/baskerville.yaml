@@ -1,6 +1,5 @@
 # @package _global_
 defaults:
-  - override /train/trainer: default  # needed as dawn overrides this
   - _self_
 
 base_path: /bask/projects/v/vjgo8416-ice-frcst/shared/base/
