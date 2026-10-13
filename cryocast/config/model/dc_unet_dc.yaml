@@ -36,6 +36,7 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
+  kernel_size: 3
   norm_type: batchnorm
   start_out_channels: 128
 
