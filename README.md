@@ -103,7 +103,7 @@
 | cryocast/models/common/freezable.py                                |        7 |        0 |    100% |           |
 | cryocast/models/common/gated\_attention.py                         |       52 |       27 |     48% |23-46, 49-50, 92-116, 124-130, 135-136, 139-141 |
 | cryocast/models/common/glumb\_conv.py                              |       23 |        1 |     96% |        71 |
-| cryocast/models/common/lite\_mla.py                                |       30 |        2 |     93% |     44-45 |
+| cryocast/models/common/lite\_mla.py                                |       33 |        2 |     94% |     44-45 |
 | cryocast/models/common/mask.py                                     |       24 |        2 |     92% |     52-56 |
 | cryocast/models/common/normalisations.py                           |       20 |        2 |     90% |     13-14 |
 | cryocast/models/common/normalised\_fold.py                         |       19 |        0 |    100% |           |
@@ -174,7 +174,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      115 |        1 |     99% |       183 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6696** |  **358** | **95%** |           |
+| **TOTAL**                                                          | **6699** |  **358** | **95%** |           |
 
 
 ## Setup coverage badge
