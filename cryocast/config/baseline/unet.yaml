@@ -8,4 +8,4 @@ defaults:
 train:
   optimizer:
     lr: 1.5e-4
-    weight_decay: 1.5e-3
+    weight_decay: 1.5e-2
