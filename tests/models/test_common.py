@@ -177,11 +177,16 @@ class TestGatedAttentionBlock:
 
 
 class TestLiteMLA:
-    def test_fp16_attention_accumulates_without_overflow(self) -> None:
+    @pytest.mark.parametrize("autocast", [False, True], ids=["fp16", "autocast"])
+    def test_fp16_attention_accumulates_without_overflow(
+        self, *, autocast: bool
+    ) -> None:
         attention = LiteMLA(channels=16, heads=1, scales=())
+        # qkv 16x72x72 is 82944 > FP16 max (65504)
         qkv = torch.ones((1, 48, 72, 72), dtype=torch.float16)
 
-        result = attention.relu_linear_attention(qkv)
+        with torch.autocast("cpu", dtype=torch.float16, enabled=autocast):
+            result = attention.relu_linear_attention(qkv)
         reference = attention.relu_linear_attention(qkv.float())
 
         assert result.dtype == torch.float16
