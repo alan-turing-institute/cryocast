@@ -15,12 +15,12 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
-  kernel_size: 7
+  kernel_size: 5
   start_out_channels: 128
 
 decoder:
   _target_: cryocast.models.decoders.NaiveLinearDecoder
   mask_type: active
-  restrict_range: none
+  restrict_range: sigmoid
   skip_connection:
     method: additive
