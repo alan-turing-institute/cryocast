@@ -350,26 +350,23 @@ wheels = [
 
 [[package]]
 name = "argopy"
-version = "1.4.0"
+version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
-    { name = "decorator" },
     { name = "erddapy" },
     { name = "fsspec" },
     { name = "h5netcdf" },
     { name = "netcdf4" },
-    { name = "numpy" },
-    { name = "packaging" },
     { name = "requests" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "toolz" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/29/18/e37edae2d9dc4215d5ffe195f54b790b29a9d52d6141fd1d9d84cd1b3cce/argopy-1.4.0.tar.gz", hash = "sha256:ede418bfed0f17b9011cffe0e1828d99cdc98d850bfa790f68de7be10b6d252e", size = 1449582, upload-time = "2026-01-05T08:40:02.503Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/22/d23218296e149343bf77776a7f5181decf3f9ec31558414ec9708aace7da/argopy-1.5.0.tar.gz", hash = "sha256:6cea4f07ee411eeeaa101787015118484d68dcfc1d2a7d8c90d2723a8d6cdd3a", size = 2032483, upload-time = "2026-10-12T12:22:23.234Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/b0/61ef421a83b2c5eb7d939e6b44bff6a1787811b97765ba4dfdeb15436585/argopy-1.4.0-py3-none-any.whl", hash = "sha256:3234b1dc8f8861093885c677645e069a56d1aa0239db3a0b47f1214b72564df5", size = 1651528, upload-time = "2026-01-05T08:40:01.039Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/80/62ed3c964e3f8eb3eda56ec069670b6472529eb2e5a66bc3f3cfa8e9e9b5/argopy-1.5.0-py3-none-any.whl", hash = "sha256:cc1ebd8f7fa34090b34d18b38908f9d99be66e27065403ce781e13299d256709", size = 4254711, upload-time = "2026-10-12T12:22:21.232Z" },
 ]
 
 [[package]]
@@ -1744,15 +1741,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/f9/4383635281999c3eaa44bf327de523ba42240b35eb87c1130adac4a829c6/debugpy-1.8.22-cp315-cp315-win32.whl", hash = "sha256:225d063f81708c2546999e7edfac0198b2d5c2f144797dc64858f867948633e0", size = 5359469, upload-time = "2026-09-15T21:44:43.234Z" },
     { url = "https://files.pythonhosted.org/packages/7b/14/4fe9f46a9c825c8cbc6dc4aebc2a885b0bceb37ce2a37699c170482e7a40/debugpy-1.8.22-cp315-cp315-win_amd64.whl", hash = "sha256:b17a4896520f1c6da09ce76ec8215df0b85b0b6f3617526a4c65c2315340875a", size = 5397869, upload-time = "2026-09-15T21:44:44.783Z" },
     { url = "https://files.pythonhosted.org/packages/56/3d/c7dc9f35bc9e22cdb53679f844bee40fd5cff871862f60595869a433400d/debugpy-1.8.22-py2.py3-none-any.whl", hash = "sha256:a9e9d3550e15ca479c59333e90845029190531f0cacfedab3b815a57bd913947", size = 5374857, upload-time = "2026-09-15T21:44:54.454Z" },
-]
-
-[[package]]
-name = "decorator"
-version = "5.3.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/60/8b/32f9823da46cde7df2087faa08cd98d01b908f8dcab982cdba9c84e85355/decorator-5.3.1.tar.gz", hash = "sha256:4cbcdd55a6efadb9dbea26b858f4fb3264567b52d69ca0d25b721b553f60ea82", size = 58084, upload-time = "2026-05-18T06:03:28.057Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl", hash = "sha256:f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c", size = 10365, upload-time = "2026-05-18T06:03:26.517Z" },
 ]
 
 [[package]]
@@ -8027,16 +8015,16 @@ wheels = [
 
 [[package]]
 name = "xarray"
-version = "2025.9.0"
+version = "2026.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
     { name = "pandas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4e/0b/bbb76e05c8e2099baf90e259c29cafe6a525524b1d1da8bfbc39577c043e/xarray-2025.9.0.tar.gz", hash = "sha256:7dd6816fe0062c49c5e9370dd483843bc13e5ed80a47a9ff10baff2b51e070fb", size = 3040318, upload-time = "2025-09-04T04:20:26.296Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/f5/781c70b234f54e0401f4f7c4427a7486da38d50dbb138c7d7c55144b3d86/xarray-2026.9.0.tar.gz", hash = "sha256:6abc69694c22fa1f0fb2f357ff4e41d88beb4477ed71091f944b7dbf67ed54fe", size = 3176922, upload-time = "2026-09-29T23:06:25.807Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/f0/73c24457c941b8b08f7d090853e40f4b2cdde88b5da721f3f28e98df77c9/xarray-2025.9.0-py3-none-any.whl", hash = "sha256:79f0e25fb39571f612526ee998ee5404d8725a1db3951aabffdb287388885df0", size = 1349595, upload-time = "2025-09-04T04:20:24.36Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/44/3159af4fb3c868970a412e294320ed6bb1a9fbdfa6431050eda8e0b34b6e/xarray-2026.9.0-py3-none-any.whl", hash = "sha256:fe349fa871628b1a0a5217af3fe1283a2862d5485156e6eda354fffb81c3bb7c", size = 1445445, upload-time = "2026-09-29T23:06:23.686Z" },
 ]
 
 [[package]]
