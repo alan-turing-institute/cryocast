@@ -9,6 +9,7 @@ train:
   multistage:
     finetune:
       optimizer:
-        lr: 1e-4  # set to lower than for the other stages
+        lr: 1e-5  # set to lower than for the other stages
   optimizer:
-    lr: 5e-4  # default lr (5e-3) causes chronic training instability for ResBlocks
+    lr: 5e-5
+    weight_decay: 1e-06
