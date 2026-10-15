@@ -6,6 +6,7 @@ import typer
 
 from cryocast.compatibility import configure_external_libraries
 
+from .checkpoint import checkpoint_cli
 from .datasets import datasets_cli
 from .evaluate import evaluation_cli
 from .feature_importance import feature_importance_cli
@@ -31,6 +32,7 @@ app = typer.Typer(
     help="Entrypoint for CryoCast CLI application.",
     no_args_is_help=True,
 )
+app.add_typer(checkpoint_cli, name="checkpoint")
 app.add_typer(datasets_cli, name="datasets")
 app.add_typer(evaluation_cli)
 app.add_typer(feature_importance_cli)
