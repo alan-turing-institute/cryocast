@@ -11,15 +11,15 @@ If you are using CryoCast for the first time, follow the core pages in order: in
 3. [Data](data.md) describes the OSI SAF, ERA5, and Argo data used by CryoCast, including coverage, variables, and dataset organisation.
 4. [Commands](commands.md) documents the `cryocast` CLI for dataset preparation, inspection, training, sweeps, evaluation, and feature importance.
 
-A typical local workflow then follows this pattern:
+After creating `cryocast/config/my.local.yaml` as described in [Configuration](configuration.md), a typical local workflow is:
 
 ```bash
-uv run cryocast datasets create --config-name <your-config>
-uv run cryocast train --config-name <your-config>
-uv run cryocast evaluate --checkpoint <path-to-checkpoint> --config-name <your-config>
+uv run cryocast datasets create --config-name my.local
+uv run cryocast train --config-name my.local
+uv run cryocast evaluate --checkpoint /path/to/checkpoint.ckpt --config-name my.local
 ```
 
-See the individual command and configuration pages for the required options and environment-specific setup.
+Replace the example checkpoint path with a checkpoint produced by training. See the individual command and configuration pages for the required options and environment-specific setup.
 
 ## Guide contents
 
