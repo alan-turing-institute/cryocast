@@ -94,7 +94,9 @@ def _build_model(
     decoder_payload.update(decoder_extra or {})
     decoder = DictConfig(decoder_payload)
     # Omit rollout_space when unset so the tests exercise the model's own default.
-    rollout_kwargs = {} if rollout_space is None else {"rollout_space": rollout_space}
+    rollout_kwargs: dict[str, Any] = (
+        {} if rollout_space is None else {"rollout_space": rollout_space}
+    )
     torch.manual_seed(seed)
     return EncodeProcessDecode(
         name="cnn-null-cnn",
