@@ -232,6 +232,26 @@ class TestPeriods:
         ]
 
 
+class TestTargetOffset:
+    """Target offsets support contemporaneous downscaling windows."""
+
+    def test_defaults_to_history_steps(
+        self, cfg_common_data_module: DictConfig
+    ) -> None:
+        dm = CommonDataModule(cfg_common_data_module)
+        assert dm.target_offset_steps == dm.n_history_steps == 1
+
+    def test_can_be_contemporaneous(self, cfg_common_data_module: DictConfig) -> None:
+        cfg_common_data_module["window"]["target_offset_steps"] = 0
+        dm = CommonDataModule(cfg_common_data_module)
+        assert dm.target_offset_steps == 0
+
+    def test_negative_value_rejected(self, cfg_common_data_module: DictConfig) -> None:
+        cfg_common_data_module["window"]["target_offset_steps"] = -1
+        with pytest.raises(ValueError, match="target_offset_steps"):
+            CommonDataModule(cfg_common_data_module)
+
+
 class TestInTrainPeriods:
     """`_in_train_periods` decides which dates the climatology average may include.
 

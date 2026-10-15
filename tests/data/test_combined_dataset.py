@@ -174,6 +174,39 @@ class TestCombinedDataset:
         steps = combined.get_history_steps(dates_as_np[0])
         assert steps == [dates_as_np[0], dates_as_np[1], dates_as_np[2]]
 
+    def test_contemporaneous_target_offset(
+        self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
+    ) -> None:
+        """A zero target offset pairs low- and high-resolution data on the same date."""
+        source = SingleDataset(name="source", input_files=[mock_dataset])
+        target = SingleDataset(name="target", input_files=[mock_dataset])
+        combined = CombinedDataset(
+            datasets=[source, target],
+            target_group_name="target",
+            target_variables=["ice_conc"],
+            n_history_steps=1,
+            n_forecast_steps=1,
+            target_offset_steps=0,
+        )
+
+        assert combined.get_forecast_steps(dates_as_np[0]) == [dates_as_np[0]]
+        batch = combined[0]
+        np.testing.assert_array_equal(
+            batch["target"],
+            combined.target.get_tchw([dates_as_np[0]]),
+        )
+
+    def test_negative_target_offset_rejected(self, mock_dataset: Path) -> None:
+        """Targets cannot start before the input window."""
+        dataset = SingleDataset(name="target", input_files=[mock_dataset])
+        with pytest.raises(ValueError, match="target_offset_steps"):
+            CombinedDataset(
+                datasets=[dataset],
+                target_group_name="target",
+                target_variables=["ice_conc"],
+                target_offset_steps=-1,
+            )
+
     def test_get_forecast_steps(
         self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
     ) -> None:

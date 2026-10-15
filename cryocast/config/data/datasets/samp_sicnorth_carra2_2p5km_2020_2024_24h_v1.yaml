@@ -1,0 +1,59 @@
+samp-sicnorth-carra2-2p5km-2020-2024-24h-v1:
+  name: samp-sicnorth-carra2-2p5km-2020-2024-24h-v1
+  group_as: sic-carra2
+  description: CARRA2 sea ice concentration for the Svalbard downscaling region
+  attribution: Copernicus Climate Change Service (C3S) / ECMWF
+  licence: CC-BY-4.0
+
+  dates:
+    start: '2020-01-01T12:00:00'
+    end: '2024-07-31T12:00:00'
+    frequency: 24h
+    # Match the sample split while avoiding downloads for unused periods.
+    missing:
+    - start: 2022-01-01T12:00:00
+      end: 2022-06-30T12:00:00
+    - start: 2022-08-01T12:00:00
+      end: 2022-12-31T12:00:00
+    - start: 2023-02-01T12:00:00
+      end: 2023-12-31T12:00:00
+    - start: 2024-02-01T12:00:00
+      end: 2024-06-30T12:00:00
+
+  postprocessors:
+    finite_value_masks:
+      _target_: cryocast.ingestion.postprocessors.FiniteValueMaskGenerator
+      variable: ice_conc
+
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
+  input:
+    pipe:
+      - cds:
+          dataset: reanalysis-pan-carra
+          time_from_dates: true
+          request:
+            level_type: single_levels
+            variable: [sea_ice_area_fraction]
+            product_type: analysis
+            data_format: grib
+            # Svalbard ROI. CDS area order: north / west / south / east.
+            area:
+              - ${data.roi.north}
+              - ${data.roi.west}
+              - ${data.roi.south}
+              - ${data.roi.east}
+      # The CDS service currently returns the native full CARRA2 grid even when an
+      # area is requested, so enforce the ROI before storing the Anemoi dataset.
+      - crop-latlon:
+          north: ${data.roi.north}
+          west: ${data.roi.west}
+          south: ${data.roi.south}
+          east: ${data.roi.east}
+          resolution: 2p5km
+      # Match the existing sea-ice target variable name used by CryoCast.
+      - rename:
+          param:
+            ci: ice_conc
