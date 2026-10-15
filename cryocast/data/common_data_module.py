@@ -63,6 +63,7 @@ class CommonDataModule(LightningDataModule):
         # Set history and forecast steps
         self.n_forecast_steps = int(config["window"].get("n_forecast_steps", 1))
         self.n_history_steps = int(config["window"].get("n_history_steps", 1))
+        self.include_forecast_inputs_in_training = False
 
         # Set common arguments for the dataloader
         self._common_dataloader_kwargs = DataloaderArgs(
@@ -267,6 +268,9 @@ class CommonDataModule(LightningDataModule):
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
+            include_forecast_inputs=(
+                stage == "training" and self.include_forecast_inputs_in_training
+            ),
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":
@@ -307,6 +311,13 @@ class CommonDataModule(LightningDataModule):
             {str(k): None if v is None else str(v) for k, v in period.items()}
             for period in periods
         ]
+
+    def set_training_forecast_inputs(self, *, enabled: bool) -> None:
+        """Control whether training batches include future values for every input group."""
+        if self.include_forecast_inputs_in_training == enabled:
+            return
+        self.include_forecast_inputs_in_training = enabled
+        self.__dict__.pop("training_dataset", None)
 
     def assign_workers(self, n_workers: int) -> None:
         """Assign number of workers for data loading."""
