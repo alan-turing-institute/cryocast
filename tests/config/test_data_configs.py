@@ -54,3 +54,38 @@ class TestDataConfigs:
             )[0]
             assert statistics_end_date == training_end
             assert statistics_end_date < earliest_held_out
+
+    def test_downscaling_north_defines_svalbard_roi_and_carra2_target(
+        self, compose_config: Callable[..., DictConfig]
+    ) -> None:
+        """The downscaling data config pins one reproducible CARRA2 ROI."""
+        config = compose_config("sample", overrides=["data=downscaling_north"])
+
+        assert config.data.roi.name == "svalbard"
+        assert config.data.roi.crs == "EPSG:4326"
+        assert [
+            config.data.roi.north,
+            config.data.roi.west,
+            config.data.roi.south,
+            config.data.roi.east,
+        ] == [81.0, 15.0, 76.0, 35.0]
+
+        assert len(config.data.datasets) == 1
+        dataset = next(iter(config.data.datasets.values()))
+        assert dataset.group_as == "sic-carra2"
+        cds = dataset.input.pipe[0].cds
+        assert cds.dataset == "reanalysis-pan-carra"
+        assert cds.time_from_dates is True
+        assert list(cds.request.area) == [81.0, 15.0, 76.0, 35.0]
+        assert list(cds.request.variable) == ["sea_ice_area_fraction"]
+        assert cds.request.product_type == "analysis"
+        assert cds.request.data_format == "grib"
+        crop = dataset.input.pipe[1]["crop-latlon"]
+        assert crop.resolution == "2p5km"
+        assert [crop.north, crop.west, crop.south, crop.east] == [
+            81.0,
+            15.0,
+            76.0,
+            35.0,
+        ]
+        assert dataset.dates.start.endswith("T12:00:00")
