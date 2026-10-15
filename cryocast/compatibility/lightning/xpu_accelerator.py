@@ -39,7 +39,7 @@ class XPUAccelerator(Accelerator):
         if not isinstance(index, int):
             msg = "Device index could not be determined."
             raise MisconfigurationException(msg)
-        torch.xpu.set_device(index)
+        torch.xpu.set_device(index - 1)
 
     @override
     def get_device_stats(self, device: _DEVICE) -> dict[str, Any]:

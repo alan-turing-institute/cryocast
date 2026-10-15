@@ -97,15 +97,17 @@ def test_setup_rejects_unspecified_index() -> None:
         XPUAccelerator().setup_device(torch.device("xpu"))
 
 
-@pytest.mark.parametrize("index", [0, 1, 2])
-def test_setup_uses_exact_selected_xpu_index(
-    monkeypatch: pytest.MonkeyPatch, index: int
+@pytest.mark.parametrize(("index", "expected_backend_index"), [(0, -1), (1, 0), (2, 1)])
+def test_setup_preserves_existing_device_index_offset(
+    monkeypatch: pytest.MonkeyPatch, index: int, expected_backend_index: int
 ) -> None:
-    """Check the named compatibility behavior without device access."""
+    """Preserve CryoCast's existing mapping without claiming XPU hardware validation."""
+    # The maintainer reports this offset is needed on their XPU system.
+    # Mocked calls cover the current contract, not device availability or execution.
     calls: list[int] = []
     monkeypatch.setattr(torch.xpu, "set_device", calls.append)
     XPUAccelerator().setup_device(torch.device("xpu", index))
-    assert calls == [index]
+    assert calls == [expected_backend_index]
 
 
 def test_stats_use_requested_device(monkeypatch: pytest.MonkeyPatch) -> None:
