@@ -63,6 +63,10 @@ class CommonDataModule(LightningDataModule):
         # Set history and forecast steps
         self.n_forecast_steps = int(config["window"].get("n_forecast_steps", 1))
         self.n_history_steps = int(config["window"].get("n_history_steps", 1))
+        self.step_stride = int(config["window"].get("step_stride", 1))
+        if self.step_stride < 1:
+            msg = f"window.step_stride must be at least 1, got {self.step_stride}."
+            raise ValueError(msg)
 
         # Set common arguments for the dataloader
         self._common_dataloader_kwargs = DataloaderArgs(
@@ -264,6 +268,7 @@ class CommonDataModule(LightningDataModule):
             [ds.subset(date_ranges=periods) for ds in self.datasets.values()],
             n_forecast_steps=self.n_forecast_steps,
             n_history_steps=self.n_history_steps,
+            step_stride=self.step_stride,
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
