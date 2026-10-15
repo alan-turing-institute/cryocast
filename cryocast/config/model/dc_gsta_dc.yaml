@@ -44,11 +44,11 @@ encoders:
 processor:
   _target_: cryocast.models.processors.GSTAProcessor
   dilation: 3
-  drop_path_prob: 0.1
+  drop_path_prob: 0.0
   hid_channels: 128
-  kernel_size: 15
+  kernel_size: 17
   mlp_ratio: 8.0
-  n_blocks: 6
+  n_blocks: 5
 
 decoder:
   _target_: cryocast.models.decoders.DeepCompressionDecoder
@@ -56,7 +56,7 @@ decoder:
   hid_channels: [64, 128]
   hid_blocks: [2, 2]
   mask_type: active
-  pixel_shuffle: true
+  pixel_shuffle: false
   restrict_range: sigmoid
   stride: 3
   skip_connection:
