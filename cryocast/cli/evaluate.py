@@ -8,7 +8,7 @@ import typer
 from omegaconf import DictConfig
 
 from cryocast.evaluation import compare_downscaler
-from cryocast.model_service import ModelService
+from cryocast.model_service import CheckpointFile, ModelService
 from cryocast.models import Downscaler
 
 from .hydra import hydra_adaptor
@@ -89,7 +89,8 @@ def evaluate(
             "enabled"
         ] = True
 
-    model = ModelService.from_checkpoint(config, Path(checkpoint).resolve())
+    checkpoint_file = CheckpointFile(checkpoint)
+    model = ModelService.from_checkpoint(config, checkpoint_file)
     model.evaluate()
 
 
@@ -123,7 +124,7 @@ def evaluate_downscaling(
     ] = None,
 ) -> None:
     """Compare a trained downscaler with its geographic interpolation baseline."""
-    service = ModelService.from_checkpoint(config, Path(checkpoint).resolve())
+    service = ModelService.from_checkpoint(config, CheckpointFile(checkpoint))
     if not isinstance(service.model, Downscaler):
         msg = (
             "evaluate-downscaling requires a Downscaler checkpoint, got "
