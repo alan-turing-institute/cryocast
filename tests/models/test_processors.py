@@ -645,8 +645,8 @@ class TestDDPMProcessor:
         loss.backward()
         optimizer.step()
 
-        checkpoint_path = tmp_path / "processor.pt"
-        torch.save(trained.state_dict(), checkpoint_path)
+        checkpoint_file = tmp_path / "processor.pt"
+        torch.save(trained.state_dict(), checkpoint_file)
 
         # Load into a processor with a different sampler setting. Strict loading
         # fails if the sampler setting added or removed any saved keys.
@@ -654,7 +654,7 @@ class TestDDPMProcessor:
             n_forecast_steps=1, n_history_steps=1, use_autoregressive=False
         )
         restored.set_sampler(ddim_steps=infer_ddim_steps, eta=infer_eta)
-        restored.load_state_dict(torch.load(checkpoint_path))
+        restored.load_state_dict(torch.load(checkpoint_file))
 
         restored_state = restored.state_dict()
         for name, tensor in trained.state_dict().items():
