@@ -90,7 +90,7 @@ Predictions can be saved in NetCDF format during evaluation using `cryocast eval
 ### Evaluation Statement
 - Evaluation metrics: `sieerror (mean)`, `rmse (mean)`, `mae (mean)`, with a 15% sea ice threshold used for ice-edge classification
 - Model comparison: simple UNet, persistence
-- Key findings: pending project-team completion
+- Key findings: No comparative forecast-skill conclusions are reported in this card yet. The project team will add results once the benchmark evidence has been reviewed.
 
 ### Rationale for Current TRL
 The CryoCast system has made substantial progress through TRL 2, with optimised code, unit tests, initial curated datasets for in-situ data, and a basic software architecture established. Notably, several TRL 3 coding checkpoints have already been completed, including modular/reusable code structures and integration tests for module robustness. To complete TRL 2, preliminary benchmarking and evaluation results will be written up for publication.
