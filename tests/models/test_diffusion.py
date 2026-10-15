@@ -4,9 +4,32 @@ import pytest
 import torch
 
 from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
+from cryocast.types import BetaSchedule
 
 
 class TestGaussianDiffusion:
+    @pytest.mark.parametrize("timesteps", [50, 150, 1000])
+    def test_linear_schedule_reaches_low_terminal_snr(self, timesteps: int) -> None:
+        diffusion = GaussianDiffusion(
+            timesteps=timesteps, beta_schedule=BetaSchedule.LINEAR
+        )
+        alpha_bar_terminal = diffusion.alphas_cumprod[-1]
+        terminal_snr = alpha_bar_terminal / (1.0 - alpha_bar_terminal)
+
+        assert terminal_snr < 1e-3
+
+    @pytest.mark.parametrize("timesteps", [1, 2, 4])
+    def test_linear_schedule_betas_remain_valid_for_short_chains(
+        self, timesteps: int
+    ) -> None:
+        diffusion = GaussianDiffusion(
+            timesteps=timesteps, beta_schedule=BetaSchedule.LINEAR
+        )
+
+        assert torch.all(diffusion.betas > 0)
+        assert torch.all(diffusion.betas < 1)
+        assert torch.all(torch.diff(diffusion.betas) >= 0)
+
     def test_q_sample_t0_returns_clean_input(self) -> None:
         diffusion = GaussianDiffusion(timesteps=4)
         clean = torch.randn(2, 1, 4, 4)
