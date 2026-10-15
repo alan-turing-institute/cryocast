@@ -23,7 +23,33 @@ parameter documentation; this page summarises how to choose between them.
 | `mae` | absolute residual | fully outlier-robust; constant gradient | non-smooth at zero; weak signal on small errors |
 | `rmse` | `sqrt(MSE + eps)` | interpretable in target units | same optimum as MSE; gradient rescaled by the running loss value |
 | `smooth_l1` | Huber variant with `beta` transition | as Huber; PyTorch-native parameterisation | as Huber |
+| `uncertainty_weighted` | Huber weighted by inverse observational variance | directly uses SSMIS target uncertainty and reduces the influence of less-certain observations | currently supports a single predicted target variable and requires the configured uncertainty variable in the target dataset |
 | `amse` (default) | spectral anti-blur loss (Subich et al. 2025, arXiv:2501.19374, flat-grid adaptation) | removes the "double penalty": matching the target's power spectrum per scale band is optimal at any coherence, so partially-predictable fine scales are no longer rewarded for being damped | more expensive than pointwise losses (FFT per step); `hybrid` mode introduces `spectral_weight` to calibrate |
+
+## Using SIC observation uncertainty
+
+Directly downloaded SSMIS datasets include `total_standard_uncertainty`, which is
+rescaled to a fraction during ingestion. `loss=uncertainty_weighted` reads that
+variable for the same dates as the forecast target and computes a Huber loss weighted
+by `sigma^-power` (inverse variance when `power=2`). The weighted mean is normalised by
+the sum of weights. A common positive rescaling of valid uncertainties therefore does
+not change the objective unless it moves values across the configured clipping or
+validity thresholds.
+
+```bash
+imp train --config-name <config> loss=uncertainty_weighted
+```
+
+The default configuration uses `power=2`, clips very small valid uncertainties at
+`0.01`, and excludes non-finite, non-positive, or sentinel-like values above `1.0`.
+If every uncertainty value in a batch is invalid, the loss falls back to ordinary
+Huber loss for that batch rather than producing `NaN`.
+
+The loss receives uncertainty through a separate `target_uncertainty` batch field.
+This does not add a new model-input channel or metric; any uncertainty already present
+among a dataset group's ordinary input variables is unchanged. At present this loss
+supports exactly one predicted target variable, which matches the standard SIC
+configuration.
 
 ## Why an anti-blur loss exists (the double penalty, in two sentences)
 
