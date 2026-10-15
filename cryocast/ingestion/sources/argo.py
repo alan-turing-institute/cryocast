@@ -5,6 +5,7 @@ from typing import ClassVar
 
 import numpy as np
 import xarray as xr
+from aiohttp import ClientConnectorError
 from anemoi.datasets.create.input.context import Context
 from anemoi.datasets.create.source import Source
 from anemoi.datasets.create.sources import source_registry
@@ -214,7 +215,7 @@ def _fetch_argo_dataframe_with_retry(
     for attempt in range(1, max_attempts + 1):
         try:
             return argopy.DataFetcher().region(region + time_window).to_dataframe()
-        except (FileNotFoundError, TimeoutError) as exc:
+        except (ClientConnectorError, FileNotFoundError, OSError, TimeoutError) as exc:
             # Annoyingly, both 50x errors and 404 errors raise a FileNotFoundError and
             # the error message does not contain the HTTP status code so we need to
             # retry both cases.
