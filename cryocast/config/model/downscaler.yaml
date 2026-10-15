@@ -1,0 +1,9 @@
+_target_: cryocast.models.Downscaler
+
+name: downscaler
+source_group_name: sic-osisaf
+source_variable: ice_conc
+source_crs: EPSG:6931
+hidden_channels: 32
+n_residual_blocks: 4
+residual_scale: 0.25
