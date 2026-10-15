@@ -73,6 +73,16 @@ late-lead RMSE was 12.5% lower. Mean and late-lead absolute SIE error were about
 lower with BatchNorm. GroupNorm was slightly better on RMSE at the earliest leads, but
 that advantage disappeared by lead 6 and did not reduce late-rollout drift.
 
+The figures below plot the per-lead means from the two-seed comparison. They are
+visualisations of the table, not additional experiments or evidence of converged
+training. Seed-level variation was not recorded, so no confidence intervals are shown.
+The plotted values are also available as a
+[CSV](../assets/norm-evaluation-575-daily.csv) for independent inspection.
+
+![14-day sea-ice concentration RMSE by forecast lead for BatchNorm, GroupNorm and persistence](../assets/norm-evaluation-575-rmse.svg)
+
+![14-day absolute sea-ice extent error by forecast lead for BatchNorm, GroupNorm and persistence](../assets/norm-evaluation-575-sie.svg)
+
 The per-lead cross-seed means were:
 
 | Lead | BatchNorm RMSE | GroupNorm RMSE | Persistence RMSE | BatchNorm abs. SIE (km²) | GroupNorm abs. SIE (km²) | Persistence abs. SIE (km²) |
