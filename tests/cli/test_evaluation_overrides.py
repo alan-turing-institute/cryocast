@@ -113,6 +113,43 @@ def test_model_path_parser_handles_hydra_add_delete_and_group_overrides() -> Non
     }
 
 
+def test_nested_hydra_model_group_paths_are_recognised() -> None:
+    """Hydra group override names use slashes rather than config-node dots."""
+    assert _requested_model_paths(
+        (
+            "model/processor=ddpm",
+            "+model/encoder@model.encoder=naive",
+            "~model/decoder",
+            "window/history=extended",
+        )
+    ) == {
+        "model.processor": False,
+        "model.encoder": False,
+        "model.decoder": True,
+    }
+
+
+def test_nested_processor_group_change_warns_when_checkpoint_wins(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A group-level processor change must not silently disappear at evaluation."""
+    service = _service()
+    request = _request()
+    request.model.processor._target_ = "cryocast.models.processors.AlternativeProcessor"
+
+    with caplog.at_level(logging.WARNING):
+        apply_evaluation_model_overrides(
+            service,
+            request,
+            HydraInvocation("sample", ("model/processor=alternative",)),
+        )
+
+    assert "Ignoring evaluation override 'model.processor'" in caplog.text
+    assert service.config.model.processor._target_ == (
+        "cryocast.models.processors.DiffusionProcessor"
+    )
+
+
 def test_implicit_default_config_does_not_warn_about_checkpoint_differences(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

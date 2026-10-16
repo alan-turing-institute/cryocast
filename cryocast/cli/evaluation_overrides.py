@@ -31,8 +31,10 @@ def _requested_model_paths(overrides: tuple[str, ...]) -> dict[str, bool]:
     requested: dict[str, bool] = {}
     for override in overrides:
         # Hydra accepts model.foo=bar, +model.foo=bar, ++model.foo=bar
-        # and ~model.foo (deletion). Group selections use model=variant.
-        key = override.partition("=")[0].lstrip("+~").split("@", maxsplit=1)[0]
+        # and ~model.foo (deletion). Group selections use model=variant
+        # or model/processor=variant (nested Hydra config groups).
+        group_key = override.partition("=")[0].lstrip("+~").split("@", maxsplit=1)[0]
+        key = group_key.replace("/", ".")
         if key == "model" or key.startswith("model."):
             requested[key] = override.startswith("~")
     return requested
