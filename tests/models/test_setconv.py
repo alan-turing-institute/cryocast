@@ -258,3 +258,82 @@ class TestSetConvCNN:
                 hidden_channels=hidden_channels,
                 lengthscale=0.2,
             )
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("with_time", [False, True])
+def test_low_precision_gridding_matches_float32(
+    dtype: torch.dtype, *, with_time: bool
+) -> None:
+    """Half inputs retain their dtype while kernel arithmetic stays stable."""
+    shape = (1, 2, 2, 1) if with_time else (1, 2, 1)
+    values = torch.full(shape, 3.0, dtype=dtype, requires_grad=True)
+    positions = torch.zeros((*shape[:-1], 2), dtype=dtype, requires_grad=True)
+    grid = torch.tensor([[[0.0, 0.0], [0.2, 0.0]]], dtype=dtype)
+    layer = SetConv(0.3).to(dtype=dtype)
+    reference = SetConv(0.3)
+    reference.load_state_dict(layer.state_dict())
+    actual = layer(values, positions, grid)
+    expected = reference(values.float(), positions.float(), grid.float()).to(dtype)
+    assert actual.dtype == dtype
+    torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
+    actual.float().square().mean().backward()
+    for tensor in (values, positions, layer.log_lengthscale):
+        assert tensor.grad is not None
+        assert torch.isfinite(tensor.grad).all()
+
+
+@pytest.mark.parametrize("log_scale", [-1000.0, -70.0, 1000.0])
+def test_extreme_learned_scale_has_finite_output_and_gradients(
+    log_scale: float,
+) -> None:
+    """Learned scales outside float32 range must not create NaNs."""
+    layer = SetConv(0.3)
+    with torch.no_grad():
+        layer.log_lengthscale.fill_(log_scale)
+    values = torch.tensor([[[2.0]]], requires_grad=True)
+    positions = torch.tensor([[[0.0, 0.0]]], requires_grad=True)
+    grid = torch.tensor([[[0.0, 0.0], [1.0, 0.0]]])
+    output = layer(values, positions, grid)
+    assert torch.isfinite(output).all()
+    assert output[0, 0, 0, 0].item() == pytest.approx(1.0)
+    assert output[0, 1, 0, 0].item() == pytest.approx(2.0)
+    output.sum().backward()
+    for tensor in (values, positions, layer.log_lengthscale):
+        assert tensor.grad is not None
+        assert torch.isfinite(tensor.grad).all()
+
+
+def test_autocast_preserves_float32_kernel_accuracy() -> None:
+    """Autocast must not round kernel sums via low-precision matrix products."""
+    layer = SetConv(0.3)
+    values = torch.tensor([[[12345.0], [12345.0]]])
+    positions = torch.zeros(1, 2, 2)
+    grid = torch.zeros(1, 1, 2)
+    expected = layer(values, positions, grid)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        actual = layer(values, positions, grid)
+    torch.testing.assert_close(actual, expected)
+
+
+def test_masked_nan_padding_has_zero_gradients() -> None:
+    """Invalid measurements must not contaminate valid-value gradients."""
+    values = torch.tensor([[[2.0], [float("nan")]]], requires_grad=True)
+    positions = torch.tensor(
+        [[[0.2, 0.3], [float("nan"), float("nan")]]], requires_grad=True
+    )
+    mask = torch.tensor([[True, False]])
+    layer = SetConv(0.3)
+    output = layer(values, positions, _grid(), mask)
+    output.sum().backward()
+    for tensor in (values, positions):
+        assert tensor.grad is not None
+        assert torch.isfinite(tensor.grad).all()
+        assert torch.count_nonzero(tensor.grad[:, 1]) == 0
+
+
+def test_setconvcnn_rejects_scalar_observations() -> None:
+    """A malformed scalar input should report its geometry, not raise IndexError."""
+    model = SetConvCNN(1, 2, lengthscale=0.3)
+    with pytest.raises(ValueError, match="values must have shape"):
+        model(torch.tensor(1.0), torch.zeros(1, 1, 2), _grid())

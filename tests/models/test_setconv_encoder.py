@@ -142,3 +142,38 @@ def test_setconv_minimal_fixed_coordinate_trajectory_example() -> None:
 
     assert gridded.shape == (1, 2, 2, 2, 2)
     assert torch.isfinite(gridded).all()
+
+
+@pytest.mark.parametrize("scale", [float("nan"), float("inf"), -float("inf")])
+def test_fixed_encoder_rejects_non_finite_length_scale(scale: float) -> None:
+    """Reject invalid kernel parameters before they reach the interpolation."""
+    latitudes, longitudes = _coords()
+    with pytest.raises(ValueError, match=r"length_scale_degrees.*finite"):
+        SetConvEncoder(
+            data_space_in=DataSpace(name="sensors", channels=2, shape=(1, 3)),
+            latent_space=(2, 2),
+            project_to="target-grid",
+            length_scale_degrees=scale,
+            latitudes_fn=lambda: latitudes,
+            longitudes_fn=lambda: longitudes,
+        )
+
+
+@pytest.mark.parametrize("coordinate", ["latitude", "longitude"])
+@pytest.mark.parametrize("group", ["sensors", "target-grid"])
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf")])
+def test_fixed_encoder_rejects_non_finite_coordinates(
+    coordinate: str, group: str, invalid: float
+) -> None:
+    """Source and query coordinates must both be finite."""
+    latitudes, longitudes = _coords()
+    coords = latitudes if coordinate == "latitude" else longitudes
+    coords[group][0] = invalid
+    with pytest.raises(ValueError, match=r"coordinates.*finite"):
+        SetConvEncoder(
+            data_space_in=DataSpace(name="sensors", channels=2, shape=(1, 3)),
+            latent_space=(2, 2),
+            project_to="target-grid",
+            latitudes_fn=lambda: latitudes,
+            longitudes_fn=lambda: longitudes,
+        )

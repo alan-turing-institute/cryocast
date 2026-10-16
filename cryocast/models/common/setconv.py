@@ -18,6 +18,17 @@ _GRID_RANK = 3
 _TIME_SERIES_RANK = 4
 
 
+def _bounded_lengthscale(log_lengthscale: torch.Tensor) -> torch.Tensor:
+    """Bound the effective scale before exponentiating or squaring it."""
+    if log_lengthscale.dtype in (torch.float16, torch.bfloat16):
+        log_lengthscale = log_lengthscale.float()
+    limits = torch.finfo(log_lengthscale.dtype)
+    return log_lengthscale.clamp(
+        min=math.log(limits.eps),
+        max=0.5 * math.log(limits.max) - math.log(2.0),
+    ).exp()
+
+
 class SetConv(nn.Module):
     """Map irregular two-dimensional observations onto a regular query grid.
 
@@ -132,8 +143,8 @@ class SetConv(nn.Module):
 
     @property
     def lengthscale(self) -> torch.Tensor:
-        """Return the positive, optionally trainable Gaussian length scale."""
-        return self.log_lengthscale.exp()
+        """Return the positive, numerically bounded Gaussian length scale."""
+        return _bounded_lengthscale(self.log_lengthscale)
 
     def forward(
         self,
@@ -185,41 +196,57 @@ class SetConv(nn.Module):
         valid_mask = self._make_mask(values, valid_mask)
         self._validate_finite(values, positions, grid_positions, valid_mask)
 
-        flat_batch = batch_size * n_times
-        flat_mask = valid_mask.reshape(flat_batch, n_points)
-        flat_values = torch.where(
-            valid_mask[..., None], values, torch.zeros_like(values)
-        ).reshape(flat_batch, n_points, n_channels)
-        flat_positions = torch.where(
-            valid_mask[..., None], positions, torch.zeros_like(positions)
-        ).reshape(flat_batch, n_points, 2)
+        output_dtype = values.dtype
+        # cdist requires float32/float64. Keep density and signal accumulation
+        # in that precision even when the caller enables autocast.
+        work_dtype = (
+            torch.float32
+            if output_dtype in (torch.float16, torch.bfloat16)
+            else output_dtype
+        )
+        with torch.autocast(device_type=values.device.type, enabled=False):
+            values = values.to(dtype=work_dtype)
+            positions = positions.to(dtype=work_dtype)
+            flat_batch = batch_size * n_times
+            flat_mask = valid_mask.reshape(flat_batch, n_points)
+            flat_values = torch.where(
+                valid_mask[..., None], values, torch.zeros_like(values)
+            ).reshape(flat_batch, n_points, n_channels)
+            flat_positions = torch.where(
+                valid_mask[..., None], positions, torch.zeros_like(positions)
+            ).reshape(flat_batch, n_points, 2)
 
-        height, width = grid_positions.shape[:2]
-        grid = grid_positions.to(device=positions.device, dtype=positions.dtype)
-        queries = grid.reshape(-1, 2)
-        lengthscale_squared = self.lengthscale.square()
+            height, width = grid_positions.shape[:2]
+            grid = grid_positions.to(device=positions.device, dtype=positions.dtype)
+            queries = grid.reshape(-1, 2)
+            lengthscale_squared = _bounded_lengthscale(
+                self.log_lengthscale.to(device=values.device, dtype=values.dtype)
+            ).square()
+            density_floor = max(self.eps, torch.finfo(values.dtype).tiny)
 
-        chunks: list[torch.Tensor] = []
-        for grid_chunk in queries.split(self.chunk_size):
-            # (B*T, n_queries_in_chunk, N); never allocate H*W*N at once.
-            distances = torch.cdist(
-                grid_chunk.unsqueeze(0).expand(flat_batch, -1, -1),
-                flat_positions,
-                compute_mode="donot_use_mm_for_euclid_dist",
-            )
-            weights = torch.exp(-0.5 * distances.square() / lengthscale_squared)
-            weights = torch.where(flat_mask[:, None, :], weights, 0.0)
+            chunks: list[torch.Tensor] = []
+            for grid_chunk in queries.split(self.chunk_size):
+                # Per-chunk (B*T, queries, N); autograd may retain all chunks.
+                distances = torch.cdist(
+                    grid_chunk.unsqueeze(0).expand(flat_batch, -1, -1),
+                    flat_positions,
+                    compute_mode="donot_use_mm_for_euclid_dist",
+                )
+                weights = torch.exp(-0.5 * distances.square() / lengthscale_squared)
+                weights = torch.where(flat_mask[:, None, :], weights, 0.0)
 
-            density = weights.sum(dim=-1, keepdim=True)
-            signal = torch.bmm(weights, flat_values) / density.clamp_min(self.eps)
-            signal = torch.where(density > self.eps, signal, 0.0)
-            chunks.append(torch.cat((density, signal), dim=-1))
+                density = weights.sum(dim=-1, keepdim=True)
+                signal = torch.bmm(weights, flat_values) / density.clamp_min(
+                    density_floor
+                )
+                signal = torch.where(density > density_floor, signal, 0.0)
+                chunks.append(torch.cat((density, signal), dim=-1))
 
-        output = torch.cat(chunks, dim=1)
-        output = output.reshape(
-            batch_size, n_times, height, width, n_channels + 1
-        ).permute(0, 1, 4, 2, 3)
-        return output if has_time else output[:, 0]
+            output = torch.cat(chunks, dim=1).to(dtype=output_dtype)
+            output = output.reshape(
+                batch_size, n_times, height, width, n_channels + 1
+            ).permute(0, 1, 4, 2, 3)
+            return output if has_time else output[:, 0]
 
 
 class SetConvCNN(nn.Module):
@@ -262,6 +289,7 @@ class SetConvCNN(nn.Module):
         valid_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Return (B, C_out, H, W) or (B, T, C_out, H, W) features."""
+        self.setconv._validate_shapes(values, positions, grid_positions)
         if values.shape[-1] != self.in_channels:
             msg = (
                 f"Expected {self.in_channels} observation channels, "

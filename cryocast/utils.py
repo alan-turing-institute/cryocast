@@ -1,13 +1,18 @@
 import re
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
-from pathlib import Path
+from enum import StrEnum
+from pathlib import Path, PurePath
 
 import numpy as np
 import torch
 from lightning import Trainer
 from lightning.pytorch.loggers import WandbLogger
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from wandb.wandb_run import Run
+
+from cryocast.types import DataSpace
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -113,3 +118,36 @@ def to_list(value: str | Sequence[str]) -> list[str]:
     if isinstance(value, str):
         return [value]
     return value if isinstance(value, list) else list(value)
+
+
+def to_plain_types(value: object) -> object:  # noqa: PLR0911
+    """Recursively convert enums, paths, DataSpaces, OmegaConf containers and NumPy scalars to plain types.
+
+    This is useful for values that need to be stored, for example in checkpoints, which
+    can then be loaded without needing to import the original classes.
+    """
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, PurePath):
+        return str(value)
+    if isinstance(value, DataSpace):
+        return to_plain_types(value.to_dict())
+    if isinstance(value, DictConfig | ListConfig):
+        return to_plain_types(OmegaConf.to_container(value, resolve=True))
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, OrderedDict):
+        # Keep state dicts as OrderedDicts with their attributes, since modules use
+        # the '_metadata' attribute to load state saved by older module versions
+        converted = OrderedDict(
+            (key, to_plain_types(item)) for key, item in value.items()
+        )
+        converted.__dict__.update(
+            {name: to_plain_types(attr) for name, attr in vars(value).items()}
+        )
+        return converted
+    if isinstance(value, Mapping):
+        return {key: to_plain_types(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return type(value)(to_plain_types(item) for item in value)
+    return value

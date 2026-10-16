@@ -1,5 +1,6 @@
 """SetConv encoder for sparse or irregular observations on fixed coordinates."""
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -43,8 +44,8 @@ class SetConvEncoder(BaseEncoder):
         **kwargs: Any,
     ) -> None:
         """Initialise a fixed-coordinate SetConv encoder."""
-        if length_scale_degrees <= 0:
-            msg = "length_scale_degrees must be positive."
+        if not math.isfinite(length_scale_degrees) or length_scale_degrees <= 0:
+            msg = "length_scale_degrees must be positive and finite."
             raise ValueError(msg)
 
         super().__init__(
@@ -104,6 +105,13 @@ class SetConvEncoder(BaseEncoder):
                     f"Dataset '{name}' has an incompatible coordinate count; "
                     f"expected {expected} latitude/longitude pairs."
                 )
+                raise ValueError(msg)
+
+            if not (
+                np.isfinite(self.latitudes[name]).all()
+                and np.isfinite(self.longitudes[name]).all()
+            ):
+                msg = f"Dataset '{name}' coordinates must be finite."
                 raise ValueError(msg)
 
     def _kernel(self, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:

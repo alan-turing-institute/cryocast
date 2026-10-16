@@ -83,14 +83,35 @@ w_i(q) = \exp\left(-\frac{\lVert q-p_i\rVert^2}{2\ell^2}\right)
 and returns `density = sum(w_i)` together with
 `signal = sum(w_i * v_i) / max(density, eps)` for each measurement channel.
 Signals become zero when the density is below `eps`, so unsupported cells do
-not contain arbitrary values. The length scale `ell` is positive by construction
-and learnable by default.
+not contain arbitrary values. The length scale `ell` is learnable by default. The effective kernel
+scale is bounded before exponentiation: between the working dtype's machine
+epsilon and half the square root of its largest finite value. This keeps
+very small or large learned log scales from producing zero or infinite
+squared scales. Gradients outside those numerical bounds are zero.
+
+For moving-position `SetConv`, float16 and bfloat16 observations are promoted
+to float32 for distances, Gaussian weights, density and signal accumulation;
+float32 and float64 retain their working precision. This arithmetic runs with
+autocast disabled, and the output is converted back to the observation dtype.
+The following CNN can still use autocast normally. Values and positions must
+have the same dtype. Keep projected coordinates appropriately scaled: casting
+large absolute coordinates to half precision can lose information before they
+reach the layer. These guards do not repair that loss or make arbitrary
+out-of-range measurement values representable.
+
+For fixed-position `SetConvEncoder`, the initial angular length scale must be
+positive and finite. Both source and query latitude/longitude arrays must be
+finite; missing measurements belong in the observation tensor, not in those
+fixed coordinates. The existing fixed-coordinate rollout example remains in
+`tests/models/test_setconv_encoder.py`.
 
 The kernel is permutation-invariant with respect to observation order.
 The positions are evaluated on **every call**, including for each time step;
 there is no cached station arrangement. `chunk_size` caps the number of grid
-queries evaluated at once, reducing temporary weight memory to roughly
-`O(B * T * chunk_size * N)` instead of `O(B * T * H * W * N)`.
+queries evaluated at once, reducing the temporary weight matrix for each
+inference chunk to `O(B * T * chunk_size * N)`. During training, autograd
+may retain intermediates from every chunk until backward, so this does not
+bound total training memory to the size of a single chunk.
 
 Use a *projected*, locally meaningful planar coordinate system (such as
 EASE2 with consistently converted units). Applying this Euclidean distance
