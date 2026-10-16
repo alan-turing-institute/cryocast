@@ -54,9 +54,11 @@ class CommonDataModule(LightningDataModule):
         )
 
         # Set periods for prediction, testing, training and validation
-        self.allow_missing_inputs = bool(
-            config["data"].get("allow_missing_inputs", False)
-        )
+        allow_missing_inputs = config["data"].get("allow_missing_inputs", False)
+        if not isinstance(allow_missing_inputs, bool):
+            msg = "data.allow_missing_inputs must be a boolean (true or false)."
+            raise TypeError(msg)
+        self.allow_missing_inputs = allow_missing_inputs
         self.batch_size = int(config["window"]["batch_size"])
         self.predict_periods = self._normalise(config["data"]["split"]["predict"])
         self.test_periods = self._normalise(config["data"]["split"]["test"])
@@ -340,14 +342,9 @@ class CommonDataModule(LightningDataModule):
         shuffle: bool = True,
     ) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct train dataloader."""
-        dataset = self.training_dataset
-        log.info(
-            "Loaded training dataset with %d dates between %s and %s.",
-            len(dataset),
-            dataset.start_date,
-            dataset.end_date,
+        return DataLoader(
+            self.training_dataset, shuffle=shuffle, **self._common_dataloader_kwargs
         )
-        return DataLoader(dataset, shuffle=shuffle, **self._common_dataloader_kwargs)
 
     def val_dataloader(self) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct validation dataloader."""
