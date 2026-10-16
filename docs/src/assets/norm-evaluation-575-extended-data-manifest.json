@@ -1,0 +1,26 @@
+{
+  "protocol": "CryoCast #575 reduced-capacity norm evaluation: original legacy stores inspected read-only",
+  "data": {
+    "samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1": {
+      "rows": 855,
+      "variables": 3,
+      "missing_dates": 819,
+      "date_alignment_pass": true,
+      "first_date": "2020-01-01T12:00:00",
+      "last_date": "2024-07-31T12:00:00",
+      "dates_sha256": "c3e7f87fedf33dbd2ee8c934390e766d50a4d629acc719a81c29afbae4d9348b",
+      "attributes_sha256": "3d76e713e6c3eafe17b68873652dc977545fdf7ba97e3940df6239c5496105db"
+    },
+    "samp-weathersouth-era5-25p0km-2020-2024-24h-v4": {
+      "rows": 855,
+      "variables": 28,
+      "missing_dates": 819,
+      "date_alignment_pass": true,
+      "first_date": "2020-01-01T12:00:00",
+      "last_date": "2024-07-31T12:00:00",
+      "dates_sha256": "c3e7f87fedf33dbd2ee8c934390e766d50a4d629acc719a81c29afbae4d9348b",
+      "attributes_sha256": "79c2be819f6a0abbc1fefbfb60ef6621f6c38001358e265b512c7adbd237fcb9"
+    }
+  },
+  "land_mask_sha256": "82856453bbe80d2630ad6f3b957dd32478c535f4b66093efcf68b9fc80f889b2"
+}

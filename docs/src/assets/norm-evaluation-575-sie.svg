@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="565" viewBox="0 0 960 565" role="img" aria-labelledby="title desc">
-<title id="title">Absolute sea-ice extent error by forecast lead and normalisation</title>
-<desc id="desc">Mean of two seeds, each trained for 20 optimiser steps and evaluated on five held-out batches over a 14-day autoregressive rollout. BatchNorm and GroupNorm are both worse than persistence. Aggregate curves omit seed variation.</desc>
+<title id="title">Magnitude of mean signed SIE error by forecast lead</title>
+<desc id="desc">Magnitude of the mean signed sea-ice-extent difference for each lead, averaged across two seeds. The five test samples were signed-averaged before absolute value, so cancellation is possible. Each model trained for 20 updates and was evaluated over a 14-day rollout; persistence performs better. See the extended study for mean absolute per-window error.</desc>
 <rect width="960" height="565" fill="#ffffff"/>
 <g font-family="Arial, Helvetica, sans-serif">
-<text x="48" y="35" font-weight="bold" font-size="24" fill="#111827">Absolute sea-ice extent error</text>
+<text x="48" y="35" font-weight="bold" font-size="24" fill="#111827">Magnitude of mean signed SIE error</text>
 <text x="48" y="59" fill="#374151" font-size="15">14-day autoregressive forecast, two seeds, 20 optimiser steps per run</text>
-<text x="48" y="79" fill="#4b5563" font-size="13">Five held-out batches per seed; lower values indicate lower error</text>
+<text x="48" y="79" fill="#4b5563" font-size="13">Five held-out batches per seed; signed errors may cancel</text>
 <line x1="105" y1="436.0" x2="915" y2="436.0" stroke="#e5e7eb"/>
 <text x="92" y="440.0" fill="#4b5563" text-anchor="end" font-size="13">0</text>
 <line x1="105" y1="373.4" x2="915" y2="373.4" stroke="#e5e7eb"/>
@@ -48,7 +48,7 @@
 <line x1="915.0" y1="436" x2="915.0" y2="441" stroke="#4b5563"/>
 <text x="915.0" y="459" text-anchor="middle" fill="#374151" font-size="13">14</text>
 <text x="510" y="486" text-anchor="middle" fill="#111827" font-size="15">Forecast lead (days)</text>
-<text x="26" y="279.5" text-anchor="middle" fill="#111827" font-size="14" transform="rotate(-90 26 279.5)">Absolute SIE error (million km²)</text>
+<text x="26" y="279.5" text-anchor="middle" fill="#111827" font-size="14" transform="rotate(-90 26 279.5)">Abs. mean signed SIE (million km²)</text>
 <path d="M105.0,259.5 L167.3,291.1 L229.6,288.0 L291.9,290.8 L354.2,294.7 L416.5,289.1 L478.8,280.2 L541.2,285.7 L603.5,290.7 L665.8,294.3 L728.1,284.7 L790.4,278.0 L852.7,275.0 L915.0,274.3" stroke="#1f77b4" stroke-width="3" fill="none" />
 <circle cx="105.0" cy="259.5" r="3.2" fill="#fff" stroke="#1f77b4" stroke-width="2"/>
 <circle cx="167.3" cy="291.1" r="3.2" fill="#fff" stroke="#1f77b4" stroke-width="2"/>

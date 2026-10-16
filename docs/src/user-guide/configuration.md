@@ -62,30 +62,36 @@ must not be interpreted as production forecast skill. They are useful for the ma
 BatchNorm-versus-GroupNorm decision because every setting other than normalisation was
 held fixed.
 
-| Method | Mean RMSE | Leads 10-14 RMSE | Mean absolute SIE error (km²) | Leads 10-14 absolute SIE error (km²) |
+| Method | Mean RMSE | Leads 10-14 RMSE | Absolute mean signed SIE error (km²) | Leads 10-14 absolute mean signed SIE error (km²) |
 | --- | ---: | ---: | ---: | ---: |
 | BatchNorm | 0.1593 | 0.1460 | 14,567,147 | 14,830,550 |
 | GroupNorm | 0.1688 | 0.1670 | 26,530,134 | 27,215,374 |
 | Persistence | 0.0564 | 0.0760 | 1,115,134 | 1,800,375 |
 
 Across the two seeds, BatchNorm's mean RMSE was 5.6% lower than GroupNorm's and its
-late-lead RMSE was 12.5% lower. Mean and late-lead absolute SIE error were about 45%
+late-lead RMSE was 12.5% lower. Absolute mean signed SIE errors were about 45%
 lower with BatchNorm. GroupNorm was slightly better on RMSE at the earliest leads, but
 that advantage disappeared by lead 6 and did not reduce late-rollout drift.
 
 The figures below plot the per-lead means from the two-seed comparison. They are
 visualisations of the table, not additional experiments or evidence of converged
-training. Seed-level variation was not recorded, so no confidence intervals are shown.
+training. Seed-level variation is not shown in these original plots, and with only two seeds no robust confidence intervals are claimed.
 The plotted values are also available as a
 [CSV](../assets/norm-evaluation-575-daily.csv) for independent inspection.
 
+**Extent-error aggregation caveat:** the initial pilot's published *absolute
+SIE* values are the absolute magnitude of the mean **signed** extent error
+over test samples at each lead, rather than the mean of the absolute
+per-sample errors. Cancellation is therefore possible. The extended
+study below uses absolute errors **before** averaging test samples.
+
 ![14-day sea-ice concentration RMSE by forecast lead for BatchNorm, GroupNorm and persistence](../assets/norm-evaluation-575-rmse.svg)
 
-![14-day absolute sea-ice extent error by forecast lead for BatchNorm, GroupNorm and persistence](../assets/norm-evaluation-575-sie.svg)
+![14-day magnitude of mean signed sea-ice-extent error by lead for BatchNorm, GroupNorm and persistence](../assets/norm-evaluation-575-sie.svg)
 
 The per-lead cross-seed means were:
 
-| Lead | BatchNorm RMSE | GroupNorm RMSE | Persistence RMSE | BatchNorm abs. SIE (km²) | GroupNorm abs. SIE (km²) | Persistence abs. SIE (km²) |
+| Lead | BatchNorm RMSE | GroupNorm RMSE | Persistence RMSE | BatchNorm abs. mean signed SIE (km²) | GroupNorm abs. mean signed SIE (km²) | Persistence abs. mean signed SIE (km²) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 0.1803 | 0.1717 | 0.0213 | 16,917,126 | 25,561,124 | 146,125 |
 | 2 | 0.1745 | 0.1710 | 0.0304 | 13,890,064 | 25,693,874 | 278,875 |
@@ -108,6 +114,10 @@ existing BatchNorm checkpoints incompatible with the default architecture. This 
 not establish that BatchNorm is intrinsically superior under converged production
 training; the decision should be revisited if a longer, multi-seed production training
 study produces contrary evidence.
+
+An independent [longer three-seed, reduced-capacity comparison](../research/norm-evaluation-575-extended.md)
+reports 96-step results for both normalization arms, including seed-level
+variation. It does **not** replace the 44.7M-parameter baseline above.
 
 You can also override individual options at the command line without a config file:
 
