@@ -42,6 +42,7 @@ frame and carried forward unchanged.
 """
 
 import logging
+import math
 from typing import Any
 
 import torch
@@ -110,9 +111,14 @@ class DiffusionProcessor(BaseProcessor):
             activation (str): Activation function used throughout the network (e.g., "SiLU").
             use_autoregressive (bool): Whether to use autoregressive sampling and
                 one-step training. Default is True.
-            x0_scale (float): Positive scale used to normalize clean target latents
-                before diffusion. Predictions are restored to the original latent
-                scale before returning. Default is 1.0.
+            x0_scale (float): Positive finite divisor for clean target latents:
+                diffusion trains on ``y / x0_scale``. Conditioning history and
+                diffusion noise retain their original units. Samples and metric
+                predictions are multiplied by the same scale before decoding or
+                updating autoregressive history. Default is 1.0. To test unit-
+                variance targets, estimate this value from training-only target
+                latents and keep it unchanged when sampling that trained model;
+                the processor does not estimate it or subtract a mean.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
@@ -152,8 +158,8 @@ class DiffusionProcessor(BaseProcessor):
         self.c_target = c_target
         self.c_combined = c_combined
 
-        if x0_scale <= 0:
-            msg = f"x0_scale must be positive, got {x0_scale}."
+        if not math.isfinite(x0_scale) or x0_scale <= 0:
+            msg = f"x0_scale must be positive and finite, got {x0_scale}."
             raise ValueError(msg)
 
         self.timesteps = timesteps

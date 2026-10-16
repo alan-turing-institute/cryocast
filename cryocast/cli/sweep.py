@@ -9,7 +9,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig
 from optuna.trial import TrialState
 
-from cryocast.model_service import ModelService
+from cryocast.model_service import CheckpointFile, ModelService
 from cryocast.sweep import OptunaSweep
 
 from .hydra import hydra_adaptor
@@ -92,7 +92,8 @@ def summarise(
     importances = sweep.parameter_importances()
     if not importances:
         log.info(
-            "Could not estimate parameter importance for %d trials", sweep.n_trials
+            "Could not estimate parameter importance for %d completed trial(s)",
+            n_completed,
         )
         return
     log.info("Parameter importance:")
@@ -113,7 +114,7 @@ def trial(
     ],
     *,
     checkpoint_dir: Annotated[
-        str | None,
+        Path | None,
         typer.Option(
             "--checkpoint-dir",
             help=(
@@ -140,7 +141,14 @@ def trial(
     """Run a single trial from a W&B sweep."""
     # Load the Optuna sweep, start a trial, and get its parameter overrides
     sweep = OptunaSweep.from_path(sweep_path)
-    trial, overrides = sweep.ask()
+    checkpoint_dir = checkpoint_dir.resolve() if checkpoint_dir else None
+    if checkpoint_dir:
+        # If we have a checkpoint directory, resume the trial from the existing config
+        trial, overrides = sweep.resume(
+            checkpoint_dir.parent / "files" / "model_config.yaml"
+        )
+    else:
+        trial, overrides = sweep.ask()
 
     try:
         # Generate a merged config for this trial
@@ -155,11 +163,17 @@ def trial(
         os.environ["WANDB_PROJECT"] = "train"
 
         # Train the model for this trial
-        model = ModelService.from_config(config)
-        trainer = model.train(
-            checkpoint_dir=Path(checkpoint_dir).resolve() if checkpoint_dir else None,
-            multistage=multistage,
-        )
+        # For multistage training, we pass the directory of checkpoints to train_multistage
+        if multistage:
+            model_service = ModelService.from_config(config)
+            trainer = model_service.train_multistage(checkpoint_dir=checkpoint_dir)
+        # For single-stage training, we resume from the most recent checkpoint
+        elif checkpoint_dir:
+            checkpoint_file = CheckpointFile.find_last(checkpoint_dir)
+            trainer = ModelService.from_checkpoint(config, checkpoint_file).train()
+        # ... or if no checkpoint is provided, we start training from scratch
+        else:
+            trainer = ModelService.from_config(config).train()
 
         # If there is exactly one ModelCheckpoint callback then we will use that
         checkpoints = [
