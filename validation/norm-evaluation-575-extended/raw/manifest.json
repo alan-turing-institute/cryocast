@@ -1,0 +1,38 @@
+{
+  "protocol": "CryoCast PR #594 reduced-capacity 96-update three-seed ablation",
+  "source_sha": "cf513de2f90c53e2faf0cc86d36f66365a88270b",
+  "runner_sha256": "b0b0141f344c18e5bf28f6580fe9dffbf1bd08f0bb372d39d35bcb9dd93213ab",
+  "results": {
+    "batchnorm-seed575.json": {
+      "sha256": "75ffd46f30505f1f1ebab5769a80f97e47f6be47e862a27481b430ae66bbbb98",
+      "size_bytes": 2908,
+      "original_output_sha256": "29d6c063278d73dac2bbdb874d0ad1f4c63ff2bb70abd0eb96f3d1638d21bd39"
+    },
+    "groupnorm-seed575.json": {
+      "sha256": "b90762b35e4689fec41c9104d50ff65d200a6c5aa3c6ce33efaddbc42afd7958",
+      "size_bytes": 2884,
+      "original_output_sha256": "ab6289711daff3b1a03a40f73aacc7bf706c111488238591b85bb1df662573b8"
+    },
+    "batchnorm-seed576.json": {
+      "sha256": "65edec1a2d31ac91a178d214a8d3fc95bdb2c49eb09421094d69622a528e575e",
+      "size_bytes": 2911,
+      "original_output_sha256": "b5452fc0d19415ced1cda56fb0cd9dbbe35904b39fbaea2921949d1745d8f9fc"
+    },
+    "groupnorm-seed576.json": {
+      "sha256": "75377fdb782c6ab7fd3f67814fa333a42045fe7698bfca5a1d45d2c78114b70b",
+      "size_bytes": 2893,
+      "original_output_sha256": "ab91a1f04ea240761bae991ca1dd76f595e12a83a474eef868f2de1ba96bddd6"
+    },
+    "batchnorm-seed577.json": {
+      "sha256": "8e381f99dcde23e75843a3b9de9872719bf94f97fb8eeffe31146195ecc71bf6",
+      "size_bytes": 2917,
+      "original_output_sha256": "bc8310c77c20135ca551c91a5806afb460de8f8c18a9d4d1abc90c3d78927a92"
+    },
+    "groupnorm-seed577.json": {
+      "sha256": "5b48823ce844444397f04d514bbf2cfbf6170653245573dfe9691e8c88967b4f",
+      "size_bytes": 2891,
+      "original_output_sha256": "bedeaabb173aa89bd8b3a521e91bcea0903d626f5a241aaeabc75f2805bf4dac"
+    }
+  },
+  "normalization": "For repository pre-commit EOF convention, one trailing LF was added to each unchanged raw JSON output. original_output_sha256 identifies exact experiment-produced bytes; sha256 identifies committed bytes."
+}

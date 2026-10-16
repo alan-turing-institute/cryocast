@@ -27,6 +27,7 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
+  # Retained after the full-rollout comparison in #575; GroupNorm remains selectable.
   norm_type: batchnorm
   start_out_channels: 128
 
