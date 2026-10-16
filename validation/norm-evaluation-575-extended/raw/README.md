@@ -4,7 +4,7 @@ These six small JSON files are the unmodified outputs of the 96-update,
 three-seed, two-normalisation extended experiment. Each records per-lead
 SIC RMSE, signed and absolute sea-ice-extent error, the persistence
 baseline, runtime, model capacity, source commit and runner checksum.
-Run files are copied byte-for-byte from the T7 research-data volume;
+Run files preserve the exact experiment-produced JSON values; a terminal LF was added to each copy for repository EOF conventions;
 see `manifest.json` for SHA-256 checksums.
 
 The comparison uses 1,256,655-parameter CNN-UNet-CNN models, **not**
