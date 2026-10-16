@@ -81,9 +81,12 @@ and their [SHA-256 manifest](https://github.com/sylvesterkaczmarek/icenet-mp/blo
 are committed so that results can be independently recomputed.
 Checkpoint weights, execution logs and a separate complete copy of raw
 results remain on the T7 research-data volume.
-The benchmark source revision was
-`cf513de2f90c53e2faf0cc86d36f66365a88270b`, runner SHA-256
-`b0b0141f344c18e5bf28f6580fe9dffbf1bd08f0bb372d39d35bcb9dd93213ab`.
+The benchmark was executed from the frozen source revision
+`cf513de2f90c53e2faf0cc86d36f66365a88270b` using a runner with
+SHA-256 `b0b0141f344c18e5bf28f6580fe9dffbf1bd08f0bb372d39d35bcb9dd93213ab`.
+That exact runner can be recovered from the recorded commit; subsequent
+packaging/type-checking changes to the same experiment script do not
+retroactively alter the measured results.
 
 **Interpretation:** the original 20-update **full-size** pilot favoured
 BatchNorm, while this 96-update **smaller-model** comparison gave a

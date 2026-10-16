@@ -29,7 +29,7 @@ from cryocast.model_service import ModelService
 from cryocast.model_service import model_service as model_service_module
 
 # Keep this bounded local benchmark single-process so worker teardown cannot dominate.
-model_service_module.suggested_max_num_workers = lambda _devices: 0
+model_service_module.suggested_max_num_workers = lambda local_world_size: 0  # noqa: ARG005
 
 CONFIG_DIR = str(
     (Path(__file__).resolve().parents[2] / "cryocast" / "config").resolve()

@@ -143,6 +143,7 @@ extend-ignore-names = ["F"] # allow `import torch.nn.functional as F`
 known-third-party = ["wandb"]
 
 [tool.ruff.lint.per-file-ignores]
+"validation/norm-evaluation-575-extended/*.py" = ["INP001"] # standalone numerical experiments, not importable packages
 "docs/scripts/*.py" = [
     "INP001", # allow implicit namespace for docs scripts
     "T201",   # allow print statements in docs scripts

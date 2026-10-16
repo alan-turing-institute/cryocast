@@ -106,7 +106,7 @@ for kind in ("rmse", "sie"):
         runs["batchnorm", 575][KEYS["persistence_" + kind]]
     )
 for day in range(14):
-    row = {"lead_day": day + 1}
+    row: dict[str, int | float] = {"lead_day": day + 1}
     for kind in ("rmse", "sie"):
         for norm in NORM_LABELS:
             row[f"{norm}_{kind}_mean"] = round(
@@ -167,7 +167,7 @@ for kind, ylabel, filename in (
     )
     plt.close(fig)
 
-aggregate = {}
+aggregate: dict[str, dict[str, object]] = {}
 for norm in NORM_LABELS:
     aggregate[norm] = {}
     for key in (
