@@ -20,7 +20,15 @@ To create the synthetic dataset, use:
 uv run cryocast datasets create --config-name synthetic
 ```
 
-To exercise forecast-indexed ingestion with the small SEAS5 trajectory recipe, use:
+To exercise forecast-indexed ingestion with the small SEAS5 trajectory recipe,
+first [configure CDS API credentials](https://cds.climate.copernicus.eu/how-to-api)
+and review the required licences on the
+[dataset download page](https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=download#manage-licences).
+The licences must be accepted by the account used for the API request. A
+`403` response containing `required licences not accepted` indicates an
+unmet account licence prerequisite.
+
+Then run:
 
 ```bash
 uv run cryocast datasets create --config-name seas5_demo
@@ -29,7 +37,14 @@ uv run cryocast datasets inspect --config-name seas5_demo
 
 This is an ingestion smoke test for Anemoi's trajectory layout: it preserves the
 forecast initialisation and lead-time axes instead of flattening them into analysis
-dates. It is not yet a training configuration for CryoCast.
+dates. It is not yet a training configuration for CryoCast. Its explicit
+statistics interval covers all seven forecast leads; shortening it excludes
+the only trajectory and prevents statistics from being computed.
+
+The offline SEAS5 finalisation tests use generated GRIB responses in place of
+CDS transport. They check dataset creation, complete forecast axes, numerical
+statistics, and repeat inspection without downloading again. A live CDS run
+still requires the credentials and licence acceptance described above.
 
 ## `datasets inspect`
 
@@ -169,6 +184,28 @@ evaluate:
 
 Output directories, styling, and animation parameters can be altered by changing `config.evaluate.callbacks.plotting.plot_spec`.
 Any of these can be overridden at the command line.
+
+## `checkpoint upgrade`
+
+```bash
+uv run cryocast checkpoint upgrade PATH_TO_A_CHECKPOINT [PATH_TO_ANOTHER_CHECKPOINT ...]
+```
+
+Upgrades checkpoints saved by older versions of CryoCast, or by its predecessor icenet-mp, so that they can be loaded safely.
+The run's `files/model_config.yaml` is also upgraded, replacing references to `icenet_mp` and converting the legacy `predict` settings into `variables` and `window` settings.
+Each file that needs upgrading is backed up to `<name>.bak` before being rewritten.
+Files that are already up to date are left unchanged, so it is safe to upgrade a checkpoint more than once, and an existing backup is never overwritten.
+If an upgraded checkpoint would still contain objects that cannot be loaded safely, the upgrade stops with an error naming them and no files are changed.
+
+!!! warning "Only upgrade checkpoints you trust"
+    A checkpoint that cannot be loaded safely has to be unpickled without restrictions in order to upgrade it, and a malicious checkpoint can execute arbitrary code when this happens.
+    The command therefore refuses to upgrade such checkpoints unless you pass `--trust`:
+
+    ```bash
+    uv run cryocast checkpoint upgrade --trust PATH_TO_A_TRUSTED_CHECKPOINT
+    ```
+
+    Only use `--trust` for checkpoints that you or your collaborators created, never for files from an unknown source.
 
 ## `feature-importance`
 
