@@ -12,7 +12,16 @@ name: cnn-vit-cnn-residual
 # instead of feeding the processor raw latent back into its own input
 rollout_space: physical
 
+processor:
+  depth: 4
+  dropout: 0.0
+  emb_dim: 512
+  heads: 4
+  mlp_dim: 512
+  patch_size: 6
+
 decoder:
+  restrict_range: sigmoid
   # Start with a zero-initialized output layer so that an untrained model
   # produces no output
   zero_init_output: true
