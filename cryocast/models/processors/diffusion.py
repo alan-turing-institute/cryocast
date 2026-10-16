@@ -16,18 +16,18 @@ and predict) uses either DDPM or DDIM, selected by ``ddim_steps`` and ``eta``:
 The sampler does not change the network weights, so a checkpoint can be
 sampled with different settings from the ones it was trained with.
 
-Evaluating a DDPM-trained run with DDIM: ``cryocast evaluate`` builds the
-processor from the run's saved ``files/model_config.yaml`` (the processor is
-not stored in the checkpoint's hyperparameters), so command-line overrides of
-``model.processor.ddim_steps`` / ``eta`` are ignored. Instead, set them in
-that file before evaluating, and restore it afterwards. Any
-``1 <= ddim_steps <= timesteps`` and ``0 <= eta <= 1`` are valid; the values
-below are only an example (50 steps, deterministic DDIM)::
+Evaluating a DDPM-trained run with DDIM: ``cryocast evaluate`` loads the
+saved checkpoint model and then applies explicit inference-only Hydra overrides
+for ``model.processor.ddim_steps`` and ``model.processor.eta``. The sampler
+settings do not modify the model's trained weights and can be selected without
+editing the run's ``files/model_config.yaml``::
 
-    cp <run_dir>/files/model_config.yaml <run_dir>/files/model_config.yaml.bak
-    # in model_config.yaml, e.g.: model.processor.ddim_steps: 50, model.processor.eta: 0.0
-    uv run cryocast evaluate --checkpoint <run_dir>/checkpoints/<ckpt> --config-name <config>
-    mv <run_dir>/files/model_config.yaml.bak <run_dir>/files/model_config.yaml
+    uv run cryocast evaluate --checkpoint <run_dir>/checkpoints/<ckpt> \
+        '++model.processor.ddim_steps=50' '++model.processor.eta=0.0'
+
+Any other ``model.*`` overrides that differ from the saved checkpoint model
+are warned about and ignored for model reconstruction.
+
 
 The processor supports two forecasting modes:
 

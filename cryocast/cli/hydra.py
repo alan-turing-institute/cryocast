@@ -1,6 +1,7 @@
 import inspect
 import itertools
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Annotated, ParamSpec, TypeVar
 
 from hydra import compose, initialize
@@ -9,6 +10,14 @@ from typer import Argument, Option
 
 Param = ParamSpec("Param")
 RetType = TypeVar("RetType")
+
+
+@dataclass(frozen=True)
+class HydraInvocation:
+    """Hydra options explicitly supplied to a CLI entrypoint."""
+
+    config_name: str | None
+    overrides: tuple[str, ...]
 
 
 def hydra_adaptor(function: Callable) -> Callable[Param, RetType]:
@@ -38,7 +47,18 @@ def hydra_adaptor(function: Callable) -> Callable[Param, RetType]:
     ) -> RetType:
         with initialize(config_path="../config", version_base=None):
             config = compose(config_name=config_name, overrides=overrides)
-        return function(*args, config=config, **kwargs)
+        # Opt-in metadata keeps explicit override provenance out of the
+        # composed model config and does not expose another Typer CLI argument.
+        invocation = (
+            {
+                "hydra_invocation": HydraInvocation(
+                    config_name=config_name, overrides=tuple(overrides or ())
+                )
+            }
+            if "hydra_invocation" in inspect.signature(function).parameters
+            else {}
+        )
+        return function(*args, config=config, **invocation, **kwargs)
 
     # Separate parameters by kind
     positional_params = []
@@ -47,8 +67,8 @@ def hydra_adaptor(function: Callable) -> Callable[Param, RetType]:
     # Remove the DictConfig parameter from the function signature
     fn_signature = inspect.signature(function, eval_str=True)
     for param in fn_signature.parameters.values():
-        if param.annotation == DictConfig:
-            continue  # skip config param
+        if param.annotation == DictConfig or param.name == "hydra_invocation":
+            continue  # skip internal config and invocation metadata
         if param.kind == inspect.Parameter.KEYWORD_ONLY:
             keyword_only_params.append(param)
         else:
