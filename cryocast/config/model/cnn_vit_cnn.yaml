@@ -19,8 +19,8 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.VitProcessor
-  depth: 6
-  dropout: 0.1
+  depth: 4
+  dropout: 0.0
   emb_dim: 256
   heads: 8
   mlp_dim: 1024
@@ -31,6 +31,6 @@ decoder:
   n_layers: 1
   mask_type: active
   norm_type: groupnorm
-  restrict_range: clamp
+  restrict_range: sigmoid
   skip_connection:
-    method: none
+    method: additive
