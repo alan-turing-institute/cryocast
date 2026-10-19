@@ -44,8 +44,8 @@ encoders:
 processor:
   _target_: cryocast.models.processors.DiffusionProcessor
   timesteps: 1000
-  ddim_steps: 50
-  eta: 0.0
+  ddim_steps: 100  # sampler comparison in #641: best balance of results and sampling cost
+  eta: 1.0
   beta_schedule: cosine
   start_out_channels: 64
   time_embed_dim: 256
