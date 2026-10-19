@@ -1,0 +1,899 @@
+{
+  "status": "passed",
+  "independent_checks": [
+    "source checksum",
+    "actual forecast dates",
+    "180 case sums",
+    "same origin persistence",
+    "same pixel masks",
+    "disjoint targets",
+    "six locked checkpoints",
+    "matched initial weights and updates"
+  ],
+  "summary": [
+    {
+      "seed": 496,
+      "stride": 1,
+      "lead_days": 7,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 8.295358622461729,
+      "rmse_pp": 16.93741224379023,
+      "persistence_mae_pp": 7.706396800194203,
+      "persistence_rmse_pp": 17.913033036309987,
+      "mae_skill": -0.07642505797945454,
+      "mse_skill": 0.10596223868691457
+    },
+    {
+      "seed": 496,
+      "stride": 1,
+      "lead_days": 14,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 13.698701431223668,
+      "rmse_pp": 25.405297228874712,
+      "persistence_mae_pp": 8.006978632811634,
+      "persistence_rmse_pp": 18.71416006268292,
+      "mae_skill": -0.710845258795626,
+      "mse_skill": -0.8429259325680101
+    },
+    {
+      "seed": 496,
+      "stride": 7,
+      "lead_days": 7,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 7.782175145959628,
+      "rmse_pp": 16.957876041602578,
+      "persistence_mae_pp": 7.706396800194203,
+      "persistence_rmse_pp": 17.913033036309987,
+      "mae_skill": -0.009833174663873567,
+      "mse_skill": 0.1038005790442954
+    },
+    {
+      "seed": 496,
+      "stride": 7,
+      "lead_days": 14,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 8.483648146272214,
+      "rmse_pp": 17.603810288629273,
+      "persistence_mae_pp": 8.006978632811634,
+      "persistence_rmse_pp": 18.71416006268292,
+      "mae_skill": -0.05953175789769749,
+      "mse_skill": 0.11514383734903166
+    },
+    {
+      "seed": 497,
+      "stride": 1,
+      "lead_days": 7,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 8.264121054623939,
+      "rmse_pp": 17.148778775855135,
+      "persistence_mae_pp": 7.706396800194203,
+      "persistence_rmse_pp": 17.913033036309987,
+      "mae_skill": -0.0723715984123321,
+      "mse_skill": 0.08350913191103948
+    },
+    {
+      "seed": 497,
+      "stride": 1,
+      "lead_days": 14,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 10.598273749264552,
+      "rmse_pp": 20.407211781611984,
+      "persistence_mae_pp": 8.006978632811634,
+      "persistence_rmse_pp": 18.71416006268292,
+      "mae_skill": -0.3236295780575833,
+      "mse_skill": -0.18912268333910665
+    },
+    {
+      "seed": 497,
+      "stride": 7,
+      "lead_days": 7,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 7.706396800194203,
+      "rmse_pp": 17.913033036309987,
+      "persistence_mae_pp": 7.706396800194203,
+      "persistence_rmse_pp": 17.913033036309987,
+      "mae_skill": 0.0,
+      "mse_skill": 0.0
+    },
+    {
+      "seed": 497,
+      "stride": 7,
+      "lead_days": 14,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 8.006978632811634,
+      "rmse_pp": 18.71416006268292,
+      "persistence_mae_pp": 8.006978632811634,
+      "persistence_rmse_pp": 18.71416006268292,
+      "mae_skill": 0.0,
+      "mse_skill": 0.0
+    },
+    {
+      "seed": 498,
+      "stride": 1,
+      "lead_days": 7,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 8.604265651143367,
+      "rmse_pp": 17.791677829899292,
+      "persistence_mae_pp": 7.706396800194203,
+      "persistence_rmse_pp": 17.913033036309987,
+      "mae_skill": -0.11650955358625392,
+      "mse_skill": 0.01350347920949413
+    },
+    {
+      "seed": 498,
+      "stride": 1,
+      "lead_days": 14,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 13.165905403371028,
+      "rmse_pp": 25.176756296523145,
+      "persistence_mae_pp": 8.006978632811634,
+      "persistence_rmse_pp": 18.71416006268292,
+      "mae_skill": -0.6443038013638167,
+      "mse_skill": -0.8099178898846706
+    },
+    {
+      "seed": 498,
+      "stride": 7,
+      "lead_days": 7,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 7.931637690809101,
+      "rmse_pp": 17.110864209180733,
+      "persistence_mae_pp": 7.706396800194203,
+      "persistence_rmse_pp": 17.913033036309987,
+      "mae_skill": -0.029227782640159683,
+      "mse_skill": 0.08755722672574473
+    },
+    {
+      "seed": 498,
+      "stride": 7,
+      "lead_days": 14,
+      "n_origins": 15,
+      "n_pixels": 53760,
+      "mae_pp": 8.186001372556944,
+      "rmse_pp": 17.39317413572381,
+      "persistence_mae_pp": 8.006978632811634,
+      "persistence_rmse_pp": 18.71416006268292,
+      "mae_skill": -0.022358338638709174,
+      "mse_skill": 0.13619242009389898
+    }
+  ],
+  "training": [
+    {
+      "seed": 496,
+      "stride": 1,
+      "parameters": 172831,
+      "updates": 840,
+      "epochs": 60,
+      "best_epoch": 25,
+      "best_validation_mse": 0.03294891061494437,
+      "initial_state_sha256": "cf5c8d3d2c997fcb5ca3906f2c61899b35a10a864692c131ad54f1b816cd26d8",
+      "best_state_sha256": "c1da5c44a5ccc9b557e9111f01baf0de9c6a3d07c1bb8b13d84f5b2505604105",
+      "checkpoint_sha256": "15a7c721929ba9b2e12201c71d9d1c7c27b9df224e68dd6ed7716778756f7eb5",
+      "train_seconds": 22.1412538329605,
+      "history": [
+        {
+          "epoch": 0,
+          "updates": 0,
+          "validation_mse": 0.04012526317271126
+        },
+        {
+          "epoch": 5,
+          "updates": 70,
+          "validation_mse": 0.3179991728108904
+        },
+        {
+          "epoch": 10,
+          "updates": 140,
+          "validation_mse": 0.04032594971458397
+        },
+        {
+          "epoch": 15,
+          "updates": 210,
+          "validation_mse": 0.04396015554625824
+        },
+        {
+          "epoch": 20,
+          "updates": 280,
+          "validation_mse": 0.1316077057364176
+        },
+        {
+          "epoch": 25,
+          "updates": 350,
+          "validation_mse": 0.03294891061494437
+        },
+        {
+          "epoch": 30,
+          "updates": 420,
+          "validation_mse": 0.2791929401788665
+        },
+        {
+          "epoch": 35,
+          "updates": 490,
+          "validation_mse": 0.1160767595359334
+        },
+        {
+          "epoch": 40,
+          "updates": 560,
+          "validation_mse": 0.06165798857742229
+        },
+        {
+          "epoch": 45,
+          "updates": 630,
+          "validation_mse": 0.24143539296556774
+        },
+        {
+          "epoch": 50,
+          "updates": 700,
+          "validation_mse": 0.13360620518035868
+        },
+        {
+          "epoch": 55,
+          "updates": 770,
+          "validation_mse": 0.2147393608292698
+        },
+        {
+          "epoch": 60,
+          "updates": 840,
+          "validation_mse": 0.06238062536823259
+        }
+      ]
+    },
+    {
+      "seed": 496,
+      "stride": 7,
+      "parameters": 172831,
+      "updates": 840,
+      "epochs": 60,
+      "best_epoch": 10,
+      "best_validation_mse": 0.036038216761081744,
+      "initial_state_sha256": "cf5c8d3d2c997fcb5ca3906f2c61899b35a10a864692c131ad54f1b816cd26d8",
+      "best_state_sha256": "5b89a7d9f5bfad9814fce70ce3aa738ebe94d4f4cb30ad9a8fa54ba9feda9939",
+      "checkpoint_sha256": "dcb7ce56e0561b5146b75d12e2cca52d46fc759ae70b9283a79652f0abc168e8",
+      "train_seconds": 20.87680900003761,
+      "history": [
+        {
+          "epoch": 0,
+          "updates": 0,
+          "validation_mse": 0.04012526317271126
+        },
+        {
+          "epoch": 5,
+          "updates": 70,
+          "validation_mse": 0.04863150755922497
+        },
+        {
+          "epoch": 10,
+          "updates": 140,
+          "validation_mse": 0.036038216761081744
+        },
+        {
+          "epoch": 15,
+          "updates": 210,
+          "validation_mse": 0.051322818192807464
+        },
+        {
+          "epoch": 20,
+          "updates": 280,
+          "validation_mse": 0.04250032566217883
+        },
+        {
+          "epoch": 25,
+          "updates": 350,
+          "validation_mse": 0.04926243741309981
+        },
+        {
+          "epoch": 30,
+          "updates": 420,
+          "validation_mse": 0.03899096443007524
+        },
+        {
+          "epoch": 35,
+          "updates": 490,
+          "validation_mse": 0.046076049663626495
+        },
+        {
+          "epoch": 40,
+          "updates": 560,
+          "validation_mse": 0.043460630126062084
+        },
+        {
+          "epoch": 45,
+          "updates": 630,
+          "validation_mse": 0.03967887683709622
+        },
+        {
+          "epoch": 50,
+          "updates": 700,
+          "validation_mse": 0.039054921855528606
+        },
+        {
+          "epoch": 55,
+          "updates": 770,
+          "validation_mse": 0.04448614887191926
+        },
+        {
+          "epoch": 60,
+          "updates": 840,
+          "validation_mse": 0.04840211667629476
+        }
+      ]
+    },
+    {
+      "seed": 497,
+      "stride": 1,
+      "parameters": 172831,
+      "updates": 840,
+      "epochs": 60,
+      "best_epoch": 20,
+      "best_validation_mse": 0.029615496689363977,
+      "initial_state_sha256": "b1333053a68a8cb3823d5e9fe7ef127eacb61a73bb560a6bc45e50177192b57a",
+      "best_state_sha256": "b96fa6a18c8ba07ae86084e190023e6e27cbbfc58f90f3b958cf490d680fa3db",
+      "checkpoint_sha256": "3fa7c42e00fc27304036a1b97eb79c04138e0339f3d52ff78cb8f28c4d84f6b5",
+      "train_seconds": 22.25383170810528,
+      "history": [
+        {
+          "epoch": 0,
+          "updates": 0,
+          "validation_mse": 0.04012526317271126
+        },
+        {
+          "epoch": 5,
+          "updates": 70,
+          "validation_mse": 0.050358990980349676
+        },
+        {
+          "epoch": 10,
+          "updates": 140,
+          "validation_mse": 0.04067228745167031
+        },
+        {
+          "epoch": 15,
+          "updates": 210,
+          "validation_mse": 0.05734266661751836
+        },
+        {
+          "epoch": 20,
+          "updates": 280,
+          "validation_mse": 0.029615496689363977
+        },
+        {
+          "epoch": 25,
+          "updates": 350,
+          "validation_mse": 0.12796391620540706
+        },
+        {
+          "epoch": 30,
+          "updates": 420,
+          "validation_mse": 0.03532780449917165
+        },
+        {
+          "epoch": 35,
+          "updates": 490,
+          "validation_mse": 0.03586188216159561
+        },
+        {
+          "epoch": 40,
+          "updates": 560,
+          "validation_mse": 0.07478709261163612
+        },
+        {
+          "epoch": 45,
+          "updates": 630,
+          "validation_mse": 0.06269253806448642
+        },
+        {
+          "epoch": 50,
+          "updates": 700,
+          "validation_mse": 0.07385519887916756
+        },
+        {
+          "epoch": 55,
+          "updates": 770,
+          "validation_mse": 0.15840442865735888
+        },
+        {
+          "epoch": 60,
+          "updates": 840,
+          "validation_mse": 0.14750400477735118
+        }
+      ]
+    },
+    {
+      "seed": 497,
+      "stride": 7,
+      "parameters": 172831,
+      "updates": 840,
+      "epochs": 60,
+      "best_epoch": 0,
+      "best_validation_mse": 0.04012526317271126,
+      "initial_state_sha256": "b1333053a68a8cb3823d5e9fe7ef127eacb61a73bb560a6bc45e50177192b57a",
+      "best_state_sha256": "b1333053a68a8cb3823d5e9fe7ef127eacb61a73bb560a6bc45e50177192b57a",
+      "checkpoint_sha256": "15fafa2d2af70db4154627910b8ae80aa6f48f3619a383b76002d478426a38c9",
+      "train_seconds": 20.65063808299601,
+      "history": [
+        {
+          "epoch": 0,
+          "updates": 0,
+          "validation_mse": 0.04012526317271126
+        },
+        {
+          "epoch": 5,
+          "updates": 70,
+          "validation_mse": 0.06161408990722848
+        },
+        {
+          "epoch": 10,
+          "updates": 140,
+          "validation_mse": 0.047535379853464337
+        },
+        {
+          "epoch": 15,
+          "updates": 210,
+          "validation_mse": 0.04019476277894296
+        },
+        {
+          "epoch": 20,
+          "updates": 280,
+          "validation_mse": 0.04172698190483962
+        },
+        {
+          "epoch": 25,
+          "updates": 350,
+          "validation_mse": 0.04656895419540935
+        },
+        {
+          "epoch": 30,
+          "updates": 420,
+          "validation_mse": 0.04271291195539081
+        },
+        {
+          "epoch": 35,
+          "updates": 490,
+          "validation_mse": 0.04664309277652385
+        },
+        {
+          "epoch": 40,
+          "updates": 560,
+          "validation_mse": 0.043148643071167496
+        },
+        {
+          "epoch": 45,
+          "updates": 630,
+          "validation_mse": 0.04651011200426109
+        },
+        {
+          "epoch": 50,
+          "updates": 700,
+          "validation_mse": 0.04077052465518817
+        },
+        {
+          "epoch": 55,
+          "updates": 770,
+          "validation_mse": 0.04292532105029643
+        },
+        {
+          "epoch": 60,
+          "updates": 840,
+          "validation_mse": 0.046238807448977404
+        }
+      ]
+    },
+    {
+      "seed": 498,
+      "stride": 1,
+      "parameters": 172831,
+      "updates": 840,
+      "epochs": 60,
+      "best_epoch": 30,
+      "best_validation_mse": 0.03165358181902221,
+      "initial_state_sha256": "1fa8d2ef031339125ab0725bb3c8bdbfa4de09933801494a73466c5e93f54cae",
+      "best_state_sha256": "87bde0732f577b33df8bf7c29cae15ea6143e99284a132bba8380ec4be1aeb5e",
+      "checkpoint_sha256": "84b2f91cb3435e41da8035f12b8b7ac683ca39604a04df6f0bcec00c2984c2a9",
+      "train_seconds": 22.11702504195273,
+      "history": [
+        {
+          "epoch": 0,
+          "updates": 0,
+          "validation_mse": 0.04012526317271126
+        },
+        {
+          "epoch": 5,
+          "updates": 70,
+          "validation_mse": 0.03166323991712059
+        },
+        {
+          "epoch": 10,
+          "updates": 140,
+          "validation_mse": 0.03490947546079667
+        },
+        {
+          "epoch": 15,
+          "updates": 210,
+          "validation_mse": 0.03380077980576576
+        },
+        {
+          "epoch": 20,
+          "updates": 280,
+          "validation_mse": 0.03612236114099654
+        },
+        {
+          "epoch": 25,
+          "updates": 350,
+          "validation_mse": 0.0722961877872605
+        },
+        {
+          "epoch": 30,
+          "updates": 420,
+          "validation_mse": 0.03165358181902221
+        },
+        {
+          "epoch": 35,
+          "updates": 490,
+          "validation_mse": 0.12209409997954468
+        },
+        {
+          "epoch": 40,
+          "updates": 560,
+          "validation_mse": 0.06482791867637151
+        },
+        {
+          "epoch": 45,
+          "updates": 630,
+          "validation_mse": 0.14907332077422122
+        },
+        {
+          "epoch": 50,
+          "updates": 700,
+          "validation_mse": 0.061551065386362756
+        },
+        {
+          "epoch": 55,
+          "updates": 770,
+          "validation_mse": 0.09881321343422148
+        },
+        {
+          "epoch": 60,
+          "updates": 840,
+          "validation_mse": 0.06298154114570399
+        }
+      ]
+    },
+    {
+      "seed": 498,
+      "stride": 7,
+      "parameters": 172831,
+      "updates": 840,
+      "epochs": 60,
+      "best_epoch": 5,
+      "best_validation_mse": 0.03406516840033134,
+      "initial_state_sha256": "1fa8d2ef031339125ab0725bb3c8bdbfa4de09933801494a73466c5e93f54cae",
+      "best_state_sha256": "c911527ab3a55636cd07610e2c43c351e7556b277a2f19322ce42b5464c59915",
+      "checkpoint_sha256": "b667e8ac2ab90a886ade3a788674c12a1bce80c06c0c69750d9bf74470bc6a40",
+      "train_seconds": 20.02464645798318,
+      "history": [
+        {
+          "epoch": 0,
+          "updates": 0,
+          "validation_mse": 0.04012526317271126
+        },
+        {
+          "epoch": 5,
+          "updates": 70,
+          "validation_mse": 0.03406516840033134
+        },
+        {
+          "epoch": 10,
+          "updates": 140,
+          "validation_mse": 0.04085018320859649
+        },
+        {
+          "epoch": 15,
+          "updates": 210,
+          "validation_mse": 0.04799832902669621
+        },
+        {
+          "epoch": 20,
+          "updates": 280,
+          "validation_mse": 0.044210865232973316
+        },
+        {
+          "epoch": 25,
+          "updates": 350,
+          "validation_mse": 0.040512284403849796
+        },
+        {
+          "epoch": 30,
+          "updates": 420,
+          "validation_mse": 0.04046866285253037
+        },
+        {
+          "epoch": 35,
+          "updates": 490,
+          "validation_mse": 0.04106371705644676
+        },
+        {
+          "epoch": 40,
+          "updates": 560,
+          "validation_mse": 0.04255735066063984
+        },
+        {
+          "epoch": 45,
+          "updates": 630,
+          "validation_mse": 0.04324450737683871
+        },
+        {
+          "epoch": 50,
+          "updates": 700,
+          "validation_mse": 0.051429356006606926
+        },
+        {
+          "epoch": 55,
+          "updates": 770,
+          "validation_mse": 0.06448921231411646
+        },
+        {
+          "epoch": 60,
+          "updates": 840,
+          "validation_mse": 0.04142373354395015
+        }
+      ]
+    }
+  ],
+  "dates": {
+    "train_origins": [
+      "2023-01-08",
+      "2023-01-09",
+      "2023-01-10",
+      "2023-01-11",
+      "2023-01-12",
+      "2023-01-13",
+      "2023-01-14",
+      "2023-01-15",
+      "2023-01-16",
+      "2023-01-17",
+      "2023-01-18",
+      "2023-01-19",
+      "2023-01-20",
+      "2023-01-21",
+      "2023-01-22",
+      "2023-01-23",
+      "2023-01-24",
+      "2023-01-25",
+      "2023-01-26",
+      "2023-01-27",
+      "2023-01-28",
+      "2023-01-29",
+      "2023-01-30",
+      "2023-01-31",
+      "2023-02-01",
+      "2023-02-02",
+      "2023-02-03",
+      "2023-02-04",
+      "2023-02-05",
+      "2023-02-06",
+      "2023-02-07",
+      "2023-02-08",
+      "2023-02-09",
+      "2023-02-10",
+      "2023-02-11",
+      "2023-02-12",
+      "2023-02-13",
+      "2023-02-14",
+      "2023-02-15",
+      "2023-02-16",
+      "2023-02-17",
+      "2023-02-18",
+      "2023-02-19",
+      "2023-02-20",
+      "2023-02-21",
+      "2023-02-22",
+      "2023-02-23",
+      "2023-02-24",
+      "2023-02-25",
+      "2023-02-26",
+      "2023-02-27",
+      "2023-02-28",
+      "2023-03-01",
+      "2023-03-02",
+      "2023-03-03",
+      "2023-03-04",
+      "2023-03-05",
+      "2023-03-06",
+      "2023-03-07",
+      "2023-03-08",
+      "2023-03-09",
+      "2023-03-10",
+      "2023-03-11",
+      "2023-03-12",
+      "2023-03-13",
+      "2023-03-14",
+      "2023-03-15",
+      "2023-03-16",
+      "2023-03-17",
+      "2023-03-18",
+      "2023-03-19",
+      "2023-03-20",
+      "2023-03-21",
+      "2023-03-22",
+      "2023-03-23",
+      "2023-03-24",
+      "2023-03-25",
+      "2023-03-26",
+      "2023-03-27",
+      "2023-03-28",
+      "2023-03-29",
+      "2023-03-30",
+      "2023-03-31",
+      "2023-04-01",
+      "2023-04-02",
+      "2023-04-03",
+      "2023-04-04",
+      "2023-04-05",
+      "2023-04-06",
+      "2023-04-07",
+      "2023-04-08",
+      "2023-04-09",
+      "2023-04-10",
+      "2023-04-11",
+      "2023-04-12",
+      "2023-04-13",
+      "2023-04-14",
+      "2023-04-15",
+      "2023-04-16",
+      "2023-04-17",
+      "2023-04-18",
+      "2023-04-19",
+      "2023-04-20",
+      "2023-04-21",
+      "2023-04-22",
+      "2023-04-23"
+    ],
+    "validation_origins": [
+      "2024-01-08",
+      "2024-01-09",
+      "2024-01-10",
+      "2024-01-11",
+      "2024-01-12",
+      "2024-01-13",
+      "2024-01-14",
+      "2024-01-15",
+      "2024-01-16",
+      "2024-01-17"
+    ],
+    "test_origins": [
+      "2024-02-01",
+      "2024-02-02",
+      "2024-02-03",
+      "2024-02-04",
+      "2024-02-05",
+      "2024-02-06",
+      "2024-02-07",
+      "2024-02-08",
+      "2024-02-09",
+      "2024-02-10",
+      "2024-02-11",
+      "2024-02-12",
+      "2024-02-13",
+      "2024-02-14",
+      "2024-02-15"
+    ],
+    "history_offsets": {
+      "daily": [
+        -1,
+        0
+      ],
+      "weekly": [
+        -7,
+        0
+      ]
+    },
+    "forecast_offsets": [
+      7,
+      14
+    ],
+    "test_targets": [
+      [
+        "2024-02-08",
+        "2024-02-15"
+      ],
+      [
+        "2024-02-09",
+        "2024-02-16"
+      ],
+      [
+        "2024-02-10",
+        "2024-02-17"
+      ],
+      [
+        "2024-02-11",
+        "2024-02-18"
+      ],
+      [
+        "2024-02-12",
+        "2024-02-19"
+      ],
+      [
+        "2024-02-13",
+        "2024-02-20"
+      ],
+      [
+        "2024-02-14",
+        "2024-02-21"
+      ],
+      [
+        "2024-02-15",
+        "2024-02-22"
+      ],
+      [
+        "2024-02-16",
+        "2024-02-23"
+      ],
+      [
+        "2024-02-17",
+        "2024-02-24"
+      ],
+      [
+        "2024-02-18",
+        "2024-02-25"
+      ],
+      [
+        "2024-02-19",
+        "2024-02-26"
+      ],
+      [
+        "2024-02-20",
+        "2024-02-27"
+      ],
+      [
+        "2024-02-21",
+        "2024-02-28"
+      ],
+      [
+        "2024-02-22",
+        "2024-02-29"
+      ]
+    ]
+  },
+  "protocol": {
+    "source_sha256": "949a176a64a7e7dece6b8953cbb740fcaf38900bd58a57efe6aa6dc1961dd9b1",
+    "script_sha256": "20aee1e9bc8271a8933bae4a09078b4bc31d5ca2801405c18812a8599990b258",
+    "source_revision": "10c70c251f58685cc6da3e79e6981fbb59ef3c5d",
+    "seeds": [
+      496,
+      497,
+      498
+    ],
+    "strides": [
+      1,
+      7
+    ],
+    "physical_leads_days": [
+      7,
+      14
+    ],
+    "epochs": 60,
+    "batch_size": 8,
+    "optimizer": "Adam",
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "width": 8,
+    "checkpoint_selection": "minimum equal-mask January 7/14-day MSE including epoch-zero persistence anchor",
+    "python": "3.12.11",
+    "torch": "2.14.1",
+    "zarr": "2.18.7",
+    "device": "cpu",
+    "threads": 2,
+    "no_test_selection": true
+  }
+}

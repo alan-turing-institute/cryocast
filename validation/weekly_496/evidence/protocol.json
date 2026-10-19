@@ -1,0 +1,31 @@
+{
+  "source_sha256": "949a176a64a7e7dece6b8953cbb740fcaf38900bd58a57efe6aa6dc1961dd9b1",
+  "script_sha256": "20aee1e9bc8271a8933bae4a09078b4bc31d5ca2801405c18812a8599990b258",
+  "source_revision": "10c70c251f58685cc6da3e79e6981fbb59ef3c5d",
+  "seeds": [
+    496,
+    497,
+    498
+  ],
+  "strides": [
+    1,
+    7
+  ],
+  "physical_leads_days": [
+    7,
+    14
+  ],
+  "epochs": 60,
+  "batch_size": 8,
+  "optimizer": "Adam",
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "width": 8,
+  "checkpoint_selection": "minimum equal-mask January 7/14-day MSE including epoch-zero persistence anchor",
+  "python": "3.12.11",
+  "torch": "2.14.1",
+  "zarr": "2.18.7",
+  "device": "cpu",
+  "threads": 2,
+  "no_test_selection": true
+}
