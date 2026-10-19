@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
 import numpy as np
 import pytest
@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from cryocast.callbacks.media_logging_callback import MediaLoggingCallback
 from cryocast.data import CombinedDataset
 from cryocast.models import BaseModel
-from cryocast.types import ModelStepOutput, PlotSpec
+from cryocast.types import Metadata, ModelStepOutput, PlotSpec
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def make_plots_args(mock_trainer: MagicMock) -> tuple[MagicMock, MagicMock, Magi
     mock_trainer.datamodule = None
     pl_module = MagicMock(spec=BaseModel)
     pl_module.hemisphere = "south"
+    pl_module.training_metadata = None
     dataset = MagicMock(spec=CombinedDataset)
     dataset.dates = [np.datetime64("2020-01-01T12:00:00")]
     dataset.get_forecast_steps.return_value = [np.datetime64("2020-01-01T12:00:00")]
@@ -518,6 +519,11 @@ class TestMakePlots:
         callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
         trainer, pl_module, dataset = make_plots_args
         training_dataset = MagicMock(spec=CombinedDataset)
+        training_dataset.inputs = []
+        training_dataset.start_date = np.datetime64("1979-01-01")
+        training_dataset.end_date = np.datetime64("2021-12-31")
+        training_dataset.n_history_steps = 1
+        training_dataset.__len__.return_value = 100
         trainer.datamodule = MagicMock(
             training_dataset=training_dataset, mask_directory=None
         )
@@ -526,7 +532,34 @@ class TestMakePlots:
 
         construction_calls = stubs["media_publisher_class"].call_args_list
         assert any(
-            c.kwargs.get("dataset") is training_dataset for c in construction_calls
+            c.kwargs["training_metadata"].training_start == "1979-01-01"
+            and c.kwargs["training_metadata"].n_samples == 100
+            for c in construction_calls
+        )
+
+    def test_prefers_training_metadata_saved_by_the_model(
+        self,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Use the model's own training metadata rather than rebuilding the dataset."""
+        callback = MediaLoggingCallback()
+        stubs = _stub_media_publisher(callback, monkeypatch)
+        callback.cached_batch_idx_ = 0
+        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        trainer, pl_module, dataset = make_plots_args
+        trainer.datamodule = MagicMock(mask_directory=None)
+        type(trainer.datamodule).training_dataset = PropertyMock(
+            side_effect=AssertionError("The training dataset should not be built.")
+        )
+        pl_module.training_metadata = Metadata(training_start="1979-01-01")
+
+        callback.make_plots(trainer, pl_module, dataset, 1)
+
+        construction_calls = stubs["media_publisher_class"].call_args_list
+        assert any(
+            c.kwargs["training_metadata"] is pl_module.training_metadata
+            for c in construction_calls
         )
 
     def test_falls_back_to_active_dataset_without_datamodule_training_dataset(
@@ -544,7 +577,10 @@ class TestMakePlots:
         callback.make_plots(trainer, pl_module, dataset, 1)
 
         construction_calls = stubs["media_publisher_class"].call_args_list
-        assert any(c.kwargs.get("dataset") is dataset for c in construction_calls)
+        assert any(
+            c.kwargs["training_metadata"].training_start == "2020-01-01"
+            for c in construction_calls
+        )
 
     def test_selects_start_date_using_batch_size_and_cached_batch_idx(
         self,
