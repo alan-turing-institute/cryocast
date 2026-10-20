@@ -1,3 +1,4 @@
+import math
 from typing import ClassVar
 
 import torch
@@ -30,17 +31,17 @@ class UncertaintyWeightedLoss(nn.Module):
     ) -> None:
         """Initialise uncertainty weighting parameters."""
         super().__init__()
-        if delta <= 0:
-            msg = "delta must be greater than 0."
+        if not math.isfinite(delta) or delta <= 0:
+            msg = "delta must be finite and greater than 0."
             raise ValueError(msg)
-        if min_uncertainty <= 0:
-            msg = "min_uncertainty must be greater than 0."
+        if not math.isfinite(min_uncertainty) or min_uncertainty <= 0:
+            msg = "min_uncertainty must be finite and greater than 0."
             raise ValueError(msg)
-        if max_uncertainty < min_uncertainty:
-            msg = "max_uncertainty must be greater than or equal to min_uncertainty."
+        if not math.isfinite(max_uncertainty) or max_uncertainty < min_uncertainty:
+            msg = "max_uncertainty must be finite and greater than or equal to min_uncertainty."
             raise ValueError(msg)
-        if power <= 0:
-            msg = "power must be greater than 0."
+        if not math.isfinite(power) or power <= 0:
+            msg = "power must be finite and greater than 0."
             raise ValueError(msg)
         if not uncertainty_variable:
             msg = "uncertainty_variable must not be empty."
@@ -56,12 +57,6 @@ class UncertaintyWeightedLoss(nn.Module):
         self, preds: Tensor, targets: Tensor, uncertainty: Tensor | None = None
     ) -> Tensor:
         """Compute inverse-uncertainty-weighted Huber loss."""
-        pointwise_loss = functional.huber_loss(
-            preds,
-            targets,
-            reduction="none",
-            delta=self.delta,
-        )
         if uncertainty is None:
             msg = (
                 "UncertaintyWeightedLoss requires an uncertainty tensor. Ensure the "
@@ -75,15 +70,38 @@ class UncertaintyWeightedLoss(nn.Module):
             )
             raise ValueError(msg)
 
-        uncertainty = uncertainty.to(device=preds.device, dtype=preds.dtype)
+        if preds.shape != targets.shape:
+            msg = (
+                f"Prediction shape {tuple(preds.shape)} does not match target "
+                f"shape {tuple(targets.shape)}."
+            )
+            raise ValueError(msg)
+
+        # Accumulate in at least float32, retaining double precision when present.
+        # Do not quantise physical uncertainty to a half-precision model's dtype.
+        dtype = torch.promote_types(
+            torch.promote_types(preds.dtype, targets.dtype), uncertainty.dtype
+        )
+        if dtype in (torch.float16, torch.bfloat16):
+            dtype = torch.float32
+        preds = preds.to(dtype=dtype)
+        targets = targets.to(dtype=dtype)
+        uncertainty = uncertainty.to(device=preds.device, dtype=dtype)
         valid = (
             torch.isfinite(uncertainty)
             & (uncertainty > 0)
             & (uncertainty <= self.max_uncertainty)
         )
         if not torch.any(valid):
-            return pointwise_loss.mean()
+            return functional.huber_loss(preds, targets, delta=self.delta)
 
-        sigma = uncertainty.clamp_min(self.min_uncertainty)
-        weights = torch.where(valid, sigma.pow(-self.power), torch.zeros_like(sigma))
+        # Select before computing Huber: multiplying an excluded NaN by zero
+        # would otherwise contaminate both the scalar loss and its gradients.
+        pointwise_loss = functional.huber_loss(
+            preds[valid], targets[valid], reduction="none", delta=self.delta
+        )
+        sigma = uncertainty[valid].clamp_min(self.min_uncertainty)
+        # Relative inverse powers preserve the normalised objective while bounding
+        # every weight by one and keeping at least one weight equal to one.
+        weights = (sigma.min() / sigma).pow(self.power)
         return (pointwise_loss * weights).sum() / weights.sum()

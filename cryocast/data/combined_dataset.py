@@ -65,20 +65,20 @@ class CombinedDataset(Dataset):
                     f"predicted variable, found {list(target_variables)}."
                 )
                 raise ValueError(msg)
-            if target_uncertainty_variable not in target_source.variable_names:
+            # Sigma can be stored on disk without being selected as a model input.
+            if target_uncertainty_variable not in target_source.variable_names_on_disk:
                 msg = (
                     f"Target uncertainty variable {target_uncertainty_variable!r} was "
                     f"not found in dataset {target_group_name!r}. Available variables: "
-                    f"{target_source.variable_names}."
+                    f"{target_source.variable_names_on_disk}."
                 )
                 raise ValueError(msg)
             self.target_uncertainty = target_source.subset(
-                variables=[target_uncertainty_variable]
+                variables=[target_uncertainty_variable], normalise=False
             )
             # This auxiliary variable is observational sigma, not a model input. Keep
             # the ingested physical fraction (and sentinel values) intact rather than
             # applying SingleDataset's model-input min-max normalisation.
-            self.target_uncertainty._normalise = False
         self.inputs = list(datasets)
 
         # Require that all datasets have the same frequency

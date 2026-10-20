@@ -65,3 +65,30 @@ def test_uncertainty_weighting_requires_single_target_variable(
             target_variables=["ice_conc", "temperature"],
             target_uncertainty_variable="ice_thickness",
         )
+
+
+def test_uncertainty_can_be_read_without_becoming_a_model_input(
+    mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
+) -> None:
+    """Read on-disk sigma after the data module selects only SIC input channels."""
+    dataset = SingleDataset(
+        name="sic", input_files=[mock_dataset], variables=["ice_conc"]
+    )
+    combined = CombinedDataset(
+        datasets=[dataset],
+        target_group_name="sic",
+        target_variables=["ice_conc"],
+        target_uncertainty_variable="ice_thickness",
+        n_history_steps=2,
+    )
+    batch = combined[0]
+    assert set(batch) == {"sic", "target", "target_uncertainty"}
+    assert combined.inputs[0].variable_names == ["ice_conc"]
+    assert batch["sic"].shape == (2, 1, 2, 2)
+    expected = SingleDataset(
+        name="sic",
+        input_files=[mock_dataset],
+        variables=["ice_thickness"],
+        normalise=False,
+    ).get_tchw([dates_as_np[2]])
+    np.testing.assert_array_equal(batch["target_uncertainty"], expected)
