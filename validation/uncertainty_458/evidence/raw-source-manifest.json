@@ -1,0 +1,907 @@
+{
+  "files": [
+    {
+      "date": "2023-01-01",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301011200.nc",
+      "sha256": "6ab1780fd4d567eea6a2bbc428e7d06cfdc3f1c0604f1b20146797320b934e07"
+    },
+    {
+      "date": "2023-01-02",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301021200.nc",
+      "sha256": "3647b7aede6d6e889d47273cdbfdf8a1efe3344b596b3e2861cb5a5a57a308dd"
+    },
+    {
+      "date": "2023-01-03",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301031200.nc",
+      "sha256": "425fe0d7e46ba1bd0844bb6a18cd2ffbdb6da8bb70e97ab360fb2b9a6fdf9e29"
+    },
+    {
+      "date": "2023-01-04",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301041200.nc",
+      "sha256": "20ffb34ce5d8de4abe2dd0be9230ae5d582a43f58465b8a2e97d2b5d5da81178"
+    },
+    {
+      "date": "2023-01-05",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301051200.nc",
+      "sha256": "488066755c8d08d42e6e1350ca615d0c2c38ca7fbb139a39e99aa7aab09b1e98"
+    },
+    {
+      "date": "2023-01-06",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301061200.nc",
+      "sha256": "0b774a80c5a0e2bfc11cd6eae55ddbb170baec8cca6af0abd7ce3dfdfba68f21"
+    },
+    {
+      "date": "2023-01-07",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301071200.nc",
+      "sha256": "1fa1c90edff6875ff811e0cb56852990bcc8289c2fe56f291e293bd7a677b211"
+    },
+    {
+      "date": "2023-01-08",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301081200.nc",
+      "sha256": "830a9440174ac8fce4ac000a46a200702ad0266708f27337ebf2de182d64988e"
+    },
+    {
+      "date": "2023-01-09",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301091200.nc",
+      "sha256": "060e6b702289d9dfeb17d3e5b2bdd86b2a5ce43f7ae90400bf02e4d34cc194fa"
+    },
+    {
+      "date": "2023-01-10",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301101200.nc",
+      "sha256": "007997e773f7bc63d26092f43a6274174362a1da8920eee28b33523404feaaee"
+    },
+    {
+      "date": "2023-01-11",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301111200.nc",
+      "sha256": "ca32875bbca52b50a56e8c15e5f78c3b0b3b6ee87b34c838d48a61d706f46723"
+    },
+    {
+      "date": "2023-01-12",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301121200.nc",
+      "sha256": "0555998be6e3d254b3b517bac3b171e29970cbdf839b700d0b2e51b9c366f783"
+    },
+    {
+      "date": "2023-01-13",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301131200.nc",
+      "sha256": "65ab97462f2f4df7b6be7e9c0fa58cf43327a102cdfa784404fc6dbcc571bed3"
+    },
+    {
+      "date": "2023-01-14",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301141200.nc",
+      "sha256": "be9597c0e291e85af042a8b631c59b4da2612dc32fd05b330d7cb4c3e7f60805"
+    },
+    {
+      "date": "2023-01-15",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301151200.nc",
+      "sha256": "8bf2a926cef11508eca0ff49f4be381ab859fcb3996f10481565e1ef1946ba37"
+    },
+    {
+      "date": "2023-01-16",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301161200.nc",
+      "sha256": "6caaf9e08e2a504c1db22a911e5b22b9fa4822680224e36acf38135cda544f8a"
+    },
+    {
+      "date": "2023-01-17",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301171200.nc",
+      "sha256": "77cc970239ae60e6a0d30f5260c6691e9503e78aa4294c828b877f2f1f881ed2"
+    },
+    {
+      "date": "2023-01-18",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301181200.nc",
+      "sha256": "432acda0fbb8dfdf5fb2c80031e605c7c167f1cc122005f0fba932f1974c4ec3"
+    },
+    {
+      "date": "2023-01-19",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301191200.nc",
+      "sha256": "594e7c9c0a657e59f7fbb4385dacadc63769272ac6464326156be16b9e352455"
+    },
+    {
+      "date": "2023-01-20",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301201200.nc",
+      "sha256": "562d9c8cf99924163722c5d279fbb2b2f2482cbb1c0949870012f579d3682711"
+    },
+    {
+      "date": "2023-01-21",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301211200.nc",
+      "sha256": "7fb942c1d046514167dd1f5394a3bb94ed57014d8a1d61f3c674edfa3eee2b0e"
+    },
+    {
+      "date": "2023-01-22",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301221200.nc",
+      "sha256": "3c355ae022f3dda44e66c795d8e030ccfc9a6171209187a76169b4e29cf3f5ff"
+    },
+    {
+      "date": "2023-01-23",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301231200.nc",
+      "sha256": "4a45ea02e95be54db3bd9729e66ebc13ef55330e4a8f08ddfc13263ee994debf"
+    },
+    {
+      "date": "2023-01-24",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301241200.nc",
+      "sha256": "29252b94da649149e87ecc91bc4ea25d9b05c138158335f7324a89c3ff2e1cc6"
+    },
+    {
+      "date": "2023-01-25",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301251200.nc",
+      "sha256": "03f6e668754cc4bb6890c08260b007df38dbb6c53477743f74d66019e113b3e9"
+    },
+    {
+      "date": "2023-01-26",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301261200.nc",
+      "sha256": "1852b602cfe50355103513048cbc126f065dafa3e4967503d78a8ac1cfef7208"
+    },
+    {
+      "date": "2023-01-27",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301271200.nc",
+      "sha256": "044822ed0ef71f6e9ce268fc1841dcb8398512573abed9ecfa80799df91a04e7"
+    },
+    {
+      "date": "2023-01-28",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301281200.nc",
+      "sha256": "93a954402585237364c7022e6d0b19e558f4757eb902813180deee972415e261"
+    },
+    {
+      "date": "2023-01-29",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301291200.nc",
+      "sha256": "131de649a1f059779afc6e8d1e26fea253b95e38f4241fbcf387f3c2d984f26d"
+    },
+    {
+      "date": "2023-01-30",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301301200.nc",
+      "sha256": "668c86fe0eed578cacff47adea2854b4daca376f1df0fc91d5927e534d13c481"
+    },
+    {
+      "date": "2023-01-31",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202301311200.nc",
+      "sha256": "f44a5bde35f8758bae3a10044a0c70ba6e63b913beb455d54f5e6f756900cc8a"
+    },
+    {
+      "date": "2023-02-01",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302011200.nc",
+      "sha256": "e2dd0cf806d4168ecd435d0a4e0817c515031af987cd643ba43615b2e9ca1259"
+    },
+    {
+      "date": "2023-02-02",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302021200.nc",
+      "sha256": "531bbf2b1b382b932e250b6658c0daf00735e561f144ae58d54f2f1cfed6a7be"
+    },
+    {
+      "date": "2023-02-03",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302031200.nc",
+      "sha256": "a954f0972953c375f5566a4449762166164fe666125db5bd1b890a0a3e9bd494"
+    },
+    {
+      "date": "2023-02-04",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302041200.nc",
+      "sha256": "845640403a92a74e8b99df099a2d420338c2cd5219ff6e5da832a71e0a2303d0"
+    },
+    {
+      "date": "2023-02-05",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302051200.nc",
+      "sha256": "51af9e286d040ab6233448b653d98dd5daf292bd7f392995bbccd2816e1aae1e"
+    },
+    {
+      "date": "2023-02-06",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302061200.nc",
+      "sha256": "0100cbb768da768b1d0f52b6def360bb4d4898a0333765edf0ca5839222384d3"
+    },
+    {
+      "date": "2023-02-07",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302071200.nc",
+      "sha256": "f086c1d522ec14f5de2f39fff9c67b2e72de68f36a66fc2e69c872ea9d0a3545"
+    },
+    {
+      "date": "2023-02-08",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302081200.nc",
+      "sha256": "681281a2787ba26394c7c2fe160b6f993d35fd62bdcc8b5388d2e8dec01eb87c"
+    },
+    {
+      "date": "2023-02-09",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302091200.nc",
+      "sha256": "7a90b8464899518746a46a3e1c20f3907d41b262a0a92424808eca7d7db6e5de"
+    },
+    {
+      "date": "2023-02-10",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302101200.nc",
+      "sha256": "e031bc524a460e6bb3f1246e350226177941a4282770600383b8d5efbec00ca7"
+    },
+    {
+      "date": "2023-02-11",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302111200.nc",
+      "sha256": "7717cf0aed6666af1bb987b4532ae3632f1f44165b8eb346aa85b046943a8232"
+    },
+    {
+      "date": "2023-02-12",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302121200.nc",
+      "sha256": "08b7aa2304e265e3a5ff726a1eaa80ce734049af4532d8850a7a9bc5426fab39"
+    },
+    {
+      "date": "2023-02-13",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302131200.nc",
+      "sha256": "c03d30799af14381a0c429c1b1e30bd06c648d8ae8563f643fd23874dbeb69c2"
+    },
+    {
+      "date": "2023-02-14",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302141200.nc",
+      "sha256": "d0a5a3dfdf4ea0f92de84e7df457d5b3f5ab471a73ada62438fc2394d7d233fd"
+    },
+    {
+      "date": "2023-02-15",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302151200.nc",
+      "sha256": "8b60625b3c8686650ddb9cc2c4d49f31a56c0f41cd324bbd76c9d10df0a8f787"
+    },
+    {
+      "date": "2023-02-16",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302161200.nc",
+      "sha256": "a6a9c80e3d3736911d680bb82d5ef0547f57b675e60a08f22a0c239e825350c1"
+    },
+    {
+      "date": "2023-02-17",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302171200.nc",
+      "sha256": "1a893e963116835b3dfb0ccb855726b098b67403fa54dd31dccc578c065cd427"
+    },
+    {
+      "date": "2023-02-18",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302181200.nc",
+      "sha256": "3b3cbf97170e42f75c2ad71c1e03fcab3fc1bb87f2480dac9ef4e3da5836c044"
+    },
+    {
+      "date": "2023-02-19",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302191200.nc",
+      "sha256": "9489ede4929c1e74615a4cd08addeb9c64ef1cfa22ed0ef23b2cc3c02d0da5da"
+    },
+    {
+      "date": "2023-02-20",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302201200.nc",
+      "sha256": "e50ffbf8fbfcc7e3d8720ea685d79666baa6594bdb6f2742ef33cfd932b5a771"
+    },
+    {
+      "date": "2023-02-21",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302211200.nc",
+      "sha256": "eb047d1c921ebac09961cffa6fbe06e53abc33b6d06501d0e86fdb79acfae6e8"
+    },
+    {
+      "date": "2023-02-22",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302221200.nc",
+      "sha256": "24a830f714d46d4e51c55c874eb52eff07c902b0dc56dcc6f8673d3db79d8c51"
+    },
+    {
+      "date": "2023-02-23",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302231200.nc",
+      "sha256": "71b7e83c65b06156af8412a01dfa69e4d25179b8835fd2120f5d0332b12a6ae1"
+    },
+    {
+      "date": "2023-02-24",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302241200.nc",
+      "sha256": "6eb3854c337e8a0b94222c5847c3ee1e8bf10745a49a8c4f4a52f7e22495ca00"
+    },
+    {
+      "date": "2023-02-25",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302251200.nc",
+      "sha256": "a515d557f5ff8dc49f42b72a1ca24a40215c87be03bb3737e0e69c278a1bef64"
+    },
+    {
+      "date": "2023-02-26",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302261200.nc",
+      "sha256": "6f33b65fa2c16e935b238e4056624be0e4b48a90f9bb7d69b44e674e3473ac4b"
+    },
+    {
+      "date": "2023-02-27",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302271200.nc",
+      "sha256": "fa293eeeceb088f71941466b5226db47ffca34e5ab34dc00b90c4079a4116ff1"
+    },
+    {
+      "date": "2023-02-28",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202302281200.nc",
+      "sha256": "3a33ccbd20f99f0fab5da18e60c70da17e15e5dee362b1185d51cb248717834e"
+    },
+    {
+      "date": "2023-03-01",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303011200.nc",
+      "sha256": "d14d7d7935fc1e5f4fcde1c26632a4c590bbdb054584911b233400437936ef63"
+    },
+    {
+      "date": "2023-03-02",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303021200.nc",
+      "sha256": "66f31ff4d1149ffa5c136ec5bda0c647a581970284fdab69e80de8acf45bb7db"
+    },
+    {
+      "date": "2023-03-03",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303031200.nc",
+      "sha256": "574b5bd5c43896cf9a15c0772eeba2f466647e315f61f24b85c90a921164fcd7"
+    },
+    {
+      "date": "2023-03-04",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303041200.nc",
+      "sha256": "0697a81f92ad555cd7d4736d19e535a787685e32de60fe95a3e2b393690c4f5b"
+    },
+    {
+      "date": "2023-03-05",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303051200.nc",
+      "sha256": "0e331a5afa26380c5ab6fc59b0c02b16c0b421819d1322d887d9c605ac598187"
+    },
+    {
+      "date": "2023-03-06",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303061200.nc",
+      "sha256": "98a0dd165dd3eeb47bc93d4a2b9ce1a6d70282adead53c0a23e786942f731639"
+    },
+    {
+      "date": "2023-03-07",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303071200.nc",
+      "sha256": "5dab180f7f088d042cae982384d31e9e53a773f3e0997a0648f2812533216e9e"
+    },
+    {
+      "date": "2023-03-08",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303081200.nc",
+      "sha256": "6de8d1b1752d986aff5ff807189078ca1c45f75f7347600df189bb4a2e95dc3a"
+    },
+    {
+      "date": "2023-03-09",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303091200.nc",
+      "sha256": "9e48cb2284f2b8289b39f78381921842c30fdaa6ab8823bac1c71c1b9fbcca7a"
+    },
+    {
+      "date": "2023-03-10",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303101200.nc",
+      "sha256": "ddbba17276d60ded290beec87a2db0ec23740386712bcac4f4bcfe4a5f1ee28e"
+    },
+    {
+      "date": "2023-03-11",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303111200.nc",
+      "sha256": "5dfe2eba0415ef7875cdbf2ccd0a8d97d0d025aa8454675c2423899a1c8e737f"
+    },
+    {
+      "date": "2023-03-12",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303121200.nc",
+      "sha256": "d251f252463ba4687616f5469bce08fb591f4171a6774c1791188456f8c39359"
+    },
+    {
+      "date": "2023-03-13",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303131200.nc",
+      "sha256": "c01744f19dde72c75e89f29ce4d3ba75abbcdc0f71677611742aa9a09ffdfdad"
+    },
+    {
+      "date": "2023-03-14",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303141200.nc",
+      "sha256": "89db0bf420ac76c278a5c59e2799c1362896dda6370d211efb768e914c9409a1"
+    },
+    {
+      "date": "2023-03-15",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303151200.nc",
+      "sha256": "1c498b93a1c638b380f2f4310093f245555a442880b8df594bdb8e099cb66a29"
+    },
+    {
+      "date": "2023-03-16",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303161200.nc",
+      "sha256": "1348f0836443e61e702cb53136f59996dd082c64c6af17373721621974278b91"
+    },
+    {
+      "date": "2023-03-17",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303171200.nc",
+      "sha256": "68552b41a519edf767634e07e49ab5b6e2669a6716f0ee968f6ce6d53fcf7fb9"
+    },
+    {
+      "date": "2023-03-18",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303181200.nc",
+      "sha256": "5f1de2afb9b03a9e4b8b3b04d5fb83f849c1af7d7042f58aff2f92307469d886"
+    },
+    {
+      "date": "2023-03-19",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303191200.nc",
+      "sha256": "e3d34e96382b20fc84b793e9f62d8131ad4553f6757abc368a1113e7511e9127"
+    },
+    {
+      "date": "2023-03-20",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303201200.nc",
+      "sha256": "475f1e5dcf1be8d36b3a740436b6c11040f2bce8966b5b4dacc6d4628d848bda"
+    },
+    {
+      "date": "2023-03-21",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303211200.nc",
+      "sha256": "2be81515b9872644f075033752bd2e13bd69b8f7d71986e0e1901ba8d2bd2317"
+    },
+    {
+      "date": "2023-03-22",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303221200.nc",
+      "sha256": "4a0e76f01be481b98cab9a43d6a175e4a219d0c691921623f8562f7a43f62c85"
+    },
+    {
+      "date": "2023-03-23",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303231200.nc",
+      "sha256": "171a736203ff9f19d99590144d14640bb9dc0d545eec20993d1aa877f66965b2"
+    },
+    {
+      "date": "2023-03-24",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303241200.nc",
+      "sha256": "32d7841641ad76c9f96cd8f67e2342abfef88f020451dbc089eaf85168d5f385"
+    },
+    {
+      "date": "2023-03-25",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303251200.nc",
+      "sha256": "4123bf606294cd7935b7b139bb804f81a34b89309c71375b746306bb44fcd13e"
+    },
+    {
+      "date": "2023-03-26",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303261200.nc",
+      "sha256": "9b42a29b717576e04813cfbed52b392f0ba7272f907036f7530f2b0b84e801f0"
+    },
+    {
+      "date": "2023-03-27",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303271200.nc",
+      "sha256": "7f89b3e1d128349d5bfe2da989f468d9cd88e6c67a6199c12bcd9b3ae40ddbc1"
+    },
+    {
+      "date": "2023-03-28",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303281200.nc",
+      "sha256": "729e0b69a4e621d88241d5a4cd4a2222b845c54e44fb3327bf83c5d0db75eff3"
+    },
+    {
+      "date": "2023-03-29",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303291200.nc",
+      "sha256": "7b58b8a3f3ad5f87cbe6de51b7d4ce0ac68151f7d885c3581ecf3dbbec1ecc74"
+    },
+    {
+      "date": "2023-03-30",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303301200.nc",
+      "sha256": "423a2d545e9a10c6523929a82818467f8dfabdd472133d94cc7cbfbde448c5d8"
+    },
+    {
+      "date": "2023-03-31",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202303311200.nc",
+      "sha256": "059c6fead779eb20cb53eef0b027c7f33c1c359d551920be1c68b28a9d2fc291"
+    },
+    {
+      "date": "2023-04-01",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304011200.nc",
+      "sha256": "c88b98af42ab1a1784e10a7da825e8c8469e40a7b36355fc21d179d945b6c48d"
+    },
+    {
+      "date": "2023-04-02",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304021200.nc",
+      "sha256": "bf70ef69a3732cef192b4c963015dd6bd1be019f13dd63afa09f15f62a3c0128"
+    },
+    {
+      "date": "2023-04-03",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304031200.nc",
+      "sha256": "0c5c2aee1ec413786186a555869f9bafbf6b564f633f8a8780f86376a6c62ba2"
+    },
+    {
+      "date": "2023-04-04",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304041200.nc",
+      "sha256": "8eabb55f41be2f74250b2d634847186cacef90de40f9884b2a15b5632bfc3ecb"
+    },
+    {
+      "date": "2023-04-05",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304051200.nc",
+      "sha256": "e330b56952517aff57c47c85bc5b0e10a8a6e283d3af23780ed30275375a1ca2"
+    },
+    {
+      "date": "2023-04-06",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304061200.nc",
+      "sha256": "01eec9878164ba3ea7412d46cb23cb99b7baa6f0a55aee6864fdcd1da858f3d8"
+    },
+    {
+      "date": "2023-04-07",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304071200.nc",
+      "sha256": "ade595ef10a43b2f4b85a8d16d36dd80e1494521c42b0b412394616d7c712358"
+    },
+    {
+      "date": "2023-04-08",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304081200.nc",
+      "sha256": "c83b5d6512cdefcf6b63c87d0bc29e352c191e80178146acbdaaac572af88731"
+    },
+    {
+      "date": "2023-04-09",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304091200.nc",
+      "sha256": "b93b745334502867c316ea1f8df1f96cb77157470adcd5d0be2b79a4350d8677"
+    },
+    {
+      "date": "2023-04-10",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304101200.nc",
+      "sha256": "fed3a1e9089cae6feb5fe0f063ede8236f42191eaa69c5ad8ef6134909d46970"
+    },
+    {
+      "date": "2023-04-11",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304111200.nc",
+      "sha256": "16f63f5ee9d49398ac2c656abfb4a873338f0ac1623876e4845dfb8f2b0b11fa"
+    },
+    {
+      "date": "2023-04-12",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304121200.nc",
+      "sha256": "af15d888d1a84d6b3f044728d3619a0dd7844905f05349dd13358e2efeb2c66b"
+    },
+    {
+      "date": "2023-04-13",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304131200.nc",
+      "sha256": "2101ddc8164448aea6ed659d5de01d7c10b7ded654bdc88db6274cde8e2e3082"
+    },
+    {
+      "date": "2023-04-14",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304141200.nc",
+      "sha256": "6dd009a5cc87975e8f34ac2ed5528cde08ad326f5df67ce82eef347238c5acd2"
+    },
+    {
+      "date": "2023-04-15",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304151200.nc",
+      "sha256": "4a8b495e29b322c544b043b2113f6d654113d040e8700ff161a390eb7463794c"
+    },
+    {
+      "date": "2023-04-16",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304161200.nc",
+      "sha256": "e95ff1a0f29438bf46f2d2ba3b569c88f6cc09134047a5367c22f9df0bb1c3ee"
+    },
+    {
+      "date": "2023-04-17",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304171200.nc",
+      "sha256": "ed784f6aae94628f5f7c00d920c2b887ee629eefe79ba73cca4ce498591c9f75"
+    },
+    {
+      "date": "2023-04-18",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304181200.nc",
+      "sha256": "15e5ba5d699d7ea78ce7f76833a25dcafc4aecf4ada11752a1bd667a35a040ae"
+    },
+    {
+      "date": "2023-04-19",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304191200.nc",
+      "sha256": "d43a5a9bf0dcca3f95a6ee66b63f2aed689fc13844fcc95018a4666d7d652b75"
+    },
+    {
+      "date": "2023-04-20",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304201200.nc",
+      "sha256": "aba6f02048e1aa71a5c718992d9fbb0703441ec6a08f2b84931fb3eb05dfd1bd"
+    },
+    {
+      "date": "2023-04-21",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304211200.nc",
+      "sha256": "1e90ac84c4f779afdbd14ea672cec15306d12f3cf6e273faf4f45e40c37c9a95"
+    },
+    {
+      "date": "2023-04-22",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304221200.nc",
+      "sha256": "cc3a90c57a56ae5bad953a09ae5a3d69b20ce099c1d0901e09a8a3a96c27279a"
+    },
+    {
+      "date": "2023-04-23",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304231200.nc",
+      "sha256": "5d53dde192bb57b8e847e3bcc975d45ff6b71bba4bb74596f0bfebfb3043382d"
+    },
+    {
+      "date": "2023-04-24",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304241200.nc",
+      "sha256": "305f26d3a580cea228fed7eac7a15aa224808fb42af87b1d09d0535a69babdab"
+    },
+    {
+      "date": "2023-04-25",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304251200.nc",
+      "sha256": "c0a4f1944fe1421a2da00fc6b256c822c11f630a6d5e481f50c103d3e7922b7d"
+    },
+    {
+      "date": "2023-04-26",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304261200.nc",
+      "sha256": "03d46921a64e9c139c90e6a5ec6fc187c2c3abf32619eb5bae1a1e30d20b6461"
+    },
+    {
+      "date": "2023-04-27",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304271200.nc",
+      "sha256": "52146bd07117fe7eec6b177959afebb91d02f7b94d92012d1886f7dd3fde2171"
+    },
+    {
+      "date": "2023-04-28",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304281200.nc",
+      "sha256": "062eb39ef54824accecb98482c935d4c42d195f4ed38ab3c9004d59f829fd714"
+    },
+    {
+      "date": "2023-04-29",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304291200.nc",
+      "sha256": "d53c2e31874d2b76196e45521f0b48e53b46d15b14eeef8b1222662ff33b61fc"
+    },
+    {
+      "date": "2023-04-30",
+      "file": "raw/training/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202304301200.nc",
+      "sha256": "bf3c26a921579a4d94cc1740c13f09e216abe94b1533f2575b499cf55aff5491"
+    },
+    {
+      "date": "2024-01-01",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401011200.nc",
+      "sha256": "08af706163221acfc9a1fc5ac5e831b566274a40aec994ffb1d77130077f79e3"
+    },
+    {
+      "date": "2024-01-02",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401021200.nc",
+      "sha256": "e1c9393d991ced64bf0382e9d5cb7eec011260d2a13f06372fabbef3fa1b0e6f"
+    },
+    {
+      "date": "2024-01-03",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401031200.nc",
+      "sha256": "0794fa6bdeb7a9eee485059c7ffb462b8c33e440b06e65e4e2201f1cd02ae09f"
+    },
+    {
+      "date": "2024-01-04",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401041200.nc",
+      "sha256": "8a354ead522726e65efdc1a670d50e0bca4933593434c4c88bf37ef3a02fb586"
+    },
+    {
+      "date": "2024-01-05",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401051200.nc",
+      "sha256": "49b198258dacc0bed640f6eeba1d041e29b67951a1478c00a74233188e571a62"
+    },
+    {
+      "date": "2024-01-06",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401061200.nc",
+      "sha256": "ccc3a22899503a653c3577ae4fba1840a91af1b21e6aa733ae7c9f679b4947c3"
+    },
+    {
+      "date": "2024-01-07",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401071200.nc",
+      "sha256": "49aa9b946a4803e99198edccebbb754bd88818a47063d21b53f3d48b8fa147ed"
+    },
+    {
+      "date": "2024-01-08",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401081200.nc",
+      "sha256": "32a346982ca222f2e2e514b651cec42305be13490eb3792659e2f3d62bc29579"
+    },
+    {
+      "date": "2024-01-09",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401091200.nc",
+      "sha256": "d09f5ddba39a3c210e93ba0f11655d39dbaba94bbdd0091a542ea0e7b2ee2a77"
+    },
+    {
+      "date": "2024-01-10",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401101200.nc",
+      "sha256": "d65c537636fa7b8c9ef03d6b7eb41fd0e414996ab3448841439d636b483d8632"
+    },
+    {
+      "date": "2024-01-11",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401111200.nc",
+      "sha256": "6606472a6c4be85f5a3a3a46d3bed4ef7b51ae7e860774e3e3bc3f1dc92e96e8"
+    },
+    {
+      "date": "2024-01-12",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401121200.nc",
+      "sha256": "fb2733551634d2302d94212152797ae8ed1e98b0cc60cfd9608245f3dfbedec3"
+    },
+    {
+      "date": "2024-01-13",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401131200.nc",
+      "sha256": "d538b46b5eff090d730f92bbcc18f593d77f22af033d7d4ed4e8f010d2c20a12"
+    },
+    {
+      "date": "2024-01-14",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401141200.nc",
+      "sha256": "289c13d8cbf0770902eb84ee1330810b2bb44723f9b87b0d53f53d6a57ca8bd4"
+    },
+    {
+      "date": "2024-01-15",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401151200.nc",
+      "sha256": "bc9436471ae6797749fe3dd5ffb7299c0a3a26eb2362167d57783c2d3ac022c3"
+    },
+    {
+      "date": "2024-01-16",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401161200.nc",
+      "sha256": "6eebc9bb43ed8837f7229c549d3d656a4ef94eee7755a677ccaed6657fccffeb"
+    },
+    {
+      "date": "2024-01-17",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401171200.nc",
+      "sha256": "0bc4b641183bfb35265ab1089b81012e20951cfbde1df0a314f0dcb785dff5fc"
+    },
+    {
+      "date": "2024-01-18",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401181200.nc",
+      "sha256": "eb3930e366d71b69c2c46a0d67f5c05b73d4d247cae55b80e46364bba089894c"
+    },
+    {
+      "date": "2024-01-19",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401191200.nc",
+      "sha256": "0d3cef3820e9993297e81751d28edf532b246dbc1703c3d4eee599d82e815cd6"
+    },
+    {
+      "date": "2024-01-20",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401201200.nc",
+      "sha256": "fab336a7bfd35e8bab8110965914827ac53aff2bd1fb11230e62be538ec36c25"
+    },
+    {
+      "date": "2024-01-21",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401211200.nc",
+      "sha256": "e18665e98979f3343441a983eefe162a4897da9a2a845f414149f1d4bd26a465"
+    },
+    {
+      "date": "2024-01-22",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401221200.nc",
+      "sha256": "163132627de5ea23d44ea6b8d80f37d4b5cc1db26c1b23ed8995227f4bdf0f4a"
+    },
+    {
+      "date": "2024-01-23",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401231200.nc",
+      "sha256": "e0e89c7764f359afb7a61ac08f337d8e16b2399294e9bde1917656b210ea7ed1"
+    },
+    {
+      "date": "2024-01-24",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401241200.nc",
+      "sha256": "b5072d646ca316ced543f231fe5c320555437f4f19b8c415ff9a5ab3af262dbf"
+    },
+    {
+      "date": "2024-01-25",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401251200.nc",
+      "sha256": "c7f8531ae31cd2b11782587baa0ce6be2cf125a7520a90377fe1362d43a61feb"
+    },
+    {
+      "date": "2024-01-26",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401261200.nc",
+      "sha256": "085012bc02c166b61ca31f5a468351bf2d4df26facdbabb7bda45229b4b5c211"
+    },
+    {
+      "date": "2024-01-27",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401271200.nc",
+      "sha256": "45a36cc0987e9e3b909500791910d845adea5ca59d91621afae83f2459f12d99"
+    },
+    {
+      "date": "2024-01-28",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401281200.nc",
+      "sha256": "a51956efa155e998617c54d6c26a429940c89ffd41d6affd3ef9eb4b1c7dedd1"
+    },
+    {
+      "date": "2024-01-29",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401291200.nc",
+      "sha256": "6ccfaa0abf174ac93dd58761bd85de597dde425afcdff18dfb736a2a2f065d93"
+    },
+    {
+      "date": "2024-01-30",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401301200.nc",
+      "sha256": "66f71234b67da55e72734071bbc36e3c58a018bf301796cc7decd327e459373e"
+    },
+    {
+      "date": "2024-01-31",
+      "file": "raw/validation/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202401311200.nc",
+      "sha256": "8af21a994a811ba0fd10a1eb2384bca79b9998cca05206fee5e8483098e09f8f"
+    },
+    {
+      "date": "2024-02-01",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402011200.nc",
+      "sha256": "109a97239f72756bbe4905d694f3d95be1f7785f7c5301b983c23e60efcce2a2"
+    },
+    {
+      "date": "2024-02-02",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402021200.nc",
+      "sha256": "6456bd38f938c1f0d2b0b22e32418da9d85373d2ad89b721653e5a4e223f91ea"
+    },
+    {
+      "date": "2024-02-03",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402031200.nc",
+      "sha256": "e5a287c6f387fdc69cd07688f42cbdd828b0f6620cb28a3dd8caf13a602b7926"
+    },
+    {
+      "date": "2024-02-04",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402041200.nc",
+      "sha256": "707b0bd6d7e416b3de2b7864af48e622d7558589a50d5cac9bd8c2f4117fa022"
+    },
+    {
+      "date": "2024-02-05",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402051200.nc",
+      "sha256": "62af9b4623090b115e24267c4f403d81dc9ac43d1787bd4b259e2f8f32360e1a"
+    },
+    {
+      "date": "2024-02-06",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402061200.nc",
+      "sha256": "1074ac4d4d054871c10aafae64b295c3204c5e557d1adcbdcbc879c61ab14978"
+    },
+    {
+      "date": "2024-02-07",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402071200.nc",
+      "sha256": "9a467599e632af9a6cf8727ec9b1fe470e705cb8a9b1684738f7fe46e68aa363"
+    },
+    {
+      "date": "2024-02-08",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402081200.nc",
+      "sha256": "3cfd05ebb819940f1795a479914a8b7f0b7a56f2387174e3b04ef609557cb155"
+    },
+    {
+      "date": "2024-02-09",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402091200.nc",
+      "sha256": "c5039cc062d22b65db63c4df17360ab278259d27cdc371639a59a47b6e59f387"
+    },
+    {
+      "date": "2024-02-10",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402101200.nc",
+      "sha256": "0d099c96faf38d7e4aba011d1a4ace2fa262767052f3f4e8511d4ead5a047029"
+    },
+    {
+      "date": "2024-02-11",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402111200.nc",
+      "sha256": "cfb5120016667db29a16d376a93803c783abdf47f4b1d5e941dbcc4b367ebb8e"
+    },
+    {
+      "date": "2024-02-12",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402121200.nc",
+      "sha256": "be01fb8e09ca9403bd36de25b937c08debf872e463ef4be3875fe26fc22832f7"
+    },
+    {
+      "date": "2024-02-13",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402131200.nc",
+      "sha256": "1795be628139baabf3307cf4c797cb77d7798278055e124e43e653f505653966"
+    },
+    {
+      "date": "2024-02-14",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402141200.nc",
+      "sha256": "a6830d3b7215c4a0650047bd2cf464e4525ae4183dab1feda8d5875f53b6d7da"
+    },
+    {
+      "date": "2024-02-15",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402151200.nc",
+      "sha256": "da08448266c422352e3e70825cb5635278357b0ab0b81502cf0d52145a98e832"
+    },
+    {
+      "date": "2024-02-16",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402161200.nc",
+      "sha256": "4fedc9c2a5061a6a1e41d9cb85b3e6763aed9b6b2a438cec76d4a0151419ad39"
+    },
+    {
+      "date": "2024-02-17",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402171200.nc",
+      "sha256": "a67372ea4337594a0fadf8302a93692af4b8ce7a0595c43f4ea5bcb7809ba05e"
+    },
+    {
+      "date": "2024-02-18",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402181200.nc",
+      "sha256": "35b95c94a58b8850c952fa0d89012c24c12e7e2015812fddc7396c5fdb2dccb9"
+    },
+    {
+      "date": "2024-02-19",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402191200.nc",
+      "sha256": "8816678f2e103a515b58bd4173235321cc838c6b626129ac2e547264cc9fea24"
+    },
+    {
+      "date": "2024-02-20",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402201200.nc",
+      "sha256": "74b1c1e15cb4e507f3009d87f450fd61f785fd40e1b997e0a06b737f3686286f"
+    },
+    {
+      "date": "2024-02-21",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402211200.nc",
+      "sha256": "f252ec5374aa49e9a2c8fb9d0db8d04abbadecb3469704bed37e6afb7809dfc1"
+    },
+    {
+      "date": "2024-02-22",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402221200.nc",
+      "sha256": "17a05c1d2ad5e45e05447148ab5ff3024e2fa4eb891fd9bf500aa3483bf589ad"
+    },
+    {
+      "date": "2024-02-23",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402231200.nc",
+      "sha256": "6125373b7acc8613d26f050721f6e73361ec42dba91637acfdd1d5bbb140f42b"
+    },
+    {
+      "date": "2024-02-24",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402241200.nc",
+      "sha256": "83f607a4b882f4e54546af9ebedbd3d25a05cc7c0a8534059d569e21915ae3cf"
+    },
+    {
+      "date": "2024-02-25",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402251200.nc",
+      "sha256": "fda805cf7c5b8931eccf731844239b65e75305ac93f890a25a1aa8bdce5971ff"
+    },
+    {
+      "date": "2024-02-26",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402261200.nc",
+      "sha256": "11252295ddb746571a4d8b7eee514a983f8bc01034cec6d08b915b246b4266ba"
+    },
+    {
+      "date": "2024-02-27",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402271200.nc",
+      "sha256": "61abaa323a9f5f837cab7f8fc8b0b4c03a9a5cfda6ff16f15c5cf97b5df27bc3"
+    },
+    {
+      "date": "2024-02-28",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402281200.nc",
+      "sha256": "fa091ce347c5a54814d0d17102234d8f9ef3a98bf76190492c7626ba3cddf506"
+    },
+    {
+      "date": "2024-02-29",
+      "file": "raw/testing/ice_conc_nh_ease2-250_icdr-v3p0-amsr_202402291200.nc",
+      "sha256": "1574cc4775d005c1aedc12d3027e628be600045962b31b341097524e68e5ee9c"
+    }
+  ],
+  "uncertainty_units": "fraction",
+  "raw_units": "%",
+  "conversion": "divide by 100 after NetCDF CF decoding"
+}

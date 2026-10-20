@@ -37,7 +37,7 @@ not change the objective unless it moves values across the configured clipping o
 validity thresholds.
 
 ```bash
-imp train --config-name <config> loss=uncertainty_weighted
+uv run cryocast train --config-name <config> loss=uncertainty_weighted
 ```
 
 The default configuration uses `power=2`, clips very small valid uncertainties at
@@ -49,7 +49,18 @@ The loss receives uncertainty through a separate `target_uncertainty` batch fiel
 This does not add a new model-input channel or metric; any uncertainty already present
 among a dataset group's ordinary input variables is unchanged. At present this loss
 supports exactly one predicted target variable, which matches the standard SIC
-configuration.
+configuration. The uncertainty variable only needs to exist in the underlying store;
+it does not need to be included among selected input variables.
+
+Half-precision inputs are accumulated in at least float32 with bounded relative
+weights; double precision is retained. Nonfinite configuration parameters are
+rejected. Pixels excluded by invalid uncertainty are selected out before evaluating
+Huber, so a masked NaN target cannot contaminate valid losses or gradients.
+
+A [matched five-seed observed-data comparison](https://github.com/sylvesterkaczmarek/icenet-mp/tree/feat/uncertainty-weighted-loss-303/validation/uncertainty_458)
+compares this objective with ordinary Huber and persistence on identical dates and
+pixels. The regional AMSR-based experiment is exploratory and does not establish
+full-release or SSMIS-specific skill. The default loss remains unchanged.
 
 ## Why an anti-blur loss exists (the double penalty, in two sentences)
 
