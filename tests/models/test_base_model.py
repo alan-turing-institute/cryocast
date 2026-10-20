@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import lightning
 import numpy as np
@@ -26,7 +27,7 @@ from cryocast.metrics import (
     SSIMPerForecastDay,
 )
 from cryocast.models import BaseModel, Persistence
-from cryocast.types import Hemisphere, ModelStepOutput, TensorNTCHW
+from cryocast.types import Hemisphere, Metadata, ModelStepOutput, TensorNTCHW
 
 # The metrics configured by default, which also checks that the shipped config is valid
 DEFAULT_METRICS: list[Any] = OmegaConf.to_container(  # type: ignore[assignment]
@@ -191,7 +192,7 @@ class TestBaseModel:
             scheduler=DictConfig({}),
             lr_scheduler=DictConfig({}),
         )
-        checkpoint_path = tmp_path / "legacy.ckpt"
+        checkpoint_file = tmp_path / "legacy.ckpt"
         torch.save(
             {
                 "state_dict": model.state_dict(),
@@ -202,15 +203,15 @@ class TestBaseModel:
                 },
                 "pytorch-lightning_version": lightning.__version__,
             },
-            checkpoint_path,
+            checkpoint_file,
         )
 
         with pytest.raises(TypeError, match="must be a mapping"):
-            FakeDataModel.load_from_checkpoint(checkpoint_path, weights_only=False)
+            FakeDataModel.load_from_checkpoint(checkpoint_file, weights_only=False)
 
         replacement = [metric_spec("mae", MAEPerForecastDay)]
         loaded = FakeDataModel.load_from_checkpoint(
-            checkpoint_path, metrics=replacement, weights_only=False
+            checkpoint_file, metrics=replacement, weights_only=False
         )
         assert set(loaded.test_metrics) == {"mae"}
         # Metric configs are supplied at load time, so are not saved in checkpoints
@@ -699,6 +700,89 @@ class TestBaseModelMetricAccumulation:
             metric.update(prediction, target)
             assert torch.allclose(metric.compute(), expected)
             assert torch.allclose(scores[name], expected)
+
+
+def build_fake_data_model() -> FakeDataModel:
+    """Build a minimal FakeDataModel."""
+    return FakeDataModel(
+        name="fake data",
+        input_spaces=[{"channels": 1, "name": "input", "shape": (2, 2)}],
+        n_forecast_steps=1,
+        n_history_steps=1,
+        output_space={"channels": 1, "name": "target", "shape": (2, 2)},
+        optimizer=DictConfig({}),
+        scheduler=DictConfig({}),
+        lr_scheduler=DictConfig({}),
+    )
+
+
+class TestBaseModelTrainingMetadata:
+    """Tests that the training metadata is recorded, saved and restored."""
+
+    METADATA = Metadata(
+        n_history_steps=1,
+        n_samples=100,
+        training_end="2021-12-31",
+        training_start="1979-01-01",
+        vars_by_source={"osisaf-north": ["ice_conc"]},
+    )
+
+    def test_on_fit_start_records_the_training_dataset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        model = build_fake_data_model()
+        training_dataset = MagicMock()
+        training_dataset.inputs = [
+            MagicMock(variable_names=["ice_conc"]),
+        ]
+        training_dataset.inputs[0].name = "osisaf-north"
+        training_dataset.n_history_steps = 1
+        training_dataset.__len__.return_value = 100
+        training_dataset.start_date = np.datetime64("1979-01-01T00:00")
+        training_dataset.end_date = np.datetime64("2021-12-31T00:00")
+        trainer = MagicMock(datamodule=MagicMock(training_dataset=training_dataset))
+        monkeypatch.setattr(type(model), "trainer", trainer)
+
+        model.on_fit_start()
+
+        assert model.training_metadata == self.METADATA
+
+    def test_on_fit_start_without_a_datamodule_records_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        model = build_fake_data_model()
+        monkeypatch.setattr(type(model), "trainer", MagicMock(datamodule=None))
+
+        model.on_fit_start()
+
+        assert model.training_metadata is None
+
+    def test_round_trips_through_a_weights_only_checkpoint(
+        self, tmp_path: Path
+    ) -> None:
+        model = build_fake_data_model()
+        model.training_metadata = self.METADATA
+        checkpoint: dict[str, Any] = {}
+        model.on_save_checkpoint(checkpoint)
+        checkpoint_file = tmp_path / "model.ckpt"
+        torch.save(checkpoint, checkpoint_file)
+
+        loaded = build_fake_data_model()
+        loaded.on_load_checkpoint(torch.load(checkpoint_file, weights_only=True))
+
+        assert loaded.training_metadata == self.METADATA
+
+    def test_load_checkpoint_without_metadata_leaves_it_unset(self) -> None:
+        model = build_fake_data_model()
+        model.on_load_checkpoint({})
+        assert model.training_metadata is None
+
+    def test_load_checkpoint_ignores_unknown_fields(self) -> None:
+        model = build_fake_data_model()
+        model.on_load_checkpoint(
+            {"training_metadata": {"training_start": "1979-01-01", "unknown": 1}}
+        )
+        assert model.training_metadata == Metadata(training_start="1979-01-01")
 
 
 class TestBaseModelLossConfig:

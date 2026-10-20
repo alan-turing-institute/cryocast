@@ -13,6 +13,7 @@ Description:
 """
 
 import math
+from numbers import Integral
 
 import torch
 import torch.nn.functional as F
@@ -36,6 +37,14 @@ class GaussianDiffusion:
             beta_schedule (BetaSchedule): Type of beta schedule to use. Options: BetaSchedule.LINEAR or BetaSchedule.COSINE.
 
         """
+        if (
+            isinstance(timesteps, bool)
+            or not isinstance(timesteps, (int, Integral))
+            or timesteps < 1
+        ):
+            msg = f"timesteps must be a positive integer, got {timesteps!r}."
+            raise ValueError(msg)
+        timesteps = int(timesteps)
         self.timesteps = timesteps
 
         if beta_schedule == BetaSchedule.LINEAR:

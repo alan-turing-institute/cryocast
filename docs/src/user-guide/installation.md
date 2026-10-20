@@ -42,7 +42,7 @@ You will need `uv` to manage the Python environment (installation instructions c
 Clone the repository and install with `uv`:
 
 ```bash
-git clone git@github.com:alan-turing-institute/icenet-mp.git
+git clone git@github.com:alan-turing-institute/cryocast.git
 cd cryocast
 uv sync --managed-python
 ```
