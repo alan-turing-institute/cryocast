@@ -328,7 +328,10 @@ class TestEncodeProcessDecode:
 
         encoder = model.encoders[0]
         future = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
-        batch = {forecast_input_key(cfg_input_space["name"]): future}
+        batch = {
+            cfg_input_space["name"]: torch.zeros_like(future),
+            forecast_input_key(cfg_input_space["name"]): future,
+        }
 
         expected = encoder.rollout(future).detach()
         actual = model._encode_forecast_inputs(batch)

@@ -364,3 +364,74 @@ class TestCombinedDatasetClimatology:
         assert (
             combined.climatology_for(np.datetime64("2019-12-31T12:00:00", "s")) is None
         )
+
+
+@pytest.mark.parametrize(("history", "forecast"), [(1, 1), (2, 1), (1, 2)])
+def test_forecast_supervision_requires_future_dates_in_every_modality(
+    mock_dataset: Path,
+    dates_as_np: tuple[np.datetime64, ...],
+    dates_as_str: tuple[str, ...],
+    history: int,
+    forecast: int,
+) -> None:
+    """A shorter auxiliary archive changes training origins only when opted in."""
+    target = SingleDataset(name="sic", input_files=[mock_dataset])
+    weather = SingleDataset(
+        name="weather",
+        input_files=[mock_dataset],
+        date_ranges=[{"start": dates_as_str[0], "end": dates_as_str[2]}],
+    )
+    ordinary = CombinedDataset(
+        datasets=[target, weather],
+        target_group_name="sic",
+        target_variables=["ice_conc"],
+        n_history_steps=history,
+        n_forecast_steps=forecast,
+    )
+    supervised = CombinedDataset(
+        datasets=[target, weather],
+        target_group_name="sic",
+        target_variables=["ice_conc"],
+        n_history_steps=history,
+        n_forecast_steps=forecast,
+        include_forecast_inputs=True,
+    )
+    assert ordinary.dates == list(dates_as_np[: 4 - history])
+    assert supervised.dates == list(dates_as_np[: 4 - history - forecast])
+    ordinary_batch = ordinary[0]
+    future_batch = supervised[0]
+    for name, field in ordinary_batch.items():
+        np.testing.assert_array_equal(future_batch[name], field)
+    for source in (target, weather):
+        key = forecast_input_key(source.name)
+        assert key not in ordinary_batch
+        np.testing.assert_array_equal(
+            future_batch[key],
+            source.get_tchw(list(dates_as_np[history : history + forecast])),
+        )
+
+
+def test_future_window_does_not_cross_disjoint_training_periods(
+    mock_dataset: Path,
+    dates_as_np: tuple[np.datetime64, ...],
+    dates_as_str: tuple[str, ...],
+) -> None:
+    """Neither history nor latent targets may bridge a removed calendar date."""
+    target = SingleDataset(name="sic", input_files=[mock_dataset])
+    weather = SingleDataset(
+        name="weather",
+        input_files=[mock_dataset],
+        date_ranges=[
+            {"start": dates_as_str[0], "end": dates_as_str[1]},
+            {"start": dates_as_str[3], "end": dates_as_str[4]},
+        ],
+    )
+    dataset = CombinedDataset(
+        datasets=[target, weather],
+        target_group_name="sic",
+        target_variables=["ice_conc"],
+        n_history_steps=1,
+        n_forecast_steps=1,
+        include_forecast_inputs=True,
+    )
+    assert dataset.dates == [dates_as_np[0], dates_as_np[3]]

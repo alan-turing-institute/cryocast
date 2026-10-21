@@ -434,8 +434,8 @@ class DiffusionProcessor(BaseProcessor):
         This method generates the entire forecast sequence in a single
         diffusion process applied to one joint output tensor. The forecast
         steps are encoded as channels in a single tensor of shape
-        (B, n_forecast_steps * C_target, H, W), then reshaped back to NTCHW
-        and lifted into the combined latent for the frozen decoder.
+        (B, n_forecast_steps * C_combined, H, W), then reshaped back to NTCHW
+        for the frozen decoder.
 
         Args:
             x (TensorNTCHW): Encoded history tensor of shape
@@ -488,7 +488,7 @@ class DiffusionProcessor(BaseProcessor):
             x (TensorNTCHW): Encoded history tensor of shape
                 (B, n_history_steps, n_latent_channels_total, H, W).
             y (TensorNTCHW | None): During training: encoded target latent of
-                shape (B, n_forecast_steps, n_latent_channels_target, H, W).
+                shape (B, n_forecast_steps, n_latent_channels_total, H, W).
                 Otherwise: None.
 
         Returns:
@@ -498,7 +498,22 @@ class DiffusionProcessor(BaseProcessor):
                 otherwise None)
 
         """
+        if tuple(x.shape[1:]) != (
+            self.n_history_steps,
+            *self.data_space.chw,
+        ):
+            msg = (
+                f"History latent has shape {tuple(x.shape)}; expected "
+                f"(batch, {self.n_history_steps}, {self.data_space.chw})."
+            )
+            raise ValueError(msg)
         if y is not None:
+            expected = (x.shape[0], self.n_forecast_steps, *self.data_space.chw)
+            if tuple(y.shape) != expected:
+                msg = (
+                    f"Forecast latent has shape {tuple(y.shape)}; expected {expected}."
+                )
+                raise ValueError(msg)
             return self._rollout_training(x, y)
         return self._rollout_inference(x)
 

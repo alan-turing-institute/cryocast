@@ -167,6 +167,38 @@ class EncodeProcessDecode(BaseModel):
         # Freeze unused modules
         self._freeze_unused_modules()
 
+    @override
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Record the latent-target contract independently of tensor shapes."""
+        super().on_save_checkpoint(checkpoint)
+        if self.processor.computes_loss_in_latent_space:
+            checkpoint["latent_target_layout"] = "full_combined_v1"
+
+    @override
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Reject incompatible latent targets; retain ordinary-model checkpoints."""
+        if self.processor.computes_loss_in_latent_space:
+            if checkpoint.get("latent_target_layout") != "full_combined_v1":
+                msg = (
+                    "A full combined-latent model requires a checkpoint marked "
+                    "latent_target_layout='full_combined_v1'. Unversioned or "
+                    "target-slice diffusion checkpoints are not interchangeable, "
+                    "even when their tensor shapes match. Use the checkpoint's "
+                    "original code for evaluation, or retrain the processor and "
+                    "finetuning stages with full-latent targets."
+                )
+                raise ValueError(msg)
+        elif "state_dict" in checkpoint:
+            # The removed target encoder was frozen and unused by non-latent
+            # processors. Drop only that namespace, in memory, keeping strict
+            # loading for all parameters that actually participate in forecasting.
+            checkpoint["state_dict"] = {
+                key: value
+                for key, value in checkpoint["state_dict"].items()
+                if not key.startswith("target_encoder.")
+            }
+        super().on_load_checkpoint(checkpoint)
+
     @property
     def multistage_only(self) -> bool:
         return self.processor.computes_loss_in_latent_space
@@ -200,7 +232,22 @@ class EncodeProcessDecode(BaseModel):
                 "dataset. Build the training dataset with include_forecast_inputs=True."
             )
             raise ValueError(msg) from exc
-        return self._encode_inputs(forecast_inputs).detach()
+        # Validate before BaseEncoder.rollout can reshape a malformed physical
+        # tensor into an apparently valid latent with different axis semantics.
+        batch_size = batch[self.encoders[0].name].shape[0]
+        for encoder in self.encoders:
+            future = forecast_inputs[encoder.name]
+            expected = (batch_size, self.n_forecast_steps, *encoder.data_space_in.chw)
+            if tuple(future.shape) != expected:
+                msg = (
+                    f"Forecast input '{encoder.name}' has shape {tuple(future.shape)}; "
+                    f"expected {expected}."
+                )
+                raise ValueError(msg)
+        # Clean supervision does not need an autograd graph. Keep each encoder's
+        # mode unchanged; history encoding remains differentiable during finetuning.
+        with torch.no_grad():
+            return self._encode_inputs(forecast_inputs)
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the last frame's target variables as the decoder skip-connection anchor.
@@ -244,7 +291,11 @@ class EncodeProcessDecode(BaseModel):
         ).prediction
 
         # Use persistence as the skip-connection anchor, if required
-        persistence = self._extract_anchor(inputs[self.output_space.name])
+        persistence = (
+            self._extract_anchor(inputs[self.output_space.name])
+            if self.decoder.skip_connection
+            else None
+        )
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
         return self.decoder.rollout(
@@ -419,7 +470,11 @@ class EncodeProcessDecode(BaseModel):
 
             # Decode under no_grad for metrics/callbacks only.
             # Use persistence as the skip-connection anchor, if required.
-            anchor = self._extract_anchor(batch[self.output_space.name])
+            anchor = (
+                self._extract_anchor(batch[self.output_space.name])
+                if self.decoder.skip_connection
+                else None
+            )
             with torch.no_grad():
                 prediction = self.decoder.rollout(
                     processor_output.prediction,
