@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import xarray as xr
 from anemoi.datasets.create.sources.xarray import load_one
+from earthkit.data.core.fieldlist import MultiFieldList
 
 from cryocast.ingestion.filters.crop_latlon_filter import CropLatLonFilter
 
@@ -140,3 +141,17 @@ class TestCropLatLonFilter:
             CropLatLonFilter(north=81.0, west=15.0, south=76.0, east=35.0).forward(
                 MagicMock()
             )
+
+
+@pytest.mark.parametrize("coordinate", ["latitude", "longitude"])
+def test_crop_rejects_same_shape_with_different_geography(coordinate: str) -> None:
+    """Matching tensor shapes do not establish matching physical grid cells."""
+    lat = np.array([[80.0, 80.0], [78.0, 78.0]])
+    lon = np.array([[20.0, 30.0], [20.0, 30.0]])
+    shifted_lat = lat + (0.1 if coordinate == "latitude" else 0.0)
+    shifted_lon = lon + (0.1 if coordinate == "longitude" else 0.0)
+    fields = MultiFieldList(
+        [_field_list(lat, lon), _field_list(shifted_lat, shifted_lon)]
+    )
+    with pytest.raises(ValueError, match="coordinates"):
+        CropLatLonFilter(north=81, south=76, west=15, east=35).forward(fields)

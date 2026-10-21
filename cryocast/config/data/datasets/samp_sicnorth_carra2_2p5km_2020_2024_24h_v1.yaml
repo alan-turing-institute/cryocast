@@ -40,8 +40,8 @@ samp-sicnorth-carra2-2p5km-2020-2024-24h-v1:
               - ${data.roi.west}
               - ${data.roi.south}
               - ${data.roi.east}
-      # The CDS service currently returns the native full CARRA2 grid even when an
-      # area is requested, so enforce the ROI before storing the Anemoi dataset.
+      # Enforce the ROI locally whether CDS returns a geographic subset or the
+      # full native grid. Retain the smallest rectangular native-grid window.
       - crop-latlon:
           north: ${data.roi.north}
           west: ${data.roi.west}
