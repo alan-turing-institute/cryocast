@@ -27,7 +27,8 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.DiffusionProcessor
-  timesteps: 250
+  timesteps: 250     # best in the sweep; 100 or 150 also did well and validate faster
+                     # (validation runs DDPM over all timesteps), so lower it if training time is limited
   ddim_steps: null   # null = all 250 timesteps -> DDPM sampling
   eta: 1.0           # with ddim_steps=null, gives standard DDPM
   # For evaluation, DDIM with ddim_steps: 100, eta: 1.0 scored best. To evaluate a trained
