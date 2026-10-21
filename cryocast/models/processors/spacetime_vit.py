@@ -9,7 +9,7 @@ from torch import nn
 from torch.nn import functional
 
 from cryocast.models.common import PatchEmbedding, TransformerEncoderBlock
-from cryocast.types import ProcessorOutput, TensorNTCHW
+from cryocast.types import DataSpace, ProcessorOutput, TensorNTCHW
 
 from .base_processor import BaseProcessor
 
@@ -67,10 +67,21 @@ class SpaceTimeVitProcessor(BaseProcessor):
         patch_size: int = 24,
         spatial_depth: int = 2,
         temporal_depth: int = 4,
+        target_latent_space: DataSpace | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialise the factorised space-time transformer."""
+        """Initialise the transformer with an explicit or legacy prediction slice.
+
+        ``target_latent_space`` identifies the output dataset's encoder channels
+        when the surrounding model uses full combined-latent supervision. This
+        prediction-only processor still updates just that slice and persists the
+        remaining conditioning channels. Legacy callers can continue to specify
+        their slice through ``data_space_target`` and ``target_channel_offset``.
+        """
+        if target_latent_space is not None:
+            kwargs["data_space_target"] = target_latent_space
         super().__init__(**kwargs)
+        self.target_latent_space = target_latent_space
         self._validate_attention_configuration(
             dropout=dropout,
             emb_dim=emb_dim,

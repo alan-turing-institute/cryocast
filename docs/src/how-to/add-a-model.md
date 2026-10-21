@@ -76,8 +76,13 @@ target-slice configuration.
 The processor adds residuals only to the declared target latent slice. Other
 channels retain their latest observed values, so Argo remains conditioning rather
 than a prognostic variable. Future targets are not read by its prediction path.
-This target-slice interface must be reconciled explicitly with changes that remove
-`target_channel_offset`; predicting every channel would change this model's contract.
+The optional `target_latent_space` constructor argument identifies this slice
+separately from a surrounding model's full combined-latent training target.
+Together with `target_channel_offset`, it preserves prediction-only Argo semantics
+when used with full-latent diffusion support. Legacy direct callers can still use
+`data_space_target` and `target_channel_offset`. This metadata changes neither
+parameter shapes nor existing checkpoint weights. A missing or invalid slice is
+rejected; it never defaults to forecasting all conditioning channels.
 
 `MissingDataCNNEncoder` replaces nonfinite measurements with zero and supplies an
 availability channel. Its finite `missing_fill_value` describes a **complete missing
