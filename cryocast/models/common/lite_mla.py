@@ -72,6 +72,12 @@ class LiteMLA(nn.Module):
 
     def relu_linear_attention(self, qkv: Tensor) -> Tensor:
         """Apply ReLU linear attention to a single [N, 3*C, H, W] q/k/v projection."""
+        # The spatial reductions overflow in FP16 so we compute them in FP32 without
+        # autocast then convert them back
+        if qkv.dtype == torch.float16:
+            with torch.autocast(device_type=qkv.device.type, enabled=False):
+                return self.relu_linear_attention(qkv.float()).half()
+
         n, _, h, w = qkv.shape
         # q, k, v shapes: [N, heads, head_dim, H*W]
         q, k, v = qkv.view(n, 3, self.heads, self.head_dim, h * w).unbind(dim=1)

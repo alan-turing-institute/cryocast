@@ -224,6 +224,11 @@ class SparseCrossAttentionEncoder(nn.Module):
         if query_latitudes.ndim != 1 or query_longitudes.shape != query_latitudes.shape:
             msg = "Query latitude and longitude must be aligned 1D tensors."
             raise ValueError(msg)
+        self._validate_batch(batch)
+        if query_latitudes.numel() == 0:
+            return batch.measurements.new_empty(
+                (*batch.latitudes.shape[:2], 0, self.config.latent_channels)
+            )
         query_features = spherical_fourier_features(
             query_latitudes.to(
                 device=batch.latitudes.device,
@@ -272,9 +277,11 @@ class SparseCrossAttentionEncoder(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         self._validate_batch(batch)
         batch_size, n_times, n_points = batch.latitudes.shape
+        # Mask before trigonometry, not just after creating token features:
+        # a discarded NaN can still propagate a NaN derivative in backward.
         positional = spherical_fourier_features(
-            batch.latitudes,
-            batch.longitudes,
+            torch.where(batch.mask, batch.latitudes, 0.0),
+            torch.where(batch.mask, batch.longitudes, 0.0),
             self.config.fourier_frequencies,
         )
         feature_parts = [batch.measurements, positional]

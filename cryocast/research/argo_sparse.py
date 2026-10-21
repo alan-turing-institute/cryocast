@@ -444,7 +444,7 @@ def compute_regression_metrics(
     target: FloatArray,
     variable_names: Sequence[str],
 ) -> dict[str, RegressionMetrics]:
-    """Compute finite-value MAE and RMSE independently for each variable."""
+    """Score finite truth per variable, rejecting failed predictions on known truth."""
     predicted = np.asarray(predicted, dtype=np.float64)
     target = np.asarray(target, dtype=np.float64)
     names = tuple(variable_names)
@@ -459,7 +459,10 @@ def compute_regression_metrics(
     for variable_index, variable_name in enumerate(names):
         prediction_values = predicted[:, variable_index]
         target_values = target[:, variable_index]
-        valid = np.isfinite(prediction_values) & np.isfinite(target_values)
+        valid = np.isfinite(target_values)
+        if np.any(valid & ~np.isfinite(prediction_values)):
+            msg = f"Non-finite prediction for {variable_name} on a finite target."
+            raise ValueError(msg)
         count = int(valid.sum())
         if count == 0:
             metrics[variable_name] = RegressionMetrics(

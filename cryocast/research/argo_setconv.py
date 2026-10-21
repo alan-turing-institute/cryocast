@@ -142,6 +142,10 @@ class SparseSetConvEncoder(nn.Module):
         if query_latitudes.ndim != 1 or query_longitudes.shape != query_latitudes.shape:
             msg = "Query latitude and longitude must be aligned 1D tensors."
             raise ValueError(msg)
+        if query_latitudes.numel() == 0:
+            return batch.measurements.new_empty(
+                (*batch.latitudes.shape[:2], 0, self.config.latent_channels)
+            )
         query_xyz = latlon_to_unit_xyz(
             query_latitudes.to(
                 device=batch.latitudes.device,
@@ -229,9 +233,11 @@ class SparseSetConvEncoder(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         batch_size, n_times, n_points = batch.latitudes.shape
         n_samples = batch_size * n_times
+        # Sanitize padding before trigonometry, so masked NaNs cannot poison
+        # either forward distances or coordinate gradients.
         observation_xyz = latlon_to_unit_xyz(
-            batch.latitudes,
-            batch.longitudes,
+            torch.where(batch.mask, batch.latitudes, 0.0),
+            torch.where(batch.mask, batch.longitudes, 0.0),
         ).reshape(n_samples, n_points, 3)
         measurements = self._input_features(batch).reshape(
             n_samples,

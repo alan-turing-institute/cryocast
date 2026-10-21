@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import sys
 from collections.abc import Iterable
 from dataclasses import asdict
@@ -18,7 +19,10 @@ from cryocast.research.argo_cross_attention import (
     SparseCrossAttentionConfig,
     SparseCrossAttentionEncoder,
 )
-from cryocast.research.argo_profile_split import profile_group_count
+from cryocast.research.argo_profile_split import (
+    profile_group_count,
+    validate_profile_partitions,
+)
 from cryocast.research.argo_reconstruction import (
     EvaluationRecord,
     MeasurementNormaliser,
@@ -195,6 +199,21 @@ def _normalisation_payload(
     }
 
 
+def _validate_date_windows(
+    training: list[datetime], evaluation: list[datetime], half_window_hours: float
+) -> None:
+    """Reject overlapping fetch windows, even when their centre dates differ."""
+    if not math.isfinite(half_window_hours) or half_window_hours <= 0:
+        msg = "half_window_hours must be finite and positive."
+        raise ValueError(msg)
+    separation = timedelta(hours=2 * half_window_hours)
+    if any(
+        abs(train - test) <= separation for train in training for test in evaluation
+    ):
+        msg = "Training and evaluation observation windows must be disjoint."
+        raise ValueError(msg)
+
+
 def main() -> None:
     """Fetch real Argo samples, fit both candidates fairly, and emit JSON results."""
     args = _build_parser().parse_args()
@@ -202,9 +221,7 @@ def main() -> None:
     train_dates = [_parse_datetime(value) for value in args.train_date]
     eval_dates = [_parse_datetime(value) for value in args.eval_date]
     seeds = tuple(dict.fromkeys(args.seed))
-    if set(train_dates) & set(eval_dates):
-        msg = "Training and evaluation dates must be disjoint."
-        raise ValueError(msg)
+    _validate_date_windows(train_dates, eval_dates, args.half_window_hours)
 
     train_fetched = [
         _fetch_sparse_timestep(
@@ -234,6 +251,7 @@ def main() -> None:
         {name for _, columns in (*train_fetched, *eval_fetched) for name in columns}
     )
 
+    validate_profile_partitions(train_samples, eval_samples)
     normaliser = MeasurementNormaliser.fit(train_samples)
     normalised_training = [normaliser.normalise(sample) for sample in train_samples]
     cases = build_evaluation_cases(
@@ -286,6 +304,7 @@ def main() -> None:
             parameters.setdefault(model.name, parameter_counts(model))
 
     payload = {
+        "protocol_version": 2,
         "settings": {
             "train_dates": [date.isoformat() for date in train_dates],
             "eval_dates": [date.isoformat() for date in eval_dates],
@@ -310,9 +329,9 @@ def main() -> None:
             "eval": [profile_group_count(sample) for sample in eval_samples],
         },
         "split_policy": (
-            "Complete PLATFORM_NUMBER/CYCLE_NUMBER profiles are kept together when "
-            "those identifiers are available; synthetic or incomplete samples fall "
-            "back to deterministic row-wise splitting."
+            "Complete PLATFORM_NUMBER/CYCLE_NUMBER groups are required for real "
+            "samples and kept together. Training/evaluation groups and fetch windows "
+            "must be disjoint. Generic fixtures without metadata may use row splits."
         ),
         "normalisation": _normalisation_payload(normaliser),
         "raw_metadata_columns_seen": metadata_columns,
@@ -334,6 +353,14 @@ def main() -> None:
                 candidate: [
                     asdict(summary) for summary in summarise_records(candidate_records)
                 ]
+                for candidate, candidate_records in learned_records.items()
+            },
+        },
+        "score_policy": "Finite targets require finite predictions; failures are not silently excluded.",
+        "records": {
+            "interpolation": [asdict(record) for record in interpolation_records],
+            **{
+                candidate: [asdict(record) for record in candidate_records]
                 for candidate, candidate_records in learned_records.items()
             },
         },

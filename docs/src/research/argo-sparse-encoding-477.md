@@ -171,3 +171,40 @@ Hold constant across all three arms:
 For the primary representation test, keep the underlying Argo value/QC policy the same between the interpolated and direct-sparse arms so that only the representation path differs. Then, if useful, run a separate pre-declared Argo data-quality ablation in which adjusted values, QC filtering, adjusted-error weighting and position-quality handling are applied symmetrically to both Argo arms. This avoids attributing a QC/calibration improvement to the encoder architecture.
 
 Report the existing CryoCast forecast metrics per lead for every seed, together with training/inference cost. A direct sparse encoder should proceed only if its forecast improvement over current interpolated Argo is consistent across seeds and leads and is larger than run-to-run variation.
+
+## Validation update on Oct 21, 2026
+
+The two original seed-level JSON payloads were recovered from the logs of
+[workflow run 32969345369](https://github.com/sylvesterkaczmarek/icenet-mp/actions/runs/32969345369).
+Independently recomputing the mean and population standard deviation across seeds
+reproduced all 12 displayed result rows: 60 mean/standard-deviation pairs, including
+CPU timing converted to milliseconds. The normalisation values, group counts,
+parameter counts and matched protocol settings also agree between those payloads.
+This verifies the published aggregation; the original per-case predictions and raw
+observation snapshots were not recovered, so it is not independent re-scoring or a
+new forecast-skill experiment. The historical results above are retained unchanged.
+
+The validation exposed failure cases in the reusable benchmark code:
+
+- A single known float-cycle group previously fell back to row splitting, leaking
+  pressure levels between observed and held-out sets. Single groups and partial
+  identifiers now fail explicitly. Metadata-free synthetic fixtures retain their
+  documented row-split fallback. Conservative grouping by platform/cycle remains
+  unchanged, including keeping ascending and descending casts together.
+- The real-data runner now requires complete profile identifiers and disjoint
+  training/evaluation float-cycle groups. It also rejects overlapping fetch windows,
+  even if their centre timestamps differ. Normalisation is still training-only.
+- Nonfinite predictions at finite targets now fail evaluation instead of being
+  silently removed from the metric denominator. Unavailable ground truth remains
+  excluded independently per variable.
+- Both sparse encoders sanitize masked coordinates before geographic transforms;
+  nonfinite padding no longer contaminates outputs or backward gradients. Empty
+  query sets return correctly shaped empty outputs.
+
+These are demonstrated edge-case defects, not evidence that the historical run
+encountered them. Eight comparisons against the prior PR implementation preserve
+valid float32/float64 encoder outputs, gradients and one Adam update bitwise, and
+three complete-profile split schedules are unchanged. An independent spherical
+formula reproduces the Gaussian control. The new runner marks its output as
+protocol version 2 and retains per-case metric records, including scored counts.
+Production Argo ingestion, QC/value policy and forecast defaults are unchanged.

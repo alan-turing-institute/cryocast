@@ -13,9 +13,9 @@ class TestDirpath:
         """Round-trip a truthy dirpath, and leave it unchanged when set to a falsy value."""
         callback = UnconditionalCheckpoint()
         callback.dirpath = tmp_path
-        assert callback.dirpath == tmp_path
+        assert callback.dirpath == str(tmp_path)
         callback.dirpath = None
-        assert callback.dirpath == tmp_path
+        assert callback.dirpath == str(tmp_path)
 
 
 class TestSaveUnconditionally:
@@ -40,7 +40,9 @@ class TestSaveUnconditionally:
         format_checkpoint_name.assert_called_once()
         expected = tmp_path / "epoch=2-step=7.ckpt"
         mock_trainer.strategy.broadcast.assert_called_once_with(str(expected))
-        mock_trainer.save_checkpoint.assert_called_once_with(expected)
+        mock_trainer.save_checkpoint.assert_called_once_with(
+            expected, weights_only=False
+        )
 
     def test_prefers_explicit_dirpath(
         self, tmp_path: Path, mock_trainer: MagicMock, monkeypatch: pytest.MonkeyPatch
@@ -59,7 +61,9 @@ class TestSaveUnconditionally:
 
         callback.save_unconditionally(mock_trainer)
 
-        mock_trainer.save_checkpoint.assert_called_once_with(explicit / "last.ckpt")
+        mock_trainer.save_checkpoint.assert_called_once_with(
+            explicit / "last.ckpt", weights_only=False
+        )
 
     def test_uses_absolute_checkpoint_name_as_is(
         self, tmp_path: Path, mock_trainer: MagicMock, monkeypatch: pytest.MonkeyPatch
@@ -79,7 +83,9 @@ class TestSaveUnconditionally:
 
         callback.save_unconditionally(mock_trainer)
 
-        mock_trainer.save_checkpoint.assert_called_once_with(absolute_checkpoint)
+        mock_trainer.save_checkpoint.assert_called_once_with(
+            absolute_checkpoint, weights_only=False
+        )
 
     def test_uses_relative_name_when_no_dirpath_available(
         self, mock_trainer: MagicMock, monkeypatch: pytest.MonkeyPatch
@@ -96,7 +102,9 @@ class TestSaveUnconditionally:
 
         callback.save_unconditionally(mock_trainer)
 
-        mock_trainer.save_checkpoint.assert_called_once_with(Path("last.ckpt"))
+        mock_trainer.save_checkpoint.assert_called_once_with(
+            Path("last.ckpt"), weights_only=False
+        )
 
 
 class TestOnTrainEnd:

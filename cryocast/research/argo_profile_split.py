@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import math
 from numbers import Real
+from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 
 from .argo_sparse import (
     ObservationSplit,
@@ -21,17 +23,20 @@ from .argo_sparse import (
     split_observations as _row_split,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 _PROFILE_METADATA_FIELDS = ("PLATFORM_NUMBER", "CYCLE_NUMBER")
 _MIN_PROFILE_GROUPS = 2
 
 
 def _is_missing(value: object) -> bool:
     """Return whether an Argo profile identifier is missing."""
-    if value is None:
+    if value is None or value is pd.NA or value is pd.NaT:
         return True
     if isinstance(value, Real):
-        return math.isnan(float(value))
-    return False
+        return not math.isfinite(float(value))
+    return isinstance(value, str | bytes) and not value.strip()
 
 
 def profile_group_keys(
@@ -69,17 +74,27 @@ def split_observations(
     """Split complete Argo profiles when possible, otherwise use the row baseline.
 
     The fallback keeps the generic research scaffold usable for synthetic fixtures and
-    raw sources that do not expose profile identifiers. Real Argo benchmark runs retain
-    ``PLATFORM_NUMBER`` and ``CYCLE_NUMBER`` explicitly so evaluation does not leak
-    pressure levels from one profile across observed and held-out sets.
+    samples without any profile metadata. Partial identifiers and samples containing
+    only one known float cycle are rejected, rather than leaking pressure levels
+    across the split. The real-data runner requires complete identifiers throughout.
     """
     keys = profile_group_keys(observations)
-    if keys is None or len(set(keys)) < _MIN_PROFILE_GROUPS:
+    if keys is None:
+        if observations.metadata is not None and any(
+            field in observations.metadata for field in _PROFILE_METADATA_FIELDS
+        ):
+            msg = "Complete profile identifiers are required when profile metadata is supplied."
+            raise ValueError(msg)
         return _row_split(
             observations,
             holdout_fraction=holdout_fraction,
             seed=seed,
         )
+    if len(set(keys)) < _MIN_PROFILE_GROUPS:
+        msg = (
+            "At least two float-cycle groups are required for a profile-held-out split."
+        )
+        raise ValueError(msg)
     if not 0.0 < holdout_fraction < 1.0:
         msg = "holdout_fraction must be between 0 and 1."
         raise ValueError(msg)
@@ -115,3 +130,23 @@ def profiles_overlap(
     if first_keys is None or second_keys is None:
         return None
     return set(first_keys) & set(second_keys)
+
+
+def validate_profile_partitions(
+    training: Sequence[SparseObservations],
+    evaluation: Sequence[SparseObservations],
+) -> None:
+    """Require identifiable, separable profiles in the real-data benchmark."""
+    partitions: list[set[tuple[str, str]]] = []
+    for name, samples in (("training", training), ("evaluation", evaluation)):
+        groups: set[tuple[str, str]] = set()
+        for sample in samples:
+            keys = profile_group_keys(sample)
+            if keys is None or len(set(keys)) < _MIN_PROFILE_GROUPS:
+                msg = f"Each {name} sample requires complete profile identifiers and at least two float-cycle groups."
+                raise ValueError(msg)
+            groups.update(keys)
+        partitions.append(groups)
+    if partitions[0] & partitions[1]:
+        msg = "Training and evaluation float-cycle groups must be disjoint."
+        raise ValueError(msg)
