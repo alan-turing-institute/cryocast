@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +21,10 @@ class TestAnemoiDatasetsRegressions:
         self,
         tmp_path: Path,
         mock_data: dict[str, dict[str, Any]],
-        dates_as_dt: tuple[datetime.datetime, ...],
+        dates_as_dt: tuple[dt.datetime, ...],
     ) -> None:
         """InspectZarr()._info() must not raise on a dataset with missing dates."""
-        missing_date = datetime.datetime(2020, 1, 6, 0, 0, 0)
+        missing_date = dt.datetime(2020, 1, 6, 0, 0, 0)
         zarr_path = tmp_path / "regression.zarr"
         build_zarr(
             zarr_path,

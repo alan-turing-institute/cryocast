@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -61,6 +61,11 @@ class CARRA2Source(Source):
         self, date: datetime
     ) -> dict[str, str | list[str] | list[float]]:
         """Build a CDS request for one exact CARRA2 valid time."""
+        if date.tzinfo is not None:
+            date = date.astimezone(UTC).replace(tzinfo=None)
+        if date.second or date.microsecond:
+            msg = "CARRA2 request times must use whole-minute precision."
+            raise ValueError(msg)
         request: dict[str, str | list[str] | list[float]] = {
             "level_type": self.level_type,
             "variable": self.variables,
@@ -84,7 +89,12 @@ class CARRA2Source(Source):
 
         with TemporaryDirectory() as tmpdir:
             client = cdsapi.Client()
-            for date in argument:
+            for requested_date in argument:
+                date = (
+                    requested_date.astimezone(UTC).replace(tzinfo=None)
+                    if requested_date.tzinfo is not None
+                    else requested_date
+                )
                 target = Path(tmpdir) / f"carra2-{date:%Y%m%d%H%M}.grib"
                 request = self._request_for_date(date)
                 logger.info(

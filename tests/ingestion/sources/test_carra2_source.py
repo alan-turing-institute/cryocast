@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,7 +17,7 @@ def test_carra2_builds_request_for_exact_analysis_time() -> None:
         area=[81.0, 15.0, 76.0, 35.0],
     )
 
-    request = source._request_for_date(datetime.datetime(2001, 2, 28, 12, 0, 0))
+    request = source._request_for_date(dt.datetime(2001, 2, 28, 12, 0, 0))
 
     assert request == {
         "level_type": "pressure_levels",
@@ -37,7 +37,7 @@ def test_carra2_request_omits_optional_fields_when_unset() -> None:
     """Omit optional request fields when they are not configured."""
     source = CARRA2Source(MagicMock(), variables=["2m_temperature"])
 
-    request = source._request_for_date(datetime.datetime(2026, 1, 2, 3, 0, 0))
+    request = source._request_for_date(dt.datetime(2026, 1, 2, 3, 0, 0))
 
     assert "level_location" not in request
     assert "area" not in request
@@ -50,8 +50,8 @@ def test_carra2_execute_downloads_each_requested_time(
     """Retrieve each requested valid time and combine the loaded field lists."""
     source = CARRA2Source(MagicMock(), variables=["2m_temperature"])
     dates = [
-        datetime.datetime(2026, 1, 2, 3, 0, 0),
-        datetime.datetime(2026, 1, 2, 6, 0, 0),
+        dt.datetime(2026, 1, 2, 3, 0, 0),
+        dt.datetime(2026, 1, 2, 6, 0, 0),
     ]
     client = MagicMock()
     client_factory = MagicMock(return_value=client)
@@ -116,3 +116,33 @@ def test_carra2_source_is_registered_with_anemoi() -> None:
 
     assert "carra2" in source_registry.registered
     assert source_registry.lookup("carra2") is CARRA2Source
+
+
+@pytest.mark.parametrize("offset", [3, -3])
+def test_carra2_uses_utc_calendar_boundary(offset: int) -> None:
+    """Timezone-aware analysis instants must request the same UTC field."""
+    source = CARRA2Source(MagicMock(), variables=["2m_temperature"])
+    instant = dt.datetime(2024, 2, 1, 0, tzinfo=dt.timezone(dt.timedelta(hours=offset)))
+    expected = instant.astimezone(dt.UTC)
+    request = source._request_for_date(instant)
+    assert request["year"] == [expected.strftime("%Y")]
+    assert request["month"] == [expected.strftime("%m")]
+    assert request["day"] == [expected.strftime("%d")]
+    assert request["time"] == [expected.strftime("%H:%M")]
+
+
+@pytest.mark.parametrize("fraction", [{"second": 1}, {"microsecond": 1}])
+def test_carra2_never_truncates_requested_time(fraction: dict[str, int]) -> None:
+    """Unsupported time precision must not silently select a different instant."""
+    source = CARRA2Source(MagicMock(), variables=["2m_temperature"])
+    with pytest.raises(ValueError, match="minute"):
+        source._request_for_date(
+            dt.datetime(
+                2024,
+                1,
+                1,
+                12,
+                second=fraction.get("second", 0),
+                microsecond=fraction.get("microsecond", 0),
+            )
+        )
