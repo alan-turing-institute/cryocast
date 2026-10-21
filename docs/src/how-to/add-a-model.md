@@ -62,3 +62,35 @@ processor:
 ```
 
 A complete example is available as `model=cnn_convlstm_cnn`.
+
+## Mixture-of-experts forecasting
+
+`model=cnn_moe_cnn` selects an optional dense mixture of UNet and ViT processors.
+Each expert receives the same observed latent history and generates a complete
+forecast. A learned gate pools the latest history frame spatially and produces
+one softmax distribution per sample. The forecast is the weighted sum of the
+expert forecasts; the same weights apply to every forecast lead and channel.
+Experts evolve their own forecast trajectories before blending. This differs
+from blending each next step and feeding that mixture back into every expert.
+
+All experts run on every call, including experts whose weights are near zero.
+This implementation therefore provides soft model combination, with no sparse
+routing or inference-speed claim. Existing model defaults are unchanged.
+
+The wrapper accepts only prediction-only `BaseProcessor` experts. Shared latent
+spaces and history/forecast lengths are supplied during construction. Runtime
+checks enforce each expert's full `(batch, forecast, channels, height, width)`
+output shape. Future observations are never forwarded to experts. A custom
+latent-loss expert, or a mixture claiming to own a latent loss, is rejected
+until an explicit objective and routing policy exists.
+
+Routing pooling, projections and softmax use at least float32, even under
+autocast. Forecast blending accumulates at that precision before returning the
+experts' output dtype. Float64 inputs and parameters retain double precision.
+Gate and expert parameters remain differentiable and are saved in checkpoints.
+
+Use the standard latent rollout. A physical-space one-step mixture policy is
+not implemented, so `rollout_space=physical` raises the existing unsupported
+processor error. Forecasting improvements over a single expert or persistence
+require matched held-out evaluation; routing and gradient tests establish
+correctness only.

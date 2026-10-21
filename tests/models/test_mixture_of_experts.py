@@ -16,7 +16,6 @@ def _processor(experts: list[dict[str, object]]) -> MixtureOfExpertsProcessor:
         data_space=DataSpace(name="latent", channels=2, shape=(8, 8)),
         n_forecast_steps=2,
         n_history_steps=2,
-        target_channel_offset=0,
         gate_hidden_channels=4,
     )
 
