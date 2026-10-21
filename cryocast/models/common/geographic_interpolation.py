@@ -42,6 +42,13 @@ class GeographicInterpolation(nn.Module):
             target_shape
         )
 
+        if not all(
+            np.isfinite(values).all()
+            for values in (source_lat, source_lon, target_lat, target_lon)
+        ):
+            msg = "Source and target geographic coordinates must be finite."
+            raise ValueError(msg)
+
         transformer = Transformer.from_crs("EPSG:4326", source_crs, always_xy=True)
         source_x, source_y = transformer.transform(source_lon, source_lat)
         target_x, target_y = transformer.transform(target_lon, target_lat)
@@ -50,6 +57,13 @@ class GeographicInterpolation(nn.Module):
         source_y = np.asarray(source_y, dtype=np.float64)
         target_x = np.asarray(target_x, dtype=np.float64)
         target_y = np.asarray(target_y, dtype=np.float64)
+
+        if not all(
+            np.isfinite(values).all()
+            for values in (source_x, source_y, target_x, target_y)
+        ):
+            msg = "Projected source and target coordinates must be finite."
+            raise ValueError(msg)
 
         x_axis = np.mean(source_x, axis=0)
         y_axis = np.mean(source_y, axis=1)

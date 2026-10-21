@@ -126,6 +126,8 @@ class CropLatLonFilter(Filter):
             return new_fieldlist_from_list([])
 
         source_shape = fields[0].shape
+        reference_latitudes, reference_longitudes = fields[0].grid_points()
+        reference_longitudes = self._wrap_longitudes(np.asarray(reference_longitudes))
         rows, columns, geography = self._crop_slices(fields[0])
         cropped_fields = []
         for field in fields:
@@ -134,6 +136,16 @@ class CropLatLonFilter(Filter):
                     "All fields must share one structured grid for crop-latlon; "
                     f"expected {source_shape}, got {field.shape}."
                 )
+                raise ValueError(msg)
+            latitudes, longitudes = field.grid_points()
+            if not np.array_equal(
+                latitudes, reference_latitudes, equal_nan=True
+            ) or not np.array_equal(
+                self._wrap_longitudes(np.asarray(longitudes)),
+                reference_longitudes,
+                equal_nan=True,
+            ):
+                msg = "All fields must share the same geographic coordinates for crop-latlon."
                 raise ValueError(msg)
             cropped_fields.append(
                 new_field_from_numpy(

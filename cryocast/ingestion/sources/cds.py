@@ -3,7 +3,7 @@
 import logging
 from collections import defaultdict
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from anemoi.datasets.create.input.context import Context
@@ -60,7 +60,17 @@ class CDSSource(Source):
     @override
     def execute(self, argument: list[datetime] | GroupOfDates) -> FieldList:
         """Download the requested dates, split into exact year/month requests."""
-        requested_dates = sorted(argument)
+        requested_dates = sorted(
+            date.astimezone(UTC).replace(tzinfo=None)
+            if date.tzinfo is not None
+            else date
+            for date in argument
+        )
+        if self.time_from_dates and any(
+            date.second or date.microsecond for date in requested_dates
+        ):
+            msg = "CDS request times must use whole-minute precision."
+            raise ValueError(msg)
         if not requested_dates:
             return MultiFieldList([])
 

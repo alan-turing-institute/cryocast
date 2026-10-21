@@ -74,3 +74,22 @@ class TestGeographicInterpolation:
 
         with pytest.raises(ValueError, match="source shape"):
             interpolation(torch.zeros((1, 1, 4, 4)))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("coordinate", ["latitude", "longitude"])
+def test_target_geography_must_be_finite(bad: float, coordinate: str) -> None:
+    """NaN grid coordinates must never become a plausible border sample."""
+    source_lat, source_lon = _source_coordinates()
+    target_lat, target_lon = _target_coordinates()
+    (target_lat if coordinate == "latitude" else target_lon)[0, 0] = bad
+    with pytest.raises(ValueError, match="finite"):
+        GeographicInterpolation(
+            source_latitudes=source_lat.ravel().tolist(),
+            source_longitudes=source_lon.ravel().tolist(),
+            source_shape=source_lat.shape,
+            target_latitudes=target_lat.ravel().tolist(),
+            target_longitudes=target_lon.ravel().tolist(),
+            target_shape=target_lat.shape,
+            source_crs="EPSG:4326",
+        )

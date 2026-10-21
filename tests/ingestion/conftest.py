@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from typing import Any
 
 import pytest
@@ -13,9 +13,7 @@ def mock_data_status_flag() -> dict[str, dict[str, Any]]:
     Cell (1,0): status_flag=128 (inactive bit set every timestep) -> inactive.
     Cell (1,1): status_flag=0 -> sea, active.
     """
-    dates = [
-        datetime.datetime(2020, 1, 1) + datetime.timedelta(days=i) for i in range(3)
-    ]
+    dates = [dt.datetime(2020, 1, 1) + dt.timedelta(days=i) for i in range(3)]
     return {
         "coords": {
             "lat": {"dims": "lat", "attrs": {}, "data": [80.0, 85.0]},
