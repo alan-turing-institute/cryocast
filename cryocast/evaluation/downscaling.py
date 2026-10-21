@@ -138,9 +138,10 @@ def _high_frequency_fractions(
 
     freq_y = torch.fft.fftfreq(height, device=values.device, dtype=values.dtype)
     freq_x = torch.fft.rfftfreq(width, device=values.device, dtype=values.dtype)
-    radius = torch.sqrt(freq_y[:, None] ** 2 + freq_x[None, :] ** 2)
-    max_radius = sqrt(0.5**2 + 0.5**2)
-    high_frequency = radius >= cutoff * max_radius
+    # Compare squared radii so an exact cutoff bin is included consistently.
+    # Vectorized sqrt and scalar sqrt can differ by one ulp across CPU backends.
+    radius_squared = freq_y[:, None].square() + freq_x[None, :].square()
+    high_frequency = radius_squared >= 0.5 * cutoff**2
 
     # Interior rFFT columns represent both positive and negative x frequencies.
     multiplicity = torch.ones(width // 2 + 1, dtype=values.dtype, device=values.device)

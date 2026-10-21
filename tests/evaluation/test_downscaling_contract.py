@@ -46,8 +46,9 @@ def _wave(*, high: bool = False) -> Tensor:
 
 
 @pytest.mark.parametrize("shape", [(7, 8), (8, 9), (8, 8)])
+@pytest.mark.parametrize("cutoff", [0.25, 0.5, 0.75])
 def test_real_fft_power_matches_independent_full_complex_fft(
-    shape: tuple[int, int],
+    shape: tuple[int, int], cutoff: float
 ) -> None:
     """Interior real-FFT columns carry the power of both conjugate frequencies."""
     rng = np.random.default_rng(595)
@@ -55,14 +56,16 @@ def test_real_fft_power_matches_independent_full_complex_fft(
     mask = rng.random(size=shape) > 0.2
     centered = np.where(mask, array - array[mask].mean(), 0.0)
     full_power = np.abs(np.fft.fft2(centered, norm="ortho")) ** 2
-    radius = np.hypot(
-        np.fft.fftfreq(shape[0])[:, None], np.fft.fftfreq(shape[1])[None, :]
-    )
-    expected = full_power[radius >= 0.5 * np.sqrt(0.5)].sum() / full_power.sum()
+    # Compare the inclusive cutoff before taking a square root: SIMD sqrt and
+    # scalar sqrt can round an exact boundary bin to different sides.
+    fy = np.fft.fftfreq(shape[0])[:, None]
+    fx = np.fft.fftfreq(shape[1])[None, :]
+    high_frequency = fy * fy + fx * fx >= cutoff * cutoff / 2.0
+    expected = full_power[high_frequency].sum() / full_power.sum()
     actual = _high_frequency_fractions(
         torch.from_numpy(array).reshape(1, 1, 1, *shape),
         torch.from_numpy(mask).reshape(1, 1, 1, *shape),
-        cutoff=0.5,
+        cutoff=cutoff,
     )
     assert actual.item() == pytest.approx(expected, rel=1e-12, abs=1e-12)
 
@@ -138,3 +141,25 @@ def test_unequal_batches_preserve_cell_and_frame_weighting() -> None:
     assert pooled.learned.rmse == pytest.approx(errors.square().mean().sqrt().item())
     assert pooled.learned == split.learned
     assert pooled.spectral_frames == split.spectral_frames == 3
+
+
+@pytest.mark.parametrize("shape", [(8, 8), (8, 12), (16, 16), (16, 32)])
+@pytest.mark.parametrize(
+    ("cutoff", "expected"),
+    [
+        (float(np.nextafter(0.5, 0.0)), 1.0),
+        (0.5, 1.0),
+        (float(np.nextafter(0.5, 1.0)), 0.0),
+    ],
+)
+def test_spectral_cutoff_includes_exact_boundary_without_tolerance(
+    shape: tuple[int, int], cutoff: float, expected: float
+) -> None:
+    """A diagonal quarter-frequency wave sits exactly on the default boundary."""
+    y = torch.arange(shape[0], dtype=torch.float64)[:, None]
+    x = torch.arange(shape[1], dtype=torch.float64)[None, :]
+    values = torch.cos((torch.pi / 2.0) * (x + y)).reshape(1, 1, 1, *shape)
+    fraction = _high_frequency_fractions(
+        values, torch.ones_like(values, dtype=torch.bool), cutoff=cutoff
+    )
+    assert fraction.item() == pytest.approx(expected, abs=1e-12)

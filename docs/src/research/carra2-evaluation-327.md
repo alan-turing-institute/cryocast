@@ -59,6 +59,10 @@ to target, interpolation, and learned fields before the FFT. Protocol
 `paired-hermitian-v2` weights the real-FFT interior columns by two to account for
 conjugate frequencies. It averages the absolute prediction/target fraction difference
 per matched frame, preventing opposite errors on different dates from cancelling.
+The radial cutoff is inclusive and evaluated as squared frequency radius
+`fy**2 + fx**2 >= cutoff**2 / 2`. This avoids platform-dependent square-root
+rounding at bins exactly on the cutoff; no tolerance widens the selected band.
+
 Every frame with at least two valid target cells is included for both methods;
 a spatially constant field is assigned zero high-frequency fraction by convention.
 Nonfinite predictions at valid truth are rejected. Scoring uses CPU float64 even when
