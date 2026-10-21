@@ -90,6 +90,22 @@ future-target helper. Diffusion predicts every combined-latent channel instead o
 copying auxiliary channels from the last history frame. Autoregressive training
 still supervises its first forecast step; parallel training uses the full window.
 
+## Prediction-target metadata
+
+The full-latent training target and a prediction-only processor's output slice
+are separate contracts. `data_space_target` remains the complete combined latent
+for diffusion. The optional `target_latent_space` and `target_channel_offset`
+identify the output dataset's existing encoder channels, in registered encoder
+order. They do not create a target encoder, add weights or alter future supervision.
+Physical `target_variable_indices` are not latent-channel offsets.
+
+Prediction-only processors such as the space-time ViT can consume this metadata
+to forecast only the target slice while persisting other conditioning inputs.
+Legacy direct callers may still provide their target slice through
+`data_space_target` and `target_channel_offset`. An output group absent from the
+inputs has no corresponding slice; slice-based processors must reject that case
+rather than silently predicting all conditioning channels.
+
 ## Checkpoint compatibility
 
 New latent-loss model and processor-stage checkpoints record

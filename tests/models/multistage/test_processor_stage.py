@@ -284,3 +284,46 @@ class TestProcessorStage:
             f"processor_{decoder_stage.n_history_steps}_to_"
             f"{decoder_stage.n_forecast_steps}"
         )
+
+
+@pytest.mark.parametrize("target_first", [False, True])
+def test_prediction_metadata_survives_processor_stage_handover(
+    encoder_stage: EncoderStage,
+    second_encoder_stage: EncoderStage,
+    cfg_decoder: DictConfig,
+    *,
+    target_first: bool,
+) -> None:
+    """Frozen encoder order determines the target slice during processor training."""
+    encoders = (
+        [encoder_stage, second_encoder_stage]
+        if target_first
+        else [second_encoder_stage, encoder_stage]
+    )
+    target_encoder = encoder_stage.encoder
+    decoder = DecoderStage.from_template(
+        decoder=cfg_decoder,
+        encoders=encoders,
+        output_space=DataSpace(
+            name=target_encoder.name,
+            channels=1,
+            shape=target_encoder.data_space_in.shape,
+        ),
+        target_dataset_name=target_encoder.name,
+        target_variable_indices=[2],
+    )
+    stage = ProcessorStage.from_template(
+        processor=DictConfig({"_target_": "cryocast.models.processors.NullProcessor"}),
+        decoder_model=decoder,
+    )
+    expected_offset = (
+        0 if target_first else second_encoder_stage.encoder.data_space_out.channels
+    )
+    assert stage.processor.target_channel_offset == expected_offset
+    assert stage.processor.target_latent_space == target_encoder.data_space_out
+    assert stage.processor.data_space_target == stage.processor.data_space
+    stage.train()
+    assert all(not encoder.training for encoder in stage.encoders)
+    assert all(
+        not p.requires_grad for encoder in stage.encoders for p in encoder.parameters()
+    )

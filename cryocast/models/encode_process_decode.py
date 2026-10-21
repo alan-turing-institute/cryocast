@@ -123,6 +123,7 @@ class EncodeProcessDecode(BaseModel):
             channels=sum(encoder.data_space_out.channels for encoder in self.encoders),
             shape=latent_shapes.pop(),
         )
+        target_latent_space, target_channel_offset = self._prediction_target_metadata()
         self.processor: BaseProcessor = (
             processor
             if isinstance(processor, BaseProcessor)
@@ -130,6 +131,8 @@ class EncodeProcessDecode(BaseModel):
                 processor,
                 data_space=combined_latent_space,
                 data_space_target=combined_latent_space,
+                target_latent_space=target_latent_space,
+                target_channel_offset=target_channel_offset,
                 n_forecast_steps=self.n_forecast_steps,
                 n_history_steps=self.n_history_steps,
             )
@@ -202,6 +205,20 @@ class EncodeProcessDecode(BaseModel):
     @property
     def multistage_only(self) -> bool:
         return self.processor.computes_loss_in_latent_space
+
+    def _prediction_target_metadata(self) -> tuple[DataSpace | None, int | None]:
+        """Locate the output dataset's encoder without changing latent supervision.
+
+        Encoder widths and registration order define this slice, not physical
+        ``target_variable_indices``. A separate output dataset has no input slice.
+        No additional encoder or trainable parameter is created.
+        """
+        offset = 0
+        for encoder in self.encoders:
+            if encoder.name == self.output_space.name:
+                return encoder.data_space_out, offset
+            offset += encoder.data_space_out.channels
+        return None, None
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all input datasets and concatenate along the channel dimension.
