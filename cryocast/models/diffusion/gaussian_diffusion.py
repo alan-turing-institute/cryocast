@@ -187,6 +187,11 @@ class GaussianDiffusion:
     ) -> torch.Tensor:
         """Add noise to x_start at timestep t, using the forward diffusion process.
 
+        Indices are zero-based: ``t=0`` is the first scheduled noise level, not
+        the clean input. Using the same coefficients as ``calculate_v`` allows
+        the signal/noise rotation to be inverted at every timestep. The final
+        reverse step targets the clean input without adding fresh noise.
+
         Args:
             x_start (torch.Tensor): Original input tensor (clean image).
             t (torch.Tensor): Timesteps for each sample in the batch (shape: [B]).

@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import asdict, fields
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -26,9 +27,11 @@ from cryocast.types import (
     DataSpace,
     Hemisphere,
     MaskType,
+    Metadata,
     ModelStepOutput,
     TensorNTCHW,
 )
+from cryocast.utils import to_plain_types
 
 if TYPE_CHECKING:
     from torch.nn.modules.module import _IncompatibleKeys
@@ -49,7 +52,7 @@ class BaseModel(LightningModule, ABC):
         self,
         *,
         channel_names: Sequence[str] | None = None,
-        hemisphere: Hemisphere,
+        hemisphere: Hemisphere | str,
         input_spaces: Sequence[DictConfig],
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
@@ -86,13 +89,16 @@ class BaseModel(LightningModule, ABC):
 
         # Save model name, hemisphere, lat/lon information and channel names
         self.name = name
-        self.hemisphere: Hemisphere = hemisphere
+        self.hemisphere = Hemisphere(hemisphere)
         self.latitudes_fn = latitudes_fn
         self.longitudes_fn = longitudes_fn
         self.channel_names = list(channel_names) if channel_names else []
 
         # Number of epochs in the checkpoint this model was loaded from, if any
         self.checkpoint_epoch: int | None = None
+
+        # Description of the data this model was trained on, saved in its checkpoints
+        self.training_metadata: Metadata | None = None
 
         # Save history and forecast steps
         if n_forecast_steps <= 0:
@@ -160,6 +166,10 @@ class BaseModel(LightningModule, ABC):
         # All arguments to the ultimate child class will be logged as hyperparameters,
         # and saved to W&B, unless explicitly ignored here.
         self.save_hyperparameters(ignore=[*self.ignored_hparams])
+
+        # Convert hyperparameters to plain Python types, to make checkpoints portable
+        for key, value in self.hparams.items():
+            self.hparams[key] = to_plain_types(value)
 
     @cached_property
     def latitudes(self) -> dict[str, list[float]]:
@@ -278,6 +288,29 @@ class BaseModel(LightningModule, ABC):
             *args,
             **kwargs,
         )
+
+    @override
+    def on_fit_start(self) -> None:
+        """Record the data that this model is being trained on."""
+        datamodule = getattr(self.trainer, "datamodule", None)
+        training_dataset = getattr(datamodule, "training_dataset", None)
+        if training_dataset is not None:
+            self.training_metadata = Metadata.from_dataset(training_dataset)
+
+    @override
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Restore the training metadata, if the checkpoint has any."""
+        if (metadata := checkpoint.get("training_metadata")) is not None:
+            known_fields = {field.name for field in fields(Metadata)}
+            self.training_metadata = Metadata(
+                **{k: v for k, v in metadata.items() if k in known_fields}
+            )
+
+    @override
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Save the training metadata as plain types, so it loads with weights_only."""
+        if self.training_metadata is not None:
+            checkpoint["training_metadata"] = asdict(self.training_metadata)
 
     def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
         """Calculate the loss given a prediction and target."""
