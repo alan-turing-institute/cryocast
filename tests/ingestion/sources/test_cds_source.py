@@ -1,5 +1,6 @@
 """Tests for the Copernicus Climate Data Store source."""
 
+import datetime as dt
 from datetime import datetime, timedelta
 from typing import ClassVar
 from unittest.mock import MagicMock
@@ -170,3 +171,24 @@ class TestCDSSource:
 
         mock_from_source.assert_not_called()
         mock_multi.assert_called_once_with([])
+
+
+@pytest.mark.parametrize("offset", [3, -3])
+def test_cds_groups_dates_after_utc_conversion(
+    monkeypatch: pytest.MonkeyPatch, offset: int
+) -> None:
+    """A local calendar date must not replace the UTC date used by CDS."""
+    load = MagicMock(return_value=MagicMock())
+
+    monkeypatch.setattr("cryocast.ingestion.sources.cds.from_source", load)
+    monkeypatch.setattr("cryocast.ingestion.sources.cds.MultiFieldList", MagicMock())
+    source = CDSSource(
+        MagicMock(), dataset="reanalysis-pan-carra", request={}, time_from_dates=True
+    )
+    date = dt.datetime(2024, 2, 1, 0, tzinfo=dt.timezone(dt.timedelta(hours=offset)))
+    source.execute([date])
+    calls = [call.kwargs["request"] for call in load.call_args_list]
+    utc = date.astimezone(dt.UTC)
+    assert calls[0]["month"] == [utc.strftime("%m")]
+    assert calls[0]["day"] == [utc.strftime("%d")]
+    assert calls[0]["time"] == [utc.strftime("%H:%M")]

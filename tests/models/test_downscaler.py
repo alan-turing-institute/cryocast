@@ -170,3 +170,28 @@ class TestDownscalingPipeline:
             result,
             downscaler.interpolation_baseline(low_resolution_prediction),
         )
+
+
+@pytest.mark.parametrize(
+    ("history", "forecast", "offset"), [(1, 1, 0), (3, 1, 2), (3, 2, 1)]
+)
+def test_downscaler_paired_date_contract(
+    history: int, forecast: int, offset: int
+) -> None:
+    """Only the final forecast-length source window may pair with the target."""
+    model = _make_downscaler()
+    model.n_history_steps = history
+    model.n_forecast_steps = forecast
+    model.validate_data_alignment(offset)
+    with pytest.raises(ValueError, match="contemporaneous"):
+        model.validate_data_alignment(offset + 1)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -float("inf")])
+def test_downscaler_loss_rejects_invalid_prediction_at_valid_truth(bad: float) -> None:
+    """Do not train on a nonfinite loss while the target remains valid."""
+    model = _make_downscaler()
+    prediction = torch.ones(1, 1, 1, 2, 2)
+    prediction[..., 0, 0] = bad
+    with pytest.raises(ValueError, match="finite"):
+        model.loss(prediction, torch.ones_like(prediction))

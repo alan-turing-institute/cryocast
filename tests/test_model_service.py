@@ -33,6 +33,7 @@ class FakeCommonDataModule:
         self.mask_directory = Path("nonexistent")
         self.n_forecast_steps = 2
         self.n_history_steps = 3
+        self.target_offset_steps = 1
         self.output_space = DataSpace(1, "output", (10, 10))
         self.target_variable_indices = [0]
         self.target_variables = ["mock_var"]

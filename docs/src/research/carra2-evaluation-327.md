@@ -53,11 +53,21 @@ The command reports:
   quantity.
 
 The spectral calculation de-means each frame and applies the same target validity mask
-to target, interpolation, and learned fields before the FFT. Mask-edge spectral leakage
-is therefore shared between the three arms; the spectral result is a comparative
-diagnostic rather than an estimate of an unmasked physical power spectrum.
+to target, interpolation, and learned fields before the FFT. Protocol
+`paired-hermitian-v2` weights the real-FFT interior columns by two to account for
+conjugate frequencies. It averages the absolute prediction/target fraction difference
+per matched frame, preventing opposite errors on different dates from cancelling.
+Every frame with at least two valid target cells is included for both methods;
+a spatially constant field is assigned zero high-frequency fraction by convention.
+Nonfinite predictions at valid truth are rejected. Scoring uses CPU float64 even when
+model inference uses an accelerator. Mask-edge spectral leakage remains shared, so
+this is a comparative diagnostic, not an unmasked physical power spectrum.
 
-## Real-data pipeline pilot
+## Historical real-data pipeline pilot
+
+The numbers in this subsection are the original protocol-v1 record. Its spectral
+fractions and fraction errors are superseded by the independently rescored results
+below. MAE, RMSE and gradient RMSE are unaffected within numerical tolerance.
 
 A deliberately tiny live-data pilot was run to verify the end-to-end path before
 committing to the full experiment. It used actual OSI SAF SIC and CARRA2 downloaded
@@ -116,3 +126,39 @@ downscaler.
 
 A later, separate experiment would be required to test CARRA2 as an additional
 meteorological input against ERA5 on the common Arctic domain.
+
+
+## October 21 validation and corrected scoring
+
+Replayed the three original validation-selected checkpoints on the same two held-out
+January 6-7, 2024 dates, with no new fitting or checkpoint selection. Original stored
+data and checkpoint hashes remain unchanged. An independent NumPy implementation
+using the full complex FFT reproduces the corrected scores, avoiding reuse of the
+real-FFT helper being tested. Pointwise and gradient errors reproduce the historical
+results within numerical tolerance.
+
+The target high-frequency fraction is **0.01155104**.
+Interpolation has MAE **0.04694653**, RMSE **0.15707712**, gradient RMSE
+**0.02030974**, high-frequency fraction **0.01237861**,
+and mean paired absolute fraction error **0.00082757**.
+All methods use **67,230 values**, **131,744 adjacent
+edges** and **2 matched spectral frames**.
+
+| Seed | Learned MAE | Learned RMSE | Gradient RMSE | High-frequency fraction | Paired absolute fraction error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 327 | 0.04694653 | 0.15707712 | 0.02030974 | 0.01237861 | 0.00082757 |
+| 328 | 0.04694653 | 0.15707712 | 0.02030974 | 0.01237861 | 0.00082757 |
+| 329 | 0.06632687 | 0.15232136 | 0.02038497 | 0.01239212 | 0.00084107 |
+
+The corrected evidence still does not demonstrate a consistent learned-downscaling
+advantage. The four-day training set, one-day validation set and two adjacent held-out
+dates remain insufficient for an adoption decision. Protocol-v1 spectral values must
+not be pooled with protocol-v2 values.
+
+A separate fresh CDS request for January 15, 2024 exercised the current source and
+crop code: the returned 2880 by 2880 grid produced a 273 by 283 stored-region field,
+with 33,615 finite sea-ice cells in [0, 1]. The retained pilot stores also passed current
+Anemoi inspection and no-overwrite reuse. A separate one-step optimizer smoke check,
+safe checkpoint roundtrip, and three-lead forecast/downscaler composition passed.
+That optimizer check was not used to select or report the table above. No forecast
+skill improvement, full seasonal run, or new production default is claimed.

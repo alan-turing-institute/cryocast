@@ -116,6 +116,10 @@ class ModelService:
             **model_data_kwargs,
         )
 
+        if isinstance(builder.model_, Downscaler):
+            builder.model_.validate_data_alignment(
+                builder.data_module.target_offset_steps
+            )
         return builder
 
     @classmethod
@@ -207,6 +211,8 @@ class ModelService:
             for key in ("n_history_steps", "n_forecast_steps")
             if getattr(self.model, key) != getattr(self.data_module, key)
         )
+        if isinstance(self.model, Downscaler):
+            self.model.validate_data_alignment(self.data_module.target_offset_steps)
         if mismatches:
             msg = (
                 "The checkpointed model does not match the configured data: "

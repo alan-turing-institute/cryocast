@@ -2,7 +2,9 @@
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from itertools import islice
 from math import sqrt
+from numbers import Integral
 
 import torch
 from torch import Tensor
@@ -36,6 +38,7 @@ class DownscalingComparison:
     rmse_improvement_percent: float | None
     gradient_rmse_improvement_percent: float | None
     high_frequency_error_improvement_percent: float | None
+    spectral_protocol: str = "paired-hermitian-v2"
 
 
 @dataclass(slots=True)
@@ -46,6 +49,7 @@ class _MethodAccumulator:
     gradient_squared_error_sum: float = 0.0
     valid_gradient_edges: int = 0
     high_frequency_fraction_sum: float = 0.0
+    high_frequency_absolute_error_sum: float = 0.0
     spectral_frames: int = 0
 
 
@@ -82,7 +86,10 @@ def _gradient_squared_error(
     valid: Tensor,
 ) -> tuple[float, int]:
     """Return squared finite-difference error over valid horizontal/vertical edges."""
-    squared_sum = torch.zeros((), device=prediction.device, dtype=torch.float64)
+    prediction = prediction.to(device="cpu", dtype=torch.float64)
+    target = target.to(device="cpu", dtype=torch.float64)
+    valid = valid.cpu()
+    squared_sum = torch.zeros((), dtype=torch.float64)
     count = 0
 
     pred_dx = prediction[..., :, 1:] - prediction[..., :, :-1]
@@ -120,16 +127,24 @@ def _high_frequency_fractions(
         msg = "high_frequency_cutoff must be between 0 and 1."
         raise ValueError(msg)
 
+    values = values.to(device="cpu", dtype=torch.float64)
+    valid = valid.cpu()
+    if not bool(torch.isfinite(values[valid]).all()):
+        msg = "Spectral input must be finite at valid target cells."
+        raise ValueError(msg)
     height, width = values.shape[-2:]
     frames = values.reshape(-1, height, width)
     masks = valid.reshape(-1, height, width)
 
-    freq_y = torch.fft.fftfreq(height, device=values.device)
-    freq_x = torch.fft.rfftfreq(width, device=values.device)
+    freq_y = torch.fft.fftfreq(height, device=values.device, dtype=values.dtype)
+    freq_x = torch.fft.rfftfreq(width, device=values.device, dtype=values.dtype)
     radius = torch.sqrt(freq_y[:, None] ** 2 + freq_x[None, :] ** 2)
     max_radius = sqrt(0.5**2 + 0.5**2)
     high_frequency = radius >= cutoff * max_radius
 
+    # Interior rFFT columns represent both positive and negative x frequencies.
+    multiplicity = torch.ones(width // 2 + 1, dtype=values.dtype, device=values.device)
+    multiplicity[1 : -1 if width % 2 == 0 else None] = 2
     fractions: list[Tensor] = []
     for frame, mask in zip(frames, masks, strict=True):
         n_valid = int(mask.sum().item())
@@ -138,11 +153,18 @@ def _high_frequency_fractions(
         frame_mean = frame[mask].mean()
         centered = torch.where(mask, frame - frame_mean, torch.zeros_like(frame))
         spectrum = torch.fft.rfft2(centered, norm="ortho")
-        power = spectrum.real.square() + spectrum.imag.square()
+        power = (spectrum.real.square() + spectrum.imag.square()) * multiplicity
         total_power = power.sum()
-        if not bool(torch.isfinite(total_power)) or float(total_power.item()) <= 0.0:
-            continue
-        fractions.append(power[high_frequency].sum() / total_power)
+        if not bool(torch.isfinite(total_power)):
+            msg = "Spectral power must be finite."
+            raise ValueError(msg)
+        # A spatially constant field has no high-frequency power. Keep the frame
+        # instead of selecting a different set of dates for each comparison arm.
+        fractions.append(
+            power[high_frequency].sum() / total_power
+            if float(total_power.item()) > 0.0
+            else total_power.new_zeros(())
+        )
 
     if not fractions:
         return torch.empty(0, dtype=values.dtype, device=values.device)
@@ -156,8 +178,9 @@ def _update_method(
     valid: Tensor,
     *,
     high_frequency_cutoff: float,
+    target_high_frequency: Tensor,
 ) -> None:
-    errors = (prediction - target)[valid].double()
+    errors = (prediction.double() - target.double())[valid]
     accumulator.abs_error_sum += float(torch.abs(errors).sum().item())
     accumulator.squared_error_sum += float(torch.square(errors).sum().item())
     accumulator.valid_values += errors.numel()
@@ -178,13 +201,14 @@ def _update_method(
     accumulator.high_frequency_fraction_sum += float(
         high_frequency.double().sum().item()
     )
+    accumulator.high_frequency_absolute_error_sum += float(
+        (high_frequency - target_high_frequency).abs().sum().item()
+    )
     accumulator.spectral_frames += high_frequency.numel()
 
 
 def _summarise_method(
     accumulator: _MethodAccumulator,
-    *,
-    target_high_frequency_fraction: float,
 ) -> DownscalingMethodSummary:
     if accumulator.valid_values <= 0:
         msg = "No valid target cells were available for evaluation."
@@ -206,8 +230,8 @@ def _summarise_method(
             accumulator.gradient_squared_error_sum / accumulator.valid_gradient_edges
         ),
         high_frequency_fraction=high_frequency_fraction,
-        high_frequency_fraction_error=abs(
-            high_frequency_fraction - target_high_frequency_fraction
+        high_frequency_fraction_error=(
+            accumulator.high_frequency_absolute_error_sum / accumulator.spectral_frames
         ),
     )
 
@@ -231,8 +255,12 @@ def compare_downscaler(
     Both methods consume exactly the same low-resolution SIC inputs and are evaluated
     against the same high-resolution target cells.
     """
-    if max_batches is not None and max_batches <= 0:
-        msg = "max_batches must be greater than zero when provided."
+    if max_batches is not None and (
+        isinstance(max_batches, bool)
+        or not isinstance(max_batches, Integral)
+        or max_batches <= 0
+    ):
+        msg = "max_batches must be a positive integer when provided."
         raise ValueError(msg)
 
     resolved_device = torch.device(device)
@@ -245,9 +273,10 @@ def compare_downscaler(
     batch_count = 0
 
     with torch.no_grad():
-        for batch_index, batch in enumerate(batches):
-            if max_batches is not None and batch_index >= max_batches:
-                break
+        selected_batches = (
+            batches if max_batches is None else islice(batches, int(max_batches))
+        )
+        for batch in selected_batches:
             if model.source_group_name not in batch or "target" not in batch:
                 msg = (
                     "Each evaluation batch must contain the configured source group "
@@ -275,18 +304,32 @@ def compare_downscaler(
             ]
             interpolation = model.interpolation_baseline(source_sic)
 
+            # Inference may use an accelerator, but scoring uses shared CPU float64
+            # inputs before subtraction, squaring or Fourier transforms.
+            learned = learned.to(device="cpu", dtype=torch.float64)
+            interpolation = interpolation.to(device="cpu", dtype=torch.float64)
+            target = target.to(device="cpu", dtype=torch.float64)
             valid = torch.isfinite(target)
             if model.validity_mask is not None:
-                mask = model.validity_mask.to(device=resolved_device)
+                mask = model.validity_mask.to(device="cpu")
                 valid &= mask.view(1, 1, 1, *model.output_space.shape)
 
             _validate_shapes(learned, interpolation, target, valid)
+            if not bool(torch.isfinite(learned[valid]).all()) or not bool(
+                torch.isfinite(interpolation[valid]).all()
+            ):
+                msg = "Both downscaling methods must be finite at valid target cells."
+                raise ValueError(msg)
+            target_high_frequency = _high_frequency_fractions(
+                target, valid, cutoff=high_frequency_cutoff
+            )
             _update_method(
                 interpolation_accumulator,
                 interpolation,
                 target,
                 valid,
                 high_frequency_cutoff=high_frequency_cutoff,
+                target_high_frequency=target_high_frequency,
             )
             _update_method(
                 learned_accumulator,
@@ -294,11 +337,7 @@ def compare_downscaler(
                 target,
                 valid,
                 high_frequency_cutoff=high_frequency_cutoff,
-            )
-            target_high_frequency = _high_frequency_fractions(
-                target,
-                valid,
-                cutoff=high_frequency_cutoff,
+                target_high_frequency=target_high_frequency,
             )
             target_spectrum.high_frequency_fraction_sum += float(
                 target_high_frequency.double().sum().item()
@@ -318,11 +357,9 @@ def compare_downscaler(
     )
     interpolation_summary = _summarise_method(
         interpolation_accumulator,
-        target_high_frequency_fraction=target_high_frequency_fraction,
     )
     learned_summary = _summarise_method(
         learned_accumulator,
-        target_high_frequency_fraction=target_high_frequency_fraction,
     )
 
     return DownscalingComparison(

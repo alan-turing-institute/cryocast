@@ -6,7 +6,7 @@ anemoi-datasets reorganises those internals, these tests should fail rather than
 silently breaking dataset creation at runtime.
 """
 
-import datetime
+import datetime as dt
 from typing import ClassVar
 
 from anemoi.datasets.create.recipe import Recipe
@@ -66,9 +66,9 @@ class TestSourceRegistration:
         register_sources()
         recipe = Recipe(
             dates=StartEndDates(
-                start=datetime.datetime(2024, 1, 1, 12, 0, 0),
-                end=datetime.datetime(2024, 1, 2, 12, 0, 0),
-                frequency=datetime.timedelta(hours=24),
+                start=dt.datetime(2024, 1, 1, 12, 0, 0),
+                end=dt.datetime(2024, 1, 2, 12, 0, 0),
+                frequency=dt.timedelta(hours=24),
             ),
             input={
                 "cds": {
@@ -91,9 +91,9 @@ class TestSourceRegistration:
         register_sources()
         recipe = Recipe(
             dates=StartEndDates(
-                start=datetime.datetime(2020, 1, 1, 0, 0, 0),
-                end=datetime.datetime(2020, 1, 3, 0, 0, 0),
-                frequency=datetime.timedelta(hours=24),
+                start=dt.datetime(2020, 1, 1, 0, 0, 0),
+                end=dt.datetime(2020, 1, 3, 0, 0, 0),
+                frequency=dt.timedelta(hours=24),
             ),
             input={
                 "synthetic": {

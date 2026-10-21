@@ -182,6 +182,17 @@ class Downscaler(BaseModel):
             persistent=False,
         )
 
+    def validate_data_alignment(self, target_offset_steps: int) -> None:
+        """Require selected source frames and target frames to share valid times."""
+        expected_offset = self.n_history_steps - self.n_forecast_steps
+        if expected_offset < 0 or target_offset_steps != expected_offset:
+            msg = (
+                "Downscaling requires contemporaneous source/target windows: "
+                f"target_offset_steps must equal n_history_steps - n_forecast_steps "
+                f"({expected_offset}), got {target_offset_steps}."
+            )
+            raise ValueError(msg)
+
     def interpolation_baseline(self, inputs: TensorNTCHW) -> TensorNTCHW:
         """Geographically interpolate low-resolution fields to the target grid."""
         if inputs.ndim != 5:  # noqa: PLR2004
@@ -250,6 +261,9 @@ class Downscaler(BaseModel):
 
         if not torch.any(valid):
             msg = "Downscaling target contains no valid cells."
+            raise ValueError(msg)
+        if not bool(torch.isfinite(prediction[valid]).all()):
+            msg = "Downscaling predictions must be finite at valid target cells."
             raise ValueError(msg)
         return self.loss_fn(prediction[valid], target[valid])
 

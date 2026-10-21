@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import logging
 from pathlib import Path
 from typing import Any
@@ -33,23 +33,23 @@ TRAIN_PERIODS: list[dict[str, str | None]] = [
 ]
 
 
-def _all_dates() -> list[datetime.datetime]:
+def _all_dates() -> list[dt.datetime]:
     """Return every calendar day covered by the climatology zarr."""
     return [
-        CLIMATOLOGY_START + datetime.timedelta(days=i)
+        CLIMATOLOGY_START + dt.timedelta(days=i)
         for i in range((CLIMATOLOGY_END - CLIMATOLOGY_START).days + 1)
     ]
 
 
-def _available_dates() -> list[datetime.datetime]:
+def _available_dates() -> list[dt.datetime]:
     """Return the dates present in the climatology zarr (missing dates excluded)."""
     missing = {d.date() for d in CLIMATOLOGY_MISSING}
     return [d for d in _all_dates() if d.date() not in missing]
 
 
-def _period_dates(periods: list[dict[str, str | None]]) -> list[datetime.datetime]:
+def _period_dates(periods: list[dict[str, str | None]]) -> list[dt.datetime]:
     """Return the available dates falling within any of the given ISO-bounded periods."""
-    dates: list[datetime.datetime] = []
+    dates: list[dt.datetime] = []
     for date in _available_dates():
         day = date.strftime("%Y-%m-%d")
         for period in periods:
@@ -69,7 +69,7 @@ def _zarr_array(zarr_path: Path, name: str) -> np.ndarray:
     return np.asarray(zarr.open_group(str(zarr_path), mode="r")[name])
 
 
-def _normalised_rows(zarr_path: Path, dates: list[datetime.datetime]) -> np.ndarray:
+def _normalised_rows(zarr_path: Path, dates: list[dt.datetime]) -> np.ndarray:
     """Return [n, C, H, W] float32 rows replicating SingleDataset.normalise.
 
     The per-channel min/max statistics are read from the zarr (float64), the scale is
@@ -112,7 +112,7 @@ def _spy_from_dataset(
     return calls
 
 
-def _as_days(dates: list[datetime.datetime] | list[np.datetime64]) -> np.ndarray:
+def _as_days(dates: list[dt.datetime] | list[np.datetime64]) -> np.ndarray:
     """Return the dates as a day-precision NumPy array for comparison."""
     return np.array(dates, dtype="datetime64[D]")
 
