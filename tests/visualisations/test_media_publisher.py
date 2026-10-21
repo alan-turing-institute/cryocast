@@ -10,7 +10,7 @@ import torch
 
 from cryocast.data import CombinedDataset, SingleDataset
 from cryocast.exceptions import InvalidArrayError, VideoRenderError
-from cryocast.types import Hemisphere, ModelStepOutput, PlotSpec
+from cryocast.types import Hemisphere, Metadata, ModelStepOutput, PlotSpec
 from cryocast.visualisations.land_mask import LandMask
 from cryocast.visualisations.matplotlib_renderer import MatplotlibRenderer
 from cryocast.visualisations.media_publisher import MediaPublisher
@@ -121,7 +121,7 @@ class TestLoggingHelpers:
     def test_log_videos_rewinds_for_each_logger_and_preserves_format(self) -> None:
         """Rewind shared buffers before every logger handoff."""
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(video_format="mp4"),
         )
@@ -149,7 +149,7 @@ class TestMetadataAndHemisphere:
     def test_metadata_subtitle_reflects_constructor_dataset(self) -> None:
         """Metadata built from the constructor's dataset/epoch/model appears in the footer."""
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
             model_name="unet",
@@ -164,7 +164,7 @@ class TestMetadataAndHemisphere:
     def test_plot_spec_hemisphere_is_used_as_given(self) -> None:
         """Hemisphere is read straight from the given plot_spec, not set separately."""
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(hemisphere=Hemisphere.SOUTH),
         )
@@ -176,7 +176,7 @@ class TestMetadataAndHemisphere:
         new_land_mask = LandMask(None)
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             plot_spec=PlotSpec(),
             land_mask=new_land_mask,
         )
@@ -186,7 +186,7 @@ class TestMetadataAndHemisphere:
     def test_trained_epochs_and_model_name_are_optional(self) -> None:
         """Omitting trained_epochs/model_name leaves the footer without those lines."""
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -210,7 +210,7 @@ class TestLogStaticInputs:
         image_logger = MagicMock()
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -241,7 +241,7 @@ class TestLogStaticInputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -265,7 +265,7 @@ class TestLogStaticInputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -285,7 +285,7 @@ class TestLogStaticOutputs:
         image_logger = MagicMock()
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -317,7 +317,7 @@ class TestLogStaticOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -346,7 +346,7 @@ class TestLogStaticOutputs:
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -375,7 +375,7 @@ class TestLogStaticOutputs:
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -411,7 +411,7 @@ class TestLogStaticOutputs:
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -459,7 +459,7 @@ class TestLogStaticOutputs:
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(include_difference=False),
         )
@@ -491,7 +491,7 @@ class TestLogStaticOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -519,7 +519,7 @@ class TestLogStaticOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -546,7 +546,7 @@ class TestLogStaticOutputs:
         )
         image_logger = MagicMock()
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(selected_timestep=1),
         )
@@ -583,7 +583,7 @@ class TestLogStaticOutputs:
         image_logger = MagicMock()
 
         MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         ).log_static_outputs(
@@ -611,7 +611,7 @@ class TestLogVideoInputs:
         video_logger = MagicMock()
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -646,7 +646,7 @@ class TestLogVideoInputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -670,7 +670,7 @@ class TestLogVideoInputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -694,7 +694,7 @@ class TestLogVideoInputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -714,7 +714,7 @@ class TestLogVideoOutputs:
         video_logger = MagicMock()
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -746,7 +746,7 @@ class TestLogVideoOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -775,7 +775,7 @@ class TestLogVideoOutputs:
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -804,7 +804,7 @@ class TestLogVideoOutputs:
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -841,7 +841,7 @@ class TestLogVideoOutputs:
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -889,7 +889,7 @@ class TestLogVideoOutputs:
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(include_difference=False),
         )
@@ -921,7 +921,7 @@ class TestLogVideoOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -949,7 +949,7 @@ class TestLogVideoOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -977,7 +977,7 @@ class TestLogVideoOutputs:
         )
 
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
         )
@@ -1006,7 +1006,7 @@ class TestLogVideoOutputs:
         )
         video_logger = MagicMock()
         media_publisher = MediaPublisher(
-            dataset=fake_combined_dataset(),
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
             land_mask=LandMask(None),
             plot_spec=PlotSpec(video_format="gif"),
         )

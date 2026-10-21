@@ -58,11 +58,15 @@ fusion:
   temperature: 1.0
 ```
 
-Attention fusion spatially pools each encoded input stream for every sample and history timestep, learns one score per stream, normalises the scores across streams, and reweights each stream before concatenation. It preserves the original channel ordering and total channel count, so existing processors, decoders, and target-channel offsets remain compatible.
+Attention fusion spatially pools each encoded conditioning stream for every sample and history timestep, learns one score per stream, normalises the scores across streams, and reweights each stream before concatenation. The original channel order and total channel count are preserved.
 
-The attention score heads are zero-initialised. The initial stream weights are therefore all `1`, making the first forward pass exactly equal to ordinary concatenation. This also makes the option compatible with multistage pretraining: encoder, decoder, and processor stages can use the existing concatenated latent representation, then end-to-end finetuning starts from the same representation while the attention weights become trainable.
+The score heads start at zero without consuming random draws. Initial stream weights are all `1`, so a matched seed gives the same common network parameters and initial predictions as concatenation. Scores are computed in at least float32, including under mixed-precision autocast, and the fused output retains each stream's dtype. Temperatures must be finite and positive, and channel counts must be positive integers.
 
-A ready-to-run example is available as `model=cnn_unet_cnn_attention`.
+Fusion applies to conditioning only. `_encode_inputs` retains the raw concatenated encoder representation used for clean targets, while `_encode_conditioning_inputs` applies the learned gates. This keeps full-combined-latent supervision compatible with the pretrained decoder: future observations never choose the weights applied to history, and learned gates cannot rescale their own targets. Inference uses observed inputs only. A processor's internal autoregressive rollout remains its own responsibility.
+
+Encoder, decoder and processor pretraining use concatenation. Finetuning starts with the same representation and trains attention through the conditioning gradients; a decoder frozen for latent-loss training stays frozen. An attention checkpoint saves its gate configuration and learned weights. Default concatenation adds no checkpoint tensors.
+
+The optional `model=cnn_unet_cnn_attention` example inherits `cnn_unet_cnn`, changing only its name and fusion settings. Existing model YAML and the default fusion mode are unchanged. The regression checks establish implementation correctness; they do not establish improved forecast skill.
 
 ### ConvLSTM processor
 

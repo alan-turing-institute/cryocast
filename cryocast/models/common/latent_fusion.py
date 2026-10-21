@@ -1,9 +1,22 @@
+import math
 from collections.abc import Sequence
+from numbers import Integral, Real
+from typing import cast
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from cryocast.types import TensorNTCHW
+
+
+class _ZeroScoreHead(nn.Linear):
+    """Initialise a neutral attention head without consuming random draws."""
+
+    def reset_parameters(self) -> None:
+        nn.init.zeros_(self.weight)
+        if self.bias is not None:
+            nn.init.zeros_(self.bias)
 
 
 class LatentFusion(nn.Module):
@@ -32,14 +45,24 @@ class LatentFusion(nn.Module):
         if not input_channels:
             msg = "input_channels must contain at least one stream."
             raise ValueError(msg)
-        if any(channels <= 0 for channels in input_channels):
-            msg = "All input channel counts must be greater than zero."
+        if any(
+            isinstance(channels, bool)
+            or not isinstance(channels, Integral)
+            or channels <= 0
+            for channels in input_channels
+        ):
+            msg = "All input channel counts must be positive integers."
             raise ValueError(msg)
         if mode not in {"concat", "attention"}:
             msg = f"Unknown fusion mode {mode!r}; expected 'concat' or 'attention'."
             raise ValueError(msg)
-        if temperature <= 0:
-            msg = "temperature must be greater than zero."
+        if (
+            isinstance(temperature, bool)
+            or not isinstance(temperature, (int, float, Real))
+            or not math.isfinite(temperature)
+            or temperature <= 0
+        ):
+            msg = "temperature must be a finite positive real number."
             raise ValueError(msg)
 
         self.input_channels = tuple(int(channels) for channels in input_channels)
@@ -50,10 +73,7 @@ class LatentFusion(nn.Module):
         self.score_heads = nn.ModuleList()
         if self.mode == "attention":
             for channels in self.input_channels:
-                head = nn.Linear(channels, 1)
-                nn.init.zeros_(head.weight)
-                nn.init.zeros_(head.bias)
-                self.score_heads.append(head)
+                self.score_heads.append(_ZeroScoreHead(channels, 1))
 
     def _validate_inputs(self, inputs: Sequence[TensorNTCHW]) -> None:
         """Validate stream count, channels and non-channel dimensions."""
@@ -100,14 +120,28 @@ class LatentFusion(nn.Module):
         if self.mode == "concat":
             return first.new_ones((*first.shape[:2], len(inputs)))
 
-        logits = [
-            head(tensor.mean(dim=(-1, -2))).squeeze(-1)
-            for tensor, head in zip(inputs, self.score_heads, strict=True)
-        ]
-        weights = torch.softmax(
-            torch.stack(logits, dim=-1) / self.temperature,
-            dim=-1,
+        # Pool, project and normalise in at least float32 even under autocast.
+        # Casting only after a low-precision projection cannot undo overflow.
+        heads = [cast("nn.Linear", head) for head in self.score_heads]
+        score_dtype = (
+            torch.float64
+            if first.dtype == torch.float64 or heads[0].weight.dtype == torch.float64
+            else torch.float32
         )
+        with torch.autocast(device_type=first.device.type, enabled=False):
+            logits = [
+                F.linear(
+                    tensor.to(score_dtype).mean(dim=(-1, -2)),
+                    head.weight.to(score_dtype),
+                    head.bias.to(score_dtype) if head.bias is not None else None,
+                ).squeeze(-1)
+                for tensor, head in zip(inputs, heads, strict=True)
+            ]
+            scores = torch.stack(logits, dim=-1)
+            # Centre before temperature scaling so a common large score cannot
+            # overflow into inf/inf for a small positive temperature.
+            scores = scores - scores.amax(dim=-1, keepdim=True)
+            weights = torch.softmax(scores / self.temperature, dim=-1)
         return weights * len(inputs)
 
     def forward(self, inputs: Sequence[TensorNTCHW]) -> TensorNTCHW:
@@ -118,7 +152,12 @@ class LatentFusion(nn.Module):
 
         weights = self.attention_weights(inputs)
         weighted_inputs = [
-            tensor * weights[..., idx].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            tensor
+            * weights[..., idx]
+            .to(tensor.dtype)
+            .unsqueeze(-1)
+            .unsqueeze(-1)
+            .unsqueeze(-1)
             for idx, tensor in enumerate(inputs)
         ]
         return torch.cat(weighted_inputs, dim=2)

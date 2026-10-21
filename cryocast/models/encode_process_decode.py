@@ -231,29 +231,25 @@ class EncodeProcessDecode(BaseModel):
                 return encoder
         return None
 
+    def _encode_input_streams(
+        self, inputs: dict[str, TensorNTCHW]
+    ) -> list[TensorNTCHW]:
+        """Encode streams in the same order used to build the decoder."""
+        return [encoder.rollout(inputs[encoder.name]) for encoder in self.encoders]
+
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
-        """Encode and fuse all input datasets in latent space.
+        """Concatenate clean encoder latents without conditioning weights.
 
-        Args:
-            inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
-                (batch, n_history_steps, n_input_channels_k, H_input_k, W_input_k)
-
-        Returns:
-            TensorNTCHW with shape (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-
+        Targets for full-latent training must remain in this decoder-compatible
+        basis. Learned conditioning gates must not redefine their supervision.
         """
-        latent_inputs: list[TensorNTCHW] = [
-            encoder.rollout(inputs[encoder.name]) for encoder in self.encoders
-        ]
+        return torch.cat(self._encode_input_streams(inputs), dim=2)
 
-        # ProcessorStage predates the fusion module and deliberately skips this class's
-        # __init__. Its multistage pretraining path therefore remains exact concat;
-        # final end-to-end finetuning uses the configured fusion module. Attention
-        # fusion is zero-initialised to concat, so the transition is shape/value safe.
-        fusion = getattr(self, "fusion", None)
-        if fusion is None:
-            return torch.cat(latent_inputs, dim=2)
-        return fusion(latent_inputs)
+    def _encode_conditioning_inputs(
+        self, inputs: dict[str, TensorNTCHW]
+    ) -> TensorNTCHW:
+        """Apply configured attention only to observed conditioning streams."""
+        return self.fusion(self._encode_input_streams(inputs))
 
     def _encode_target_latent(
         self, inputs: dict[str, TensorNTCHW], target: TensorNTCHW
@@ -325,7 +321,7 @@ class EncodeProcessDecode(BaseModel):
 
         """
         # Encode inputs into latent space: tensor with (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-        latent_input_combined: TensorNTCHW = self._encode_inputs(inputs)
+        latent_input_combined: TensorNTCHW = self._encode_conditioning_inputs(inputs)
 
         # Process in latent space: tensor with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
         latent_output: TensorNTCHW = self.processor.rollout(
@@ -382,7 +378,7 @@ class EncodeProcessDecode(BaseModel):
 
             # Encode inputs to latent space
             # -> (B, n_history, C_latent_total, H_latent, W_latent)
-            latent: TensorNTCHW = self._encode_inputs(windows)
+            latent: TensorNTCHW = self._encode_conditioning_inputs(windows)
 
             # Process in latent space
             # -> (B, C_latent_total, H_latent, W_latent)
@@ -494,7 +490,7 @@ class EncodeProcessDecode(BaseModel):
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
             # Encode inputs and target into decoder-compatible latent space.
-            latent_input_combined = self._encode_inputs(batch)
+            latent_input_combined = self._encode_conditioning_inputs(batch)
             target_latent = self._encode_target_latent(batch, target)
 
             # Process in latent space

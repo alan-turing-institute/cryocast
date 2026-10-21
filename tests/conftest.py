@@ -1,5 +1,5 @@
 import copy
-import datetime
+import datetime as dt
 from pathlib import Path
 from typing import Any
 
@@ -18,15 +18,15 @@ def pytest_sessionstart(session: pytest.Session) -> None:  # noqa: ARG001
 def build_zarr(
     zarr_path: Path,
     data_dict: dict[str, Any],
-    full_dates: list[datetime.datetime] | None = None,
-    missing_dates: list[datetime.datetime] | None = None,
+    full_dates: list[dt.datetime] | None = None,
+    missing_dates: list[dt.datetime] | None = None,
 ) -> Path:
     """Write a minimal anemoi-compatible zarr store without using Create().
 
     Bypasses the slow anemoi create pipeline (which has ~40s fixed overhead) by writing
     the zarr arrays directly to disk.
     """
-    data_dates: list[datetime.datetime] = data_dict["coords"]["time"]["data"]
+    data_dates: list[dt.datetime] = data_dict["coords"]["time"]["data"]
     full_dates = full_dates if full_dates is not None else data_dates
     variables = list(data_dict["data_vars"].keys())
     lats: list[float] = data_dict["coords"]["lat"]["data"]
@@ -93,13 +93,13 @@ def build_zarr(
 # Multi-year synthetic data for climatology tests. Values depend on channel, month,
 # day and year so that monthly means are sensitive to exactly which dates (and which
 # years) contribute.
-CLIMATOLOGY_START = datetime.datetime(2017, 1, 1)
-CLIMATOLOGY_END = datetime.datetime(2020, 1, 5)
-CLIMATOLOGY_MISSING = [datetime.datetime(2017, 3, 15)]
+CLIMATOLOGY_START = dt.datetime(2017, 1, 1)
+CLIMATOLOGY_END = dt.datetime(2020, 1, 5)
+CLIMATOLOGY_MISSING = [dt.datetime(2017, 3, 15)]
 CLIMATOLOGY_VARIABLES = ["ice_conc", "ice_thickness"]
 
 
-def climatology_value(channel: int, dt: datetime.datetime) -> float:
+def climatology_value(channel: int, dt: dt.datetime) -> float:
     """Return the synthetic value for a channel and date.
 
     The value varies by channel (100 * channel), month (10 * (month - 1)), day
@@ -110,13 +110,13 @@ def climatology_value(channel: int, dt: datetime.datetime) -> float:
 
 
 def make_climatology_data_dict(
-    start: datetime.datetime,
-    end: datetime.datetime,
-    missing: list[datetime.datetime],
+    start: dt.datetime,
+    end: dt.datetime,
+    missing: list[dt.datetime],
     variables: list[str] = CLIMATOLOGY_VARIABLES,
 ) -> dict[str, Any]:
     """Build a build_zarr data dict covering start to end with the given missing dates."""
-    dates = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
+    dates = [start + dt.timedelta(days=i) for i in range((end - start).days + 1)]
     missing_set = {d.date() for d in missing}
     available = [d for d in dates if d.date() not in missing_set]
     data_vars = {
@@ -205,19 +205,19 @@ def cfg_model_service() -> DictConfig:
 
 
 @pytest.fixture(scope="session")
-def dates_as_dt() -> tuple[datetime.datetime, ...]:
+def dates_as_dt() -> tuple[dt.datetime, ...]:
     """Fixture to provide a tuple of datetime objects for testing."""
     return (
-        datetime.datetime(2020, 1, 1, 0, 0, 0),
-        datetime.datetime(2020, 1, 2, 0, 0, 0),
-        datetime.datetime(2020, 1, 3, 0, 0, 0),
-        datetime.datetime(2020, 1, 4, 0, 0, 0),
-        datetime.datetime(2020, 1, 5, 0, 0, 0),
+        dt.datetime(2020, 1, 1, 0, 0, 0),
+        dt.datetime(2020, 1, 2, 0, 0, 0),
+        dt.datetime(2020, 1, 3, 0, 0, 0),
+        dt.datetime(2020, 1, 4, 0, 0, 0),
+        dt.datetime(2020, 1, 5, 0, 0, 0),
     )
 
 
 @pytest.fixture(scope="session")
-def mock_data(dates_as_dt: tuple[datetime.datetime, ...]) -> dict[str, dict[str, Any]]:
+def mock_data(dates_as_dt: tuple[dt.datetime, ...]) -> dict[str, dict[str, Any]]:
     """Fixture to create a mock dataset for testing."""
     return {
         "coords": {
@@ -279,7 +279,7 @@ def mock_data(dates_as_dt: tuple[datetime.datetime, ...]) -> dict[str, dict[str,
 
 @pytest.fixture(scope="session")
 def mock_data_constant_values(
-    dates_as_dt: tuple[datetime.datetime, ...],
+    dates_as_dt: tuple[dt.datetime, ...],
 ) -> dict[str, dict[str, Any]]:
     """Fixture to create a mock dataset with constant data for testing."""
     return {
@@ -314,7 +314,7 @@ def mock_data_constant_values(
 
 @pytest.fixture(scope="session")
 def mock_data_missing_dates(
-    dates_as_dt: tuple[datetime.datetime, ...],
+    dates_as_dt: tuple[dt.datetime, ...],
 ) -> dict[str, dict[str, Any]]:
     """Fixture to create a mock dataset with missing dates for testing."""
     return {
@@ -358,11 +358,11 @@ def mock_data_non_normalized_times(
     """Fixture to create a mock dataset for testing."""
     output = copy.deepcopy(mock_data)
     output["coords"]["time"]["data"] = [
-        datetime.datetime(2020, 1, 1, 3, 47, 42),
-        datetime.datetime(2020, 1, 2, 3, 47, 42),
-        datetime.datetime(2020, 1, 3, 3, 47, 42),
-        datetime.datetime(2020, 1, 4, 3, 47, 42),
-        datetime.datetime(2020, 1, 5, 3, 47, 42),
+        dt.datetime(2020, 1, 1, 3, 47, 42),
+        dt.datetime(2020, 1, 2, 3, 47, 42),
+        dt.datetime(2020, 1, 3, 3, 47, 42),
+        dt.datetime(2020, 1, 4, 3, 47, 42),
+        dt.datetime(2020, 1, 5, 3, 47, 42),
     ]
     return output
 
@@ -393,7 +393,7 @@ def mock_dataset_constant_values(
 
 @pytest.fixture(scope="session")
 def mock_dataset_missing_dates(
-    dates_as_dt: tuple[datetime.datetime, ...],
+    dates_as_dt: tuple[dt.datetime, ...],
     mock_data_path: Path,
     mock_data_missing_dates: dict[str, dict[str, Any]],
 ) -> Path:
@@ -418,7 +418,7 @@ def climatology_zarr(mock_data_path: Path) -> Path:
         CLIMATOLOGY_START, CLIMATOLOGY_END, CLIMATOLOGY_MISSING
     )
     full_dates = [
-        CLIMATOLOGY_START + datetime.timedelta(days=i)
+        CLIMATOLOGY_START + dt.timedelta(days=i)
         for i in range((CLIMATOLOGY_END - CLIMATOLOGY_START).days + 1)
     ]
     return build_zarr(
