@@ -11,8 +11,10 @@ as the general-purpose weather input.
 
 ## Dependencies
 
-This evaluation is intentionally stacked on the downscaling work from #547/#548:
+The reconciled merge order is #457, #552, #559, then #595. This keeps both CARRA2
+and generic CDS source registrations available while building the downscaling stack:
 
+- #457 provides the direct CARRA2 source and weather sample.
 - #552 defines the reproducible Svalbard CARRA2 2.5 km target region.
 - #559 adds the trainable residual downscaler and its geographic interpolation
   baseline.
