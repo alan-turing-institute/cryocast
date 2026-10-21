@@ -60,8 +60,8 @@ def register_sources() -> None:
 
 __all__ = [
     "ArgoSource",
-    "CDSSource",
     "CARRA2Source",
+    "CDSSource",
     "FTPSource",
     "SyntheticSource",
     "register_sources",
