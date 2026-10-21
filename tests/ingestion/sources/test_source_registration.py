@@ -15,6 +15,7 @@ from anemoi.datasets.create.sources import source_registry
 
 from cryocast.ingestion.sources import (
     ArgoSource,
+    CARRA2Source,
     CDSSource,
     FTPSource,
     SyntheticSource,
@@ -29,6 +30,7 @@ class TestSourceRegistration:
         "ftp": FTPSource,
         "argo": ArgoSource,
         "cds": CDSSource,
+        "carra2": CARRA2Source,
         "synthetic": SyntheticSource,
     }
 
@@ -113,3 +115,19 @@ class TestSourceRegistration:
         register_sources()
         registered_after = set(source_registry.registered)
         assert registered_before == registered_after
+
+
+def test_carra2_and_cds_recipe_sources_coexist() -> None:
+    """Rebuilding the action schema must preserve both CARRA2 ingestion routes."""
+    register_sources()
+    dates = StartEndDates(
+        start=dt.datetime(2024, 1, 15, 12),
+        end=dt.datetime(2024, 1, 15, 12),
+        frequency=dt.timedelta(hours=24),
+    )
+    recipe = Recipe(
+        dates=dates, input={"carra2": {"variables": ["sea_ice_area_fraction"]}}
+    )
+    assert type(recipe.input).__name__ == "carra2"
+    assert source_registry.lookup("cds") is CDSSource
+    assert source_registry.lookup("carra2") is CARRA2Source
