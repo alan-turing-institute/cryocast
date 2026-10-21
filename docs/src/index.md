@@ -21,7 +21,7 @@ Example Arctic and Antarctic sea-ice concentration forecasts are shown below.
 ## Quick install
 
 ```bash
-pip install git+https://github.com/alan-turing-institute/icenet-mp
+pip install git+https://github.com/alan-turing-institute/cryocast
 ```
 
 Then run:

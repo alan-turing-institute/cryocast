@@ -62,3 +62,39 @@ processor:
 ```
 
 A complete example is available as `model=cnn_convlstm_cnn`.
+
+## One-shot space-time forecasts with missing Argo
+
+The optional `cnn_spacetime_vit_cnn` model uses `SpaceTimeVitProcessor` to
+encode observed history once and decode every requested forecast lead jointly.
+Causal attention between forecast queries prevents later configured queries from
+altering an earlier forecast prefix in evaluation mode. Dropout remains stochastic
+in training mode. Parameter shapes do not depend on the history or forecast length;
+checkpoint reuse still requires compatible latent geometry, channel order and
+target-slice configuration.
+
+The processor adds residuals only to the declared target latent slice. Other
+channels retain their latest observed values, so Argo remains conditioning rather
+than a prognostic variable. Future targets are not read by its prediction path.
+This target-slice interface must be reconciled explicitly with changes that remove
+`target_channel_offset`; predicting every channel would change this model's contract.
+
+`MissingDataCNNEncoder` replaces nonfinite measurements with zero and supplies an
+availability channel. Its finite `missing_fill_value` describes a **complete missing
+time slice**, matching the missing-date loader's all-`-1` tensor convention. A finite
+measurement equal to `-1` inside an otherwise observed frame remains available.
+Per-pixel missing values should use NaN or another explicit nonfinite marker.
+If an entire real frame can equal the configured sentinel, that representation is
+ambiguous; use nonfinite missing-date values and `missing_fill_value=None` instead.
+
+Conditioning dropout removes whole history slices only during training. The input
+adapter starts as an identity without consuming random draws, so adding the neutral
+adapter does not alter subsequent seeded model initialization. Existing adapter
+state dictionaries still load strictly. Preserving individual sentinel-valued
+measurements is an intentional correction; complete missing frames behave as before.
+
+Regression tests cover causal prefix values and history gradients, target isolation,
+non-target persistence, invalid dimensions, missing-value gradients, and safe
+processor checkpoint restoration with an identical next Adam update. These checks
+validate the implementation; improved forecast accuracy over persistence or other
+processors still requires a matched forecast-level evaluation.

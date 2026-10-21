@@ -1,6 +1,7 @@
 """Factorised space-time Vision Transformer processor."""
 
 import math
+from numbers import Integral, Real
 from typing import Any
 
 import torch
@@ -71,7 +72,10 @@ class SpaceTimeVitProcessor(BaseProcessor):
         """Initialise the factorised space-time transformer."""
         super().__init__(**kwargs)
         self._validate_attention_configuration(
+            dropout=dropout,
             emb_dim=emb_dim,
+            mlp_dim=mlp_dim,
+            patch_size=patch_size,
             forecast_spatial_depth=forecast_spatial_depth,
             heads=heads,
             spatial_depth=spatial_depth,
@@ -144,27 +148,48 @@ class SpaceTimeVitProcessor(BaseProcessor):
         if self.delta_smoother.bias is not None:
             nn.init.zeros_(self.delta_smoother.bias)
 
-    def _validate_attention_configuration(
+    def _validate_attention_configuration(  # noqa: PLR0913
         self,
         *,
+        dropout: float,
         emb_dim: int,
+        mlp_dim: int,
+        patch_size: int,
         forecast_spatial_depth: int,
         heads: int,
         spatial_depth: int,
         temporal_depth: int,
     ) -> None:
         """Validate transformer dimensions and configured time horizons."""
-        if heads <= 0 or emb_dim % heads:
+        dimensions = {
+            "emb_dim": (emb_dim, 1),
+            "heads": (heads, 1),
+            "mlp_dim": (mlp_dim, 1),
+            "patch_size": (patch_size, 1),
+            "spatial_depth": (spatial_depth, 0),
+            "forecast_spatial_depth": (forecast_spatial_depth, 0),
+            "temporal_depth": (temporal_depth, 1),
+            "n_history_steps": (self.n_history_steps, 1),
+            "n_forecast_steps": (self.n_forecast_steps, 1),
+        }
+        for name, (value, minimum) in dimensions.items():
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, Integral)
+                or value < minimum
+            ):
+                msg = f"{name} must be an integer greater than or equal to {minimum}."
+                raise ValueError(msg)
+        if (
+            isinstance(dropout, bool)
+            or not isinstance(dropout, Real)
+            or not math.isfinite(dropout)
+            or not 0.0 <= dropout <= 1.0
+        ):
+            msg = "dropout must be a finite real number between 0 and 1."
+            raise ValueError(msg)
+        if emb_dim % heads:
             msg = f"emb_dim {emb_dim} must be divisible by heads {heads}."
-            raise ValueError(msg)
-        if spatial_depth < 0 or forecast_spatial_depth < 0:
-            msg = "Spatial depths must be non-negative."
-            raise ValueError(msg)
-        if temporal_depth < 1:
-            msg = "temporal_depth must be at least 1."
-            raise ValueError(msg)
-        if self.n_history_steps < 1 or self.n_forecast_steps < 1:
-            msg = "History and forecast steps must both be positive."
             raise ValueError(msg)
 
     def _configure_data_space(self, patch_size: int) -> None:
@@ -182,17 +207,19 @@ class SpaceTimeVitProcessor(BaseProcessor):
 
         c_combined = self.data_space.channels
         c_target = self.data_space_target.channels
-        target_channel_offset = self.target_channel_offset
+        target_channel_offset = getattr(self, "target_channel_offset", None)
         if (
-            target_channel_offset is None
-            or target_channel_offset < 0
-            or target_channel_offset + c_target > c_combined
+            isinstance(target_channel_offset, bool)
+            or not isinstance(target_channel_offset, Integral)
+            or int(target_channel_offset) < 0
+            or int(target_channel_offset) + c_target > c_combined
         ):
             msg = (
                 f"target_channel_offset={target_channel_offset} with target channels="
                 f"{c_target} does not fit inside combined latent channels={c_combined}."
             )
             raise ValueError(msg)
+        target_channel_offset = int(target_channel_offset)
 
         self.target_slice_start = target_channel_offset
         self.target_slice_end = target_channel_offset + c_target
