@@ -71,6 +71,7 @@ class DDPM(BaseModel):
         normalization: str = "groupnorm",
         restrict_range: str = "clamp",
         start_out_channels: int = 32,
+        target_variable_indices: list[int],
         time_embed_dim: int = 256,
         timesteps: int = 1000,
         use_autoregressive: bool = True,
@@ -91,6 +92,9 @@ class DDPM(BaseModel):
             restrict_range (str): How to bound sampled output into [0, 1] before
                 masking: none/sigmoid/clamp/tanh. Default is "clamp".
             start_out_channels (int): Base number of channels in the first UNet block.
+            target_variable_indices (list[int]): Indices of the target variables within
+                the OSISAF input group; the autoregressive rollout writes each
+                prediction back into these channels.
             time_embed_dim (int): Dimensionality of the timestep embedding.
             timesteps (int): Number of diffusion timesteps. Default is 1000.
             use_autoregressive (bool): Whether to use autoregressive prediction. Default is True.
@@ -98,6 +102,17 @@ class DDPM(BaseModel):
 
         """
         super().__init__(mask_dir=mask_dir, **kwargs)
+
+        # Check that the number of variable indices provided matches the number of
+        # channels in the output space.
+        if self.output_space.channels != len(target_variable_indices):
+            msg = (
+                f"output_space has {self.output_space.channels} channel(s) but "
+                f"target_variable_indices selects {len(target_variable_indices)}; "
+                f"check that variables.target is set correctly."
+            )
+            raise ValueError(msg)
+        self.target_variable_indices = target_variable_indices
 
         self.use_autoregressive = use_autoregressive
         self.osisaf_key = self.output_space.name
@@ -349,11 +364,11 @@ class DDPM(BaseModel):
             all_predictions.append(y_step)
 
             # Slide OSISAF window: append prediction as new frame.
-            # SSMIS input has multiple channels per step but the model only
-            # predicts base_output_channels (SIC). Carry the auxiliary channels
-            # forward from the last observed frame and overwrite the SIC slot.
+            # The input group can have more channels per step than the model
+            # predicts. Carry the other channels forward from the last observed
+            # frame and overwrite the target-variable channels.
             new_frame = osisaf[:, -1:].clone()  # [B, 1, C_in, H, W]
-            new_frame[:, :, : self.base_output_channels] = y_step.unsqueeze(1)
+            new_frame[:, :, self.target_variable_indices] = y_step.unsqueeze(1)
             osisaf = torch.cat([osisaf, new_frame], dim=1)
 
             # Slide ERA5 window: use forecast if available, else repeat last frame

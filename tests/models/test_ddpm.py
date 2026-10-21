@@ -10,7 +10,12 @@ from cryocast.models import DDPM
 
 class TestDDPM:
     @staticmethod
-    def _make_model(cfg_loss: DictConfig, *, use_autoregressive: bool = True) -> DDPM:
+    def _make_model(
+        cfg_loss: DictConfig,
+        *,
+        use_autoregressive: bool = True,
+        target_variable_indices: list[int] | None = None,
+    ) -> DDPM:
         return DDPM(
             name="ddpm",
             hemisphere="north",
@@ -31,6 +36,7 @@ class TestDDPM:
             scheduler={},
             lr_scheduler={},
             start_out_channels=4,
+            target_variable_indices=target_variable_indices or [0],
             timesteps=4,
             use_autoregressive=use_autoregressive,
         )
@@ -48,6 +54,12 @@ class TestDDPM:
 
         with pytest.raises(NotImplementedError, match="training_step"):
             model(self._make_batch())
+
+    def test_rejects_mismatched_target_variable_indices(
+        self, cfg_loss: DictConfig
+    ) -> None:
+        with pytest.raises(ValueError, match="target_variable_indices selects 2"):
+            self._make_model(cfg_loss, target_variable_indices=[0, 1])
 
     def test_prepare_inputs_combines_conditioning_channels(
         self, cfg_loss: DictConfig
