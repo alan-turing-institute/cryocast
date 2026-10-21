@@ -206,3 +206,172 @@ def test_fss_requires_positive_odd_neighbourhood(neighbourhood_size: int) -> Non
     """Reject invalid neighbourhood window sizes."""
     with pytest.raises(ValueError, match="positive odd integer"):
         FractionalSkillScorePerForecastDay(neighbourhood_size=neighbourhood_size)
+
+
+@pytest.mark.parametrize("pixel_size", [5, 25])
+def test_extent_bias_cancellation_does_not_imply_correct_ice_maps(
+    pixel_size: int,
+) -> None:
+    """Opposing frame biases cancel; absolute extent error and IIEE remain positive."""
+    pred = torch.zeros(2, 2, 1, 2, 2)
+    truth = torch.zeros_like(pred)
+    pred[0, 0, 0, 0, :] = 1
+    truth[1, 0, 0, 0, :] = 1
+    truth[:, 1, 0, 0, 0] = 1
+    area = float(pixel_size**2)
+    extent = SeaIceExtentErrorPerForecastDay(pixel_size=pixel_size)
+    disagreement = IntegratedIceEdgeErrorPerForecastDay(pixel_size=pixel_size)
+    for metric in (extent, disagreement):
+        metric.update(pred[:1], truth[:1])
+        metric.compute()  # Exercise cache invalidation before the second batch.
+        metric.update(pred[1:], truth[1:])
+
+    torch.testing.assert_close(extent.compute(), torch.tensor([0.0, -area]))
+    torch.testing.assert_close(disagreement.compute(), torch.tensor([2 * area, area]))
+    per_frame_absolute_extent = torch.tensor([[2 * area, area], [2 * area, area]])
+    assert float(per_frame_absolute_extent[:, 0].mean()) == 2 * area
+    reverse = SeaIceExtentErrorPerForecastDay(pixel_size=pixel_size)
+    reverse.update(truth, pred)
+    torch.testing.assert_close(reverse.compute(), -extent.compute())
+
+
+@pytest.mark.parametrize(
+    ("metric_type", "cell_errors"),
+    [
+        (SeaIceExtentErrorPerForecastDay, [0.0, 2.0]),
+        (IntegratedIceEdgeErrorPerForecastDay, [4 / 3, 2.0]),
+    ],
+)
+def test_extent_metrics_weight_unequal_batches_by_frame_count(
+    metric_type: type[MeanIceAreaMetric], cell_errors: list[float]
+) -> None:
+    """A one-frame batch and a two-frame batch receive weights one and two."""
+    pred = torch.zeros(3, 2, 1, 2, 2)
+    truth = torch.zeros_like(pred)
+    pred[0, 0, 0, 0, :] = 1
+    truth[1:, 0, 0, 0, 0] = 1
+    pred[1, 1, 0, 0, :] = 1
+    pred[2, 1] = 1
+    metric = metric_type(pixel_size=3)
+    metric.update(pred[:1], truth[:1])
+    metric.update(pred[1:], truth[1:])
+
+    torch.testing.assert_close(metric.compute(), torch.tensor(cell_errors) * 9)
+    assert metric.sample_count == 3
+
+
+def _unequal_edge_support() -> tuple[torch.Tensor, torch.Tensor]:
+    """One perfect four-edge forecast followed by two displaced one-edge forecasts."""
+    pred = torch.zeros(3, 1, 1, 5, 5)
+    truth = torch.zeros_like(pred)
+    for y, x in ((1, 1), (1, 3), (3, 1), (3, 3)):
+        pred[0, 0, 0, y, x] = truth[0, 0, 0, y, x] = 1
+    pred[1:, 0, 0, 3, 3] = 1
+    truth[1:, 0, 0, 1, 1] = 1
+    return pred, truth
+
+
+def test_diiee_pools_area_and_edge_length_before_dividing() -> None:
+    """Use 2*(0+2+2)*p^2/((8+2+2)*p), not a mean of frame ratios."""
+    pred, truth = _unequal_edge_support()
+    metric = DistanceAveragedIceEdgeErrorPerForecastDay(pixel_size=9)
+    metric.update(pred[:1], truth[:1])
+    metric.update(pred[1:], truth[1:])
+
+    torch.testing.assert_close(metric.compute().reshape(-1), torch.tensor([6.0]))
+
+
+def test_fss_pools_mse_and_reference_before_dividing() -> None:
+    """Known sparse-edge supports give 1-(0+2+2)/(8+2+2), not (1+0+0)/3."""
+    pred, truth = _unequal_edge_support()
+    metric = FractionalSkillScorePerForecastDay(neighbourhood_size=1)
+    metric.update(pred[:1], truth[:1])
+    metric.update(pred[1:], truth[1:])
+
+    torch.testing.assert_close(metric.compute().reshape(-1), torch.tensor([2 / 3]))
+
+
+@pytest.mark.parametrize(("size", "expected"), [(1, 0.0), (3, 2 / 3)])
+def test_fss_shifted_singletons_match_neighbourhood_overlap(
+    size: int, expected: float
+) -> None:
+    """The two 3x3 fraction footprints overlap at six of nine cells on a 7x9 grid."""
+    pred = torch.zeros(1, 2, 1, 7, 9)
+    truth = torch.zeros_like(pred)
+    pred[:, :, :, 3, 4] = 1
+    truth[:, :, :, 3, 3] = 1
+    metric = FractionalSkillScorePerForecastDay(neighbourhood_size=size)
+    metric.update(pred, truth)
+
+    torch.testing.assert_close(metric.compute(), torch.full((2,), expected))
+
+
+@pytest.mark.parametrize(
+    "metric_type",
+    [
+        SeaIceExtentErrorPerForecastDay,
+        IntegratedIceEdgeErrorPerForecastDay,
+        DistanceAveragedIceEdgeErrorPerForecastDay,
+        FractionalSkillScorePerForecastDay,
+        IceNetAccuracyPerForecastDay,
+    ],
+)
+def test_nonfinite_land_cannot_change_extent_edge_or_accuracy_scores(
+    metric_type: type,
+) -> None:
+    """NaN and both infinities on excluded cells leave the ocean calculation unchanged."""
+    pred, truth = _unequal_edge_support()
+    pred = pred.expand(-1, 2, -1, -1, -1).clone()
+    truth = truth.expand_as(pred).clone()
+    mask = torch.ones(5, 5, dtype=torch.bool)
+    mask[0, :3] = False
+    reference = metric_type(land_mask=mask)
+    reference.update(pred, truth)
+    pred[:, :, :, 0, :3] = torch.tensor([float("nan"), float("inf"), float("-inf")])
+    truth[:, :, :, 0, :3] = torch.tensor([float("inf"), float("-inf"), float("nan")])
+    actual = metric_type(land_mask=mask)
+    actual.update(pred, truth)
+
+    torch.testing.assert_close(actual.compute(), reference.compute())
+
+
+def test_weighted_accuracy_accumulates_weight_mass_across_unequal_batches() -> None:
+    """One correct weight unit and eight incorrect units give 100/9 percent."""
+    truth = torch.ones(3, 2, 1, 1, 2)
+    pred = torch.zeros_like(truth)
+    pred[0] = 1
+    weights = (
+        torch.tensor([1.0, 3.0, 5.0]).reshape(3, 1, 1, 1, 1).expand_as(pred).clone()
+    )
+    weights[..., 1] = 1000
+    metric = IceNetAccuracyPerForecastDay(land_mask=torch.tensor([[True, False]]))
+    metric.update(pred[:1], truth[:1], sample_weight=weights[:1])
+    metric.update(pred[1:], truth[1:], sample_weight=weights[1:])
+
+    torch.testing.assert_close(metric.compute(), torch.full((2,), 100 / 9))
+
+
+@pytest.mark.parametrize(
+    "metric_type",
+    [
+        SeaIceExtentErrorPerForecastDay,
+        IntegratedIceEdgeErrorPerForecastDay,
+        DistanceAveragedIceEdgeErrorPerForecastDay,
+        FractionalSkillScorePerForecastDay,
+        IceNetAccuracyPerForecastDay,
+    ],
+)
+def test_ice_metrics_reset_clears_sums_counts_and_cached_results(
+    metric_type: type,
+) -> None:
+    """A new evaluation after reset must equal a fresh metric, including lead count."""
+    pred, truth = _unequal_edge_support()
+    metric = metric_type()
+    metric.update(pred.expand(-1, 2, -1, -1, -1), truth.expand(-1, 2, -1, -1, -1))
+    metric.compute()
+    metric.reset()
+    metric.update(truth[:1], truth[:1])
+    reference = metric_type()
+    reference.update(truth[:1], truth[:1])
+
+    torch.testing.assert_close(metric.compute(), reference.compute())

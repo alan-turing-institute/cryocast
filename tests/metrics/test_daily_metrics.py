@@ -180,3 +180,133 @@ def test_ssim_gaussian_kernel_is_normalized_and_checkpoint_free() -> None:
 
     torch.testing.assert_close(metric.kernel.sum(), torch.tensor(1.0))
     assert "kernel" not in metric.state_dict()
+
+
+@pytest.mark.parametrize("metric_type", [MAEPerForecastDay, RMSEPerForecastDay])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_low_precision_full_grid_reduction_is_finite_and_exact(
+    metric_type: type[BaseDailyMetric], dtype: torch.dtype
+) -> None:
+    """A unit error over a 432x432 grid must remain one, not overflow or round."""
+    predictions = torch.ones((2, 2, 1, 432, 432), dtype=dtype)
+    metric = metric_type()
+    metric.update(predictions, torch.zeros_like(predictions))
+
+    torch.testing.assert_close(metric.compute(), torch.ones(2), rtol=0, atol=0)
+
+
+def test_half_precision_rmse_does_not_underflow_before_reduction() -> None:
+    """Square a representable small error in float32 rather than rounding it to zero."""
+    predictions = torch.full((1, 2, 1, 2, 2), 1e-4, dtype=torch.float16)
+    expected = float(predictions[0, 0, 0, 0, 0])
+    metric = RMSEPerForecastDay()
+    metric.update(predictions, torch.zeros_like(predictions))
+
+    torch.testing.assert_close(
+        metric.compute(), torch.full((2,), expected), rtol=1e-6, atol=0
+    )
+
+
+@pytest.mark.parametrize(
+    ("metric_type", "expected"),
+    [
+        (MAEPerForecastDay, [0.5, 0.25]),
+        (RMSEPerForecastDay, [math.sqrt(11 / 30), math.sqrt(11 / 120)]),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_unequal_batches_count_all_masked_channels_and_invalidate_cached_compute(
+    metric_type: type[BaseDailyMetric], expected: list[float], dtype: torch.dtype
+) -> None:
+    """Accumulate six ocean errors per lead across batches of one and two examples."""
+    # Lead 0 has [0, .2, .4, .6, .8, 1]; lead 1 is half that.
+    predictions = torch.zeros((3, 2, 2, 1, 2), dtype=dtype)
+    predictions[:, 0, :, 0, 0] = torch.arange(6, dtype=dtype).reshape(3, 2) / 5
+    predictions[:, 1, :, 0, 0] = predictions[:, 0, :, 0, 0] / 2
+    predictions[..., 1] = float("inf")
+    target = torch.zeros_like(predictions)
+    target[..., 1] = float("nan")
+    mask = torch.tensor([[True, False]])
+    metric = metric_type(land_mask=mask)
+    metric.update(predictions[:1], target[:1])
+    first = metric.compute().clone()
+    metric.update(predictions[1:], target[1:])
+    actual = metric.compute()
+
+    assert actual.dtype == dtype
+    assert not torch.equal(actual, first)
+    torch.testing.assert_close(actual, torch.tensor(expected, dtype=dtype))
+    torch.testing.assert_close(metric.count, torch.tensor([6, 6]))
+
+
+@pytest.mark.parametrize(
+    ("metric_type", "expected"),
+    [
+        (SpatialMeanPredictionPerForecastDay, [0.25, 0.5]),
+        (SpatialMeanGroundTruthPerForecastDay, [0.5, 0.75]),
+    ],
+)
+def test_spatial_traces_exclude_nonfinite_land_without_using_the_other_field(
+    metric_type: type[BaseDailyMetric], expected: list[float]
+) -> None:
+    """Invalid land values must not contaminate either field's ocean-only trace."""
+    predictions = torch.tensor(
+        [
+            [
+                [[[0.25, float("nan"), float("inf")]]],
+                [[[0.5, float("inf"), float("nan")]]],
+            ]
+        ]
+    )
+    truth = torch.tensor(
+        [
+            [
+                [[[0.5, float("-inf"), float("nan")]]],
+                [[[0.75, float("nan"), float("-inf")]]],
+            ]
+        ]
+    )
+    metric = metric_type(land_mask=torch.tensor([[True, False, False]]))
+    metric.update(predictions, truth)
+
+    torch.testing.assert_close(metric.compute(), torch.tensor(expected))
+
+
+@pytest.mark.parametrize("metric_type", [MAEPerForecastDay, RMSEPerForecastDay])
+def test_invalid_ocean_error_is_not_reported_as_a_valid_perfect_score(
+    metric_type: type[BaseDailyMetric],
+) -> None:
+    """Land masking must not silently discard invalid errors on ocean cells."""
+    predictions = torch.zeros(1, 2, 1, 1, 2)
+    predictions[:, 0, :, :, 0] = float("nan")
+    predictions[:, 1, :, :, 0] = float("inf")
+    metric = metric_type(land_mask=torch.tensor([[True, False]]))
+    metric.update(predictions, torch.zeros_like(predictions))
+
+    actual = metric.compute()
+    assert torch.isnan(actual[0])
+    assert torch.isinf(actual[1])
+
+
+def test_ssim_luminance_uses_population_weights_and_higher_is_better() -> None:
+    """Average analytic similarities across unequal batches, not their batch means."""
+    pred = (
+        torch.tensor([0.25, 0.5, 0.75]).reshape(3, 1, 1, 1, 1).expand(-1, 2, -1, 1, 2)
+    )
+    truth = torch.full_like(pred, 0.75)
+    mask = torch.tensor([[True, False]])
+    metric = SSIMPerForecastDay(filter_size=1, land_mask=mask)
+    metric.update(pred[:1], truth[:1])
+    first = metric.compute().clone()
+    metric.update(pred[1:], truth[1:])
+    c1 = 0.01**2
+    expected = (
+        sum((2 * a * 0.75 + c1) / (a * a + 0.75**2 + c1) for a in (0.25, 0.5, 0.75)) / 3
+    )
+
+    torch.testing.assert_close(metric.compute(), torch.full((2,), expected))
+    assert torch.all(metric.compute() > first)
+    identity = SSIMPerForecastDay(filter_size=1, land_mask=mask)
+    identity.update(truth, truth)
+    torch.testing.assert_close(identity.compute(), torch.ones(2))
+    assert torch.all(identity.compute() > metric.compute())

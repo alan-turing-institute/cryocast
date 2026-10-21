@@ -84,6 +84,13 @@ class BaseDailyMetric(LandMaskMixin, AccumulatorMixin, Metric):
         n_channels = preds.shape[2]
         num_spatial = n_channels * preds.shape[3] * preds.shape[4]
 
+        # Promote before computing errors: a half-precision sum can overflow on
+        # full grids, and squaring small FP16 errors can underflow before summing.
+        # Float32/float64 inputs retain their existing calculation and precision.
+        if preds.dtype in (torch.float16, torch.bfloat16):
+            preds = preds.float()
+        if targets.dtype in (torch.float16, torch.bfloat16):
+            targets = targets.float()
         errors = self._compute_errors(preds, targets)
         land_mask = getattr(self, "land_mask", None)
         if land_mask is not None:
