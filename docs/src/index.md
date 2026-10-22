@@ -1,12 +1,12 @@
 # CryoCast
 
-**CryoCast** is a multimodal machine-learning framework for short-term Arctic and Antarctic sea-ice forecasting. It brings satellite observations, in-situ sensor data, and reanalysis fields into a common pipeline for sea-ice concentration forecasting.
+**CryoCast** is a multimodal machine-learning framework for short-term Arctic and Antarctic sea-ice concentration forecasting. Available input datasets include satellite-derived OSI SAF sea-ice concentration, ERA5 atmospheric reanalysis and Argo ocean observations. The selected [data and model configuration](user-guide/configuration.md) determines which inputs a run uses.
 
-CryoCast uses an encode-process-decode architecture in which dataset-specific encoders map inputs into a shared latent representation, a central processor combines that information, and decoders produce forecast outputs. This design supports adding new input sources, prediction targets, and model components without restructuring the full pipeline.
+In the modular encode-process-decode models, dataset-specific encoders map inputs onto a common latent grid, a processor forecasts from the combined representation, and a decoder maps the result to the target grid. The framework also provides standalone models and baselines. See [model development](how-to/add-a-model.md) for the supported interfaces and tensor conventions.
 
 ## Forecast examples
 
-The examples below show Arctic and Antarctic sea-ice concentration forecasts compared with observations.
+The figures below compare Arctic and Antarctic sea-ice concentration forecasts with observations. These illustrative outputs do not establish general forecasting skill across models, seasons or regions.
 
 ### Arctic
 
@@ -18,32 +18,31 @@ The examples below show Arctic and Antarctic sea-ice concentration forecasts com
 
 ## Capabilities
 
-- Multimodal data fusion across observational and reanalysis datasets
-- Extensible inputs and prediction targets through the encode-process-decode design
-- Multiple model configurations, including UNet, vision transformer, diffusion, and persistence-baseline approaches
-- Training, evaluation, benchmarking, sensitivity experiments, and case-study analysis through the same pipeline
+- [Multimodal data ingestion](user-guide/data.md) for satellite-derived sea ice, atmospheric reanalysis and ocean float observations
+- [Configurable model components](user-guide/configuration.md), including UNet, vision-transformer and diffusion models, plus a persistence baseline
+- [Single-stage](how-to/train.md) and [multistage training](how-to/train-multistage.md), checkpoint-based [evaluation](how-to/evaluate.md) and [hyperparameter sweeps](how-to/sweeps.md)
+- [Per-forecast-day metrics](user-guide/metrics.md) and [notebooks](user-guide/notebooks.md) for inspecting model behaviour and research examples
 
 ## Getting started
 
-- [User Guide](user-guide/index.md) for installation, configuration, data preparation, commands, metrics, and notebooks
-- [How-to guides](how-to/index.md) for model development, training, evaluation, sweeps, and release workflows
-- [API Reference](api/index.md) for public modules, classes, and functions
-- [Model card](https://github.com/alan-turing-institute/cryocast/blob/main/docs/MODEL_CARD.md) for intended use, scope, and current project maturity
-
-## Quick install
+CryoCast requires Python 3.11 or later. Follow the [installation guide](user-guide/installation.md) to install `uv` and check platform-specific prerequisites, then use the repository's managed environment:
 
 ```bash
-pip install git+https://github.com/alan-turing-institute/cryocast
+git clone https://github.com/alan-turing-institute/cryocast.git
+cd cryocast
+uv sync --managed-python
+uv run cryocast --help
 ```
 
-Then run:
+Set a local `base_path` and choose datasets and a model using the [configuration guide](user-guide/configuration.md). ERA5 downloads require CDS access; standard training configurations use Weights & Biases. The [commands guide](user-guide/commands.md) describes those prerequisites, offline logging and the separate `synthetic` configuration for locally generated data and local-file reporting. Installation alone does not download forecasting datasets or supply a trained checkpoint.
 
-```bash
-cryocast --help
-```
+## Documentation
 
-For a fuller setup, continue with the [installation](user-guide/installation.md), [configuration](user-guide/configuration.md), [data](user-guide/data.md), and [commands](user-guide/commands.md) guides.
+- [User Guide](user-guide/index.md) for installation, configuration, data preparation, commands, metrics and notebooks
+- [How-to guides](how-to/index.md) for model development, training, evaluation, sweeps and release workflows
+- [API Reference](api/index.md) for module and class documentation
+- [Model card](https://github.com/alan-turing-institute/cryocast/blob/main/docs/MODEL_CARD.md) for intended use, limitations and the documented research maturity
 
 ## Research scope
 
-CryoCast is developed at The Alan Turing Institute as a research system. It is intended for research and exploratory inference, including benchmarking, sensitivity experiments, and case-study analysis. The current project scope does not include operational forecasting, safety-critical decision making, or issuing public warnings. See the [model card](https://github.com/alan-turing-institute/cryocast/blob/main/docs/MODEL_CARD.md) for the detailed intended-use statement.
+CryoCast is developed at The Alan Turing Institute for research and exploratory inference. The presence of a model configuration or example forecast does not establish validated operational performance. Operational forecasting, safety-critical decision making and public warnings are outside the stated intended use. Consult the [model card](https://github.com/alan-turing-institute/cryocast/blob/main/docs/MODEL_CARD.md) before interpreting or using its outputs.
