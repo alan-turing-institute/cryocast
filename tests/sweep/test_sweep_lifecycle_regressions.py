@@ -7,6 +7,7 @@ job is started. The intent is to catch state loss that an in-memory mock misses.
 import pickle
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -299,3 +300,67 @@ class TestSweepResumption:
             == "off"
         )
         assert trial.params["model.kind"] == "off"
+
+
+def test_parameter_construction_failure_does_not_allocate_a_trial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject invalid parameter declarations before mutating the SQLite study."""
+    sweep = make_sweep(tmp_path)
+    error = ValueError("invalid search space")
+    monkeypatch.setattr(
+        "cryocast.sweep.optuna_sweep.build_parameter", MagicMock(side_effect=error)
+    )
+
+    with pytest.raises(ValueError, match="invalid search space") as caught:
+        sweep.ask()
+
+    assert caught.value is error
+    assert OptunaSweep.from_path(sweep.study_path).study.trials == []
+    assert not (sweep.study_path / "sampler.pkl").exists()
+
+
+@pytest.mark.parametrize("method", ["ask", "resume"])
+@pytest.mark.parametrize("error_type", [ValueError, KeyboardInterrupt])
+def test_failed_parameter_suggestion_does_not_leave_a_running_trial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    error_type: type[BaseException],
+) -> None:
+    """A failed or interrupted suggestion must finish its allocated trial."""
+    sweep = make_sweep(tmp_path)
+    trained = tmp_path / "trained.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "train": {"optimizer": {"lr": 0.0007}},
+                "model": {"width": 6, "kind": "large"},
+            }
+        ),
+        trained,
+    )
+    error = error_type("parameter suggestion interrupted")
+    parameter = sweep._built_parameters[1]
+
+    def request_trial() -> None:
+        if method == "ask":
+            sweep.ask()
+        else:
+            sweep.resume(trained)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(type(parameter), "suggest", MagicMock(side_effect=error))
+        with pytest.raises(
+            error_type, match="parameter suggestion interrupted"
+        ) as caught:
+            request_trial()
+        assert caught.value is error
+
+    restored = OptunaSweep.from_path(sweep.study_path)
+    assert [trial.state for trial in restored.study.trials] == [TrialState.FAIL]
+    assert restored.study.trials[0].value is None
+    recovered, _ = restored.ask()
+    restored.tell(recovered, 0.125)
+    assert restored.study.best_trial.number == 1
+    assert restored.study.best_value == 0.125

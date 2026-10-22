@@ -220,3 +220,43 @@ class TestFailedTrialRecovery:
         assert result.exit_code == 0, result.output
         assert "3 trial(s): 0 completed, 1 running, 1 pruned, 1 failed" in caplog.text
         assert "Nothing to summarise" in caplog.text
+
+
+@pytest.mark.parametrize("multistage", [False, True])
+def test_keyboard_interrupt_finishes_trial_and_allows_a_new_run(
+    tmp_path: Path,
+    runner: CustomCliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    multistage: bool,
+) -> None:
+    """Ctrl-C must not leave an abandoned trial marked as running in SQLite."""
+    path = make_study(tmp_path)
+    service = MagicMock()
+    train = service.train_multistage if multistage else service.train
+    train.side_effect = KeyboardInterrupt
+    monkeypatch.setattr(ModelService, "from_config", lambda _config: service)
+    for name in ("WANDB_SWEEP_ID", "WANDB_ENTITY", "WANDB_PROJECT"):
+        monkeypatch.setenv(name, "isolated-test")
+    args = ["sweep", "trial", "--sweep-path", str(path)]
+    if multistage:
+        args.append("--multistage")
+
+    interrupted = runner.call(args)
+
+    assert interrupted.exit_code != 0
+    assert [trial.state for trial in OptunaSweep.from_path(path).study.trials] == [
+        TrialState.FAIL
+    ]
+    train.side_effect = None
+    train.return_value = trainer_with_score(0.25)
+    completed = runner.call(args)
+
+    assert completed.exit_code == 0, completed.output
+    restored = OptunaSweep.from_path(path)
+    assert [trial.state for trial in restored.study.trials] == [
+        TrialState.FAIL,
+        TrialState.COMPLETE,
+    ]
+    assert restored.study.best_trial.number == 1
+    assert restored.study.best_value == pytest.approx(0.25)

@@ -193,8 +193,8 @@ def trial(
         )
         sweep.tell(trial, state=TrialState.PRUNED)
         raise typer.Exit(code=1) from None
-    except Exception:
-        # Mark the trial as failed after any exception before continuing
+    except (Exception, KeyboardInterrupt):
+        # Finish failed or interrupted trials before propagating the original error.
         log.exception("Trial %d failed.", trial.number)
         sweep.tell(trial, state=TrialState.FAIL)
         raise

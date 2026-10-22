@@ -1,7 +1,10 @@
 """Sampler persistence regression tests for corrupted files and interrupted writes."""
 
+import os
 import pickle
 from pathlib import Path
+from typing import BinaryIO
+from unittest.mock import MagicMock
 
 import pytest
 from filelock import FileLock, Timeout
@@ -165,3 +168,63 @@ class TestSamplerAlgorithms:
         second = create_study(sampler=RandomSampler(seed=901))
         with SamplerStore(tmp_path, "tpe", seed=93).lock(second):
             assert isinstance(second.sampler, TPESampler)
+
+
+@pytest.mark.parametrize("existing_state", [False, True])
+@pytest.mark.parametrize("failed_stage", ["serialise", "sync", "replace"])
+def test_failed_sampler_commit_preserves_previous_state_and_releases_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_stage: str,
+    *,
+    existing_state: bool,
+) -> None:
+    """A failed disk commit must preserve the last complete sampler and allow retry."""
+    store = SamplerStore(tmp_path, "random", seed=137)
+    study = create_study(sampler=RandomSampler(seed=900))
+    reference = RandomSampler(seed=137)
+    if existing_state:
+        with store.lock(study):
+            sampler = study.sampler
+            assert isinstance(sampler, RandomSampler)
+            assert sampler._rng.rng.random() == reference._rng.rng.random()
+    path = tmp_path / "sampler.pkl"
+    previous = path.read_bytes() if existing_state else None
+    error = OSError("sampler commit interrupted")
+
+    def partial_dump(_sampler: object, file: BinaryIO) -> None:
+        file.write(b"partial pickle")
+        raise error
+
+    def advance_sampler() -> None:
+        with store.lock(study):
+            sampler = study.sampler
+            assert isinstance(sampler, RandomSampler)
+            _ = sampler._rng.rng.random()
+
+    with monkeypatch.context() as patch:
+        if failed_stage == "serialise":
+            patch.setattr(pickle, "dump", partial_dump)
+        elif failed_stage == "sync":
+            patch.setattr(os, "fsync", MagicMock(side_effect=error))
+        else:
+            patch.setattr(Path, "replace", MagicMock(side_effect=error))
+        with pytest.raises(OSError, match="sampler commit interrupted") as caught:
+            advance_sampler()
+        assert caught.value is error
+
+    assert (path.read_bytes() if path.exists() else None) == previous
+    expected_files = {"sampler.pkl.lock"}
+    if existing_state:
+        expected_files.add("sampler.pkl")
+    assert {file.name for file in tmp_path.iterdir()} == expected_files
+
+    with store.lock(study):
+        sampler = study.sampler
+        assert isinstance(sampler, RandomSampler)
+        assert sampler._rng.rng.random() == reference._rng.rng.random()
+    assert isinstance(store.load(), RandomSampler)
+    assert {file.name for file in tmp_path.iterdir()} == {
+        "sampler.pkl",
+        "sampler.pkl.lock",
+    }
