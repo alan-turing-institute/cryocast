@@ -456,3 +456,73 @@ def test_integrity_check_skips_known_missing_indices_before_reading(
 
     assert [call.args[0] for call in dataset.__getitem__.call_args_list] == [0, 2, 4]
     assert "3/5 date(s) verified (2 known missing)" in caplog.text
+
+
+@pytest.mark.parametrize("failed_stage", ["initialise", "load_in_chunks"])
+def test_download_stops_after_a_failed_write_stage(
+    downloader: DataDownloader,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_stage: str,
+) -> None:
+    """Preserve the original failure and never finalise a partially written store."""
+    error = OSError("write interrupted")
+    operations = MagicMock()
+    stages = ("initialise", "load_in_chunks", "check_status", "finalise")
+    monkeypatch.setattr(downloader, "preprocessor", operations.preprocessor)
+    for stage in stages:
+        monkeypatch.setattr(downloader, stage, getattr(operations, stage))
+    getattr(operations, failed_stage).side_effect = error
+
+    with pytest.raises(OSError, match="write interrupted") as caught:
+        downloader.download(overwrite=False)
+
+    assert caught.value is error
+    expected = ["preprocessor.process", "initialise"]
+    if failed_stage == "load_in_chunks":
+        expected.append("load_in_chunks")
+    assert [call[0] for call in operations.mock_calls] == expected
+
+
+@pytest.mark.parametrize("failed_stage", ["finalise", "postprocess"])
+def test_finalise_failure_preserves_artifacts_until_a_successful_retry(
+    downloader: DataDownloader,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_stage: str,
+) -> None:
+    """Failed finalisation or mask generation must not remove recovery artifacts."""
+    downloader.path_dataset.mkdir(parents=True)
+    marker = downloader.path_dataset / "existing-chunk"
+    marker.write_bytes(b"preserve dataset")
+    artifact = downloader.path_dataset.with_suffix(".statistics")
+    artifact.write_bytes(b"preserve recovery state")
+    error = OSError("finalisation interrupted")
+    finalise = MagicMock()
+    postprocessor = MagicMock()
+    cleanup = MagicMock()
+    monkeypatch.setattr("cryocast.ingestion.data_downloader.Finalise", lambda: finalise)
+    monkeypatch.setattr(downloader, "postprocessor", postprocessor)
+    monkeypatch.setattr("cryocast.ingestion.data_downloader.Cleanup", lambda: cleanup)
+    operation = finalise.run if failed_stage == "finalise" else postprocessor.process
+    operation.side_effect = error
+
+    with pytest.raises(OSError, match="finalisation interrupted") as caught:
+        downloader.finalise(overwrite=False, status=_status(complete=True))
+
+    assert caught.value is error
+    assert artifact.read_bytes() == b"preserve recovery state"
+    assert marker.read_bytes() == b"preserve dataset"
+    cleanup.run.assert_not_called()
+    if failed_stage == "finalise":
+        postprocessor.process.assert_not_called()
+
+    operation.side_effect = None
+    cleanup.run.side_effect = lambda _args: artifact.unlink()
+    downloader.finalise(
+        overwrite=False,
+        status=_status(complete=True, finalised=failed_stage == "postprocess"),
+    )
+
+    cleanup.run.assert_called_once()
+    assert not artifact.exists()
+    assert marker.read_bytes() == b"preserve dataset"
+    assert finalise.run.call_count == (2 if failed_stage == "finalise" else 1)

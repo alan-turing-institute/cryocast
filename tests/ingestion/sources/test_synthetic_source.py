@@ -1,6 +1,9 @@
 """Deterministic, offline checks for synthetic Anemoi source data preparation."""
 
+import subprocess
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -207,3 +210,78 @@ def test_synthetic_source_rejects_unsupported_dynamics() -> None:
             grid_size=32,
             trajectory_start_dates=["2024-01-01"],
         )
+
+
+@pytest.mark.parametrize("dynamics", ["moving", "grow-shrink"])
+def test_real_source_preserves_frames_through_anemoi_field_conversion(
+    dynamics: str,
+) -> None:
+    """Exercise the actual generator, xarray conversion and Earthkit field adapter."""
+    context = MagicMock()
+    context.use_grib_paramid = False
+    source = SyntheticSource(
+        context,
+        dynamics=dynamics,
+        grid_size=32,
+        trajectory_start_dates=["2024-01-01"],
+        variable_name="custom_sic",
+    )
+    requested = [datetime(2024, 1, 3), datetime(2024, 1, 1)]
+
+    fields = source.execute(requested)
+
+    assert len(fields) == 2
+    for field, date in zip(fields, sorted(requested), strict=True):
+        assert field.metadata("valid_datetime") == date.isoformat()
+        assert field.metadata("param") == "custom_sic"
+        values = field.to_numpy()
+        assert values.shape == (32, 32)
+        np.testing.assert_array_equal(values, source.frames_by_date[date.date()])
+
+
+def test_shipped_synthetic_recipe_initialises_in_a_fresh_interpreter(
+    tmp_path: Path,
+) -> None:
+    """Registration must work without another test first rebuilding Anemoi's schema."""
+    root = Path(__file__).resolve().parents[3]
+    recipe_path = (
+        root
+        / "cryocast/config/data/datasets"
+        / "samp_sicglobal_synthetic_5p625_2021_2024_24h_v2.yaml"
+    )
+    script = """
+import sys
+from anemoi.datasets.create.recipe import Recipe
+from omegaconf import OmegaConf
+from cryocast.ingestion import build_downloaders
+from cryocast.ingestion.sources import register_sources
+
+register_sources()
+register_sources()
+config = OmegaConf.create({
+    "base_path": sys.argv[2],
+    "data": {"datasets": OmegaConf.load(sys.argv[1])},
+})
+downloader, = build_downloaders(config)
+source = downloader.recipe.model_dump()["input"]["synthetic"]
+assert source["dynamics"] == "moving"
+assert source["grid_size"] == 32
+assert len(source["trajectory_start_dates"]) == 8
+assert source["trajectory_start_dates"][0] == "2021-08-24T00:00:00"
+assert source["trajectory_start_dates"][-1] == "2024-01-01T00:00:00"
+assert not downloader.path_dataset.exists()
+assert not downloader.path_dataset.parent.exists()
+print("synthetic recipe registered and constructed")
+"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script, str(recipe_path), str(tmp_path)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "synthetic recipe registered and constructed" in result.stdout
+    assert not (tmp_path / "data").exists()
