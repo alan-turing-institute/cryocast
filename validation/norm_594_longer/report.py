@@ -352,6 +352,14 @@ def plot_daily(
     )
     fig.tight_layout(rect=(0, 0.05, 1, 1))
     fig.savefig(output / filename, bbox_inches="tight", metadata={"Date": None})
+    svg_path = output / filename
+    svg_path.write_text(
+        "\n".join(
+            line.rstrip() for line in svg_path.read_text(encoding="utf-8").splitlines()
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     fig.savefig(
         preview / filename.replace(".svg", ".png"), dpi=150, bbox_inches="tight"
     )
@@ -395,6 +403,14 @@ def plot_validation(records: list[dict[str, Any]], output: Path, preview: Path) 
     fig.tight_layout(rect=(0, 0.05, 1, 1))
     filename = "norm-594-longer-validation.svg"
     fig.savefig(output / filename, bbox_inches="tight", metadata={"Date": None})
+    svg_path = output / filename
+    svg_path.write_text(
+        "\n".join(
+            line.rstrip() for line in svg_path.read_text(encoding="utf-8").splitlines()
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     fig.savefig(
         preview / filename.replace(".svg", ".png"), dpi=150, bbox_inches="tight"
     )
