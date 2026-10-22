@@ -219,3 +219,69 @@ def test_nonpositive_resampling_factors_are_rejected_at_initialization(
             pixel_shuffle=pixel_shuffle,
             kernel_size=1,
         )
+
+
+@pytest.mark.parametrize("factor", [2, 3])
+@pytest.mark.parametrize("pixel_shuffle", [False, True])
+@pytest.mark.parametrize("direction", ["down", "up"])
+def test_shortcut_pixel_order_and_gradients_against_manual_indexing(
+    factor: int,
+    direction: str,
+    *,
+    pixel_shuffle: bool,
+) -> None:
+    """Check noncontiguous inputs against explicit phase indexing, not the shortcut."""
+    channels = 2
+    in_channels = channels if direction == "down" else channels * factor**2
+    out_channels = channels * factor**2 if direction == "down" else channels
+    block = ResidualDownsample if direction == "down" else ResidualUpsample
+    layer = block(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        factor=factor,
+        pixel_shuffle=pixel_shuffle,
+        kernel_size=1,
+    ).double()
+    with torch.no_grad():
+        for parameter in layer.parametric.parameters():
+            parameter.zero_()
+    assert layer.shortcut is not None
+    assert not list(layer.shortcut.parameters())
+    height, width = (2 * factor, 3 * factor) if direction == "down" else (2, 3)
+    x = (
+        torch.arange(in_channels * height * width, dtype=torch.float64)
+        .reshape(1, in_channels, height, width)
+        .transpose(-1, -2)
+        .detach()
+        .requires_grad_()
+    )
+    snapshot = x.detach().clone()
+    if direction == "down":
+        expected = torch.cat(
+            [
+                x[:, channel : channel + 1, row::factor, col::factor]
+                for channel in range(channels)
+                for row in range(factor)
+                for col in range(factor)
+            ],
+            dim=1,
+        )
+    else:
+        expected = x.new_empty(1, channels, x.shape[-2] * factor, x.shape[-1] * factor)
+        for channel in range(channels):
+            for row in range(factor):
+                for col in range(factor):
+                    expected[:, channel, row::factor, col::factor] = x[
+                        :, channel * factor**2 + row * factor + col
+                    ]
+    actual = layer(x)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    coefficient = torch.linspace(-1, 1, actual.numel(), dtype=torch.float64).reshape_as(
+        actual
+    )
+    (observed_gradient,) = torch.autograd.grad(
+        (actual * coefficient).sum(), x, retain_graph=True
+    )
+    (reference_gradient,) = torch.autograd.grad((expected * coefficient).sum(), x)
+    torch.testing.assert_close(observed_gradient, reference_gradient, rtol=0, atol=0)
+    torch.testing.assert_close(x, snapshot, rtol=0, atol=0)
