@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -108,9 +108,9 @@ def mock_inspect_zarr(monkeypatch: pytest.MonkeyPatch) -> MockInspectZarr:
 class TestDataDownloader:
     """Verify that DataDownloader delivers the right recipe and path to the anemoi creator."""
 
-    start_date = datetime.datetime(2020, 1, 1)
-    end_date = datetime.datetime(2020, 1, 31)
-    frequency = datetime.timedelta(hours=24)
+    start_date = dt.datetime(2020, 1, 1)
+    end_date = dt.datetime(2020, 1, 31)
+    frequency = dt.timedelta(hours=24)
 
     def test_initialise_recipe_and_path_reach_creator(
         self,
@@ -489,7 +489,7 @@ class TestDataDownloader:
         self,
         mock_data_downloader: DataDownloader,
         mock_data_missing_dates: dict[str, dict[str, Any]],
-        dates_as_dt: tuple[datetime.datetime, ...],
+        dates_as_dt: tuple[dt.datetime, ...],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """integrity_check() skips known-missing dates instead of raising MissingDateError."""
