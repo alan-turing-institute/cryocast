@@ -4,3 +4,9 @@ defaults:
   - override /loss: huber
   - override /model: cnn_unet_cnn
   - _self_
+
+# Custom learning rate and weight decay
+train:
+  optimizer:
+    lr: 1.5e-4
+    weight_decay: 1.5e-4
