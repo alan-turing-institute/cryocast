@@ -57,3 +57,43 @@ def test_configure_external_libraries_does_not_hide_unrelated_warnings(
 
     assert len(recorded) == 1
     assert str(recorded[0].message) == "unrelated regression warning"
+
+
+@pytest.mark.parametrize(
+    "failed_hook",
+    [
+        "patch_parameter_deepcopy",
+        "register_accelerators",
+        "register_animation_backends",
+        "register_filters",
+        "register_sources",
+    ],
+)
+def test_failed_registration_stops_setup_and_preserves_the_original_error(
+    monkeypatch: pytest.MonkeyPatch, failed_hook: str
+) -> None:
+    """Registration failure must propagate before later hooks or warning changes."""
+    hooks = [
+        "patch_parameter_deepcopy",
+        "register_accelerators",
+        "register_animation_backends",
+        "register_filters",
+        "register_sources",
+    ]
+    calls: list[str] = []
+    error = RuntimeError("registration failed")
+    for hook in hooks:
+
+        def record(*, name: str = hook) -> None:
+            calls.append(name)
+            if name == failed_hook:
+                raise error
+
+        monkeypatch.setattr(compatibility, hook, record)
+    with warnings.catch_warnings():
+        before = list(warnings.filters)
+        with pytest.raises(RuntimeError, match="registration failed") as caught:
+            compatibility.configure_external_libraries()
+        assert warnings.filters == before
+    assert calls == hooks[: hooks.index(failed_hook) + 1]
+    assert caught.value is error

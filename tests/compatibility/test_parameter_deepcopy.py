@@ -1,5 +1,6 @@
 """Test MPS deepcopy patch without requiring Apple or Intel GPU hardware."""
 
+from collections.abc import Generator
 from copy import deepcopy
 
 import pytest
@@ -9,6 +10,20 @@ from torch import nn
 from cryocast.compatibility.torch.patch_parameter_deepcopy import (
     patch_parameter_deepcopy,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_parameter_patch(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    """Use a CPU stand-in so prior CLI imports cannot trigger real MPS transfers."""
+    incoming = nn.Parameter.__deepcopy__
+
+    def cpu_copy(parameter: nn.Parameter, _memo: dict) -> nn.Parameter:
+        return nn.Parameter(parameter.detach().clone(), parameter.requires_grad)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(nn.Parameter, "__deepcopy__", cpu_copy)
+        yield
+    assert nn.Parameter.__deepcopy__ is incoming
 
 
 def test_cpu_only_system_does_not_patch_deepcopy(
@@ -106,3 +121,61 @@ def test_patch_returns_unchanged_value_for_noncontiguous_source(
         assert copied.is_contiguous()
         torch.testing.assert_close(copied, param)
     assert nn.Parameter.__deepcopy__ is original
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("requires_grad", [False, True])
+def test_mocked_copy_preserves_shared_references_and_isolates_gradients(
+    monkeypatch: pytest.MonkeyPatch,
+    dtype: torch.dtype,
+    *,
+    requires_grad: bool,
+) -> None:
+    """A copied parameter graph keeps aliases, dtype and independent value/grad storage."""
+    incoming = nn.Parameter.__deepcopy__
+    native_to = torch.Tensor.to
+    transfers: list[object] = []
+
+    def local_transfer(
+        tensor: torch.Tensor, *args: object, **kwargs: object
+    ) -> torch.Tensor:
+        if args:
+            transfers.append(args[0])
+        if args and args[0] == "mps":
+            return tensor
+        return native_to(tensor, *args, **kwargs)  # type: ignore[call-overload]
+
+    parameter = nn.Parameter(
+        torch.arange(12, dtype=dtype).reshape(3, 4).T, requires_grad=requires_grad
+    )
+    original_values = parameter.detach().clone()
+    if requires_grad:
+        parameter.square().sum().backward()
+    original_gradient = None if parameter.grad is None else parameter.grad.clone()
+    with monkeypatch.context() as patcher:
+        patcher.setattr(torch.backends.mps, "is_available", lambda: True)
+        patcher.setattr(nn.Parameter, "__deepcopy__", incoming)
+        patcher.setattr(torch.Tensor, "to", local_transfer)
+        patch_parameter_deepcopy()
+        copied = deepcopy({"first": parameter, "second": parameter})
+    first = copied["first"]
+    assert isinstance(first, nn.Parameter)
+    assert copied["second"] is first
+    assert first is not parameter
+    assert first.data_ptr() != parameter.data_ptr()
+    assert first.dtype == dtype
+    assert first.device == parameter.device
+    assert first.is_leaf
+    assert first.is_contiguous()
+    assert first.requires_grad == requires_grad
+    assert first.grad is None
+    assert transfers == ["mps", parameter.device]
+    torch.testing.assert_close(first, original_values, rtol=0, atol=0)
+    if requires_grad:
+        first.sum().backward()
+        torch.testing.assert_close(first.grad, torch.ones_like(first), rtol=0, atol=0)
+        torch.testing.assert_close(parameter.grad, original_gradient, rtol=0, atol=0)
+    with torch.no_grad():
+        first.add_(1)
+    torch.testing.assert_close(parameter, original_values, rtol=0, atol=0)
+    assert nn.Parameter.__deepcopy__ is incoming

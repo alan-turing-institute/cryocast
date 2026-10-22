@@ -147,18 +147,22 @@ def test_teardown_cleans_up_distributed_backend_when_needed(
 def test_registration_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     """Check the named compatibility behavior without device access."""
     calls: list[tuple[str, type, str]] = []
+    available = ["cpu"]
     monkeypatch.setattr(
         AcceleratorRegistry,
         "available_accelerators",
-        list,
+        available.copy,
     )
 
     def register(name: str, kind: type, *, description: str) -> None:
         calls.append((name, kind, description))
+        available.append(name)
 
     monkeypatch.setattr(AcceleratorRegistry, "register", register)
     register_accelerators()
+    register_accelerators()
     assert calls == [("xpu", XPUAccelerator, XPUAccelerator.description)]
+    assert available == ["cpu", "xpu"]
 
 
 def test_registration_skips_existing_xpu(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,3 +178,34 @@ def test_registration_skips_existing_xpu(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(AcceleratorRegistry, "register", unexpected)
     register_accelerators()
+
+
+@pytest.mark.parametrize("operation", ["setup", "stats"])
+def test_backend_errors_propagate_without_claiming_a_working_device(
+    monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """A rejected mocked backend operation must retain its error and device mapping."""
+    error = RuntimeError("XPU backend operation failed")
+    calls: list[object] = []
+
+    def fail(argument: object) -> None:
+        calls.append(argument)
+        raise error
+
+    device = torch.device("xpu", 2)
+    accelerator = XPUAccelerator()
+    if operation == "setup":
+        monkeypatch.setattr(torch.xpu, "set_device", fail)
+        with pytest.raises(
+            RuntimeError, match="XPU backend operation failed"
+        ) as caught:
+            accelerator.setup_device(device)
+        assert calls == [1]
+    else:
+        monkeypatch.setattr(torch.xpu, "memory_stats", fail)
+        with pytest.raises(
+            RuntimeError, match="XPU backend operation failed"
+        ) as caught:
+            accelerator.get_device_stats(device)
+        assert calls == [device]
+    assert caught.value is error
