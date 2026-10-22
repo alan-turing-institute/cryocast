@@ -83,7 +83,7 @@ def check_or_clean(path: Path, *, clean: bool = False) -> list[str]:
             ids.add(cell_id)
         problems.extend(_cell_problems(cell, index, clean=clean))
 
-    if clean:
+    if clean and notebook != json.loads(original):
         # The writer matches the repository's original notebook JSON layout.
         # Do not re-write anything unless generated state actually changed.
         encoded = json.dumps(notebook, ensure_ascii=False, indent=1) + "\n"

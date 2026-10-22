@@ -40,7 +40,10 @@ workflow; it does not make the CDS/W&B-dependent notebook account-free.
 
 GitHub Actions validates the Jupyter format and saved-state cleanliness of **all
 seven notebooks**. The standalone `metrics_examples.ipynb` is additionally
-executed end-to-end with a temporary output file. Other notebooks cannot be
+executed end-to-end with a temporary output file. The inline plotting backend
+retains the example's figures, and a read-only check requires a PNG output for
+every explicit `plt.show()` cell. Missing or out-of-order cell executions, error
+outputs, and changed cell content fail the job. Other notebooks cannot be
 fully executed in unattended public CI without their particular datasets,
 checkpoints or credentials. The CI job does not silently skip their errors or
 pretend to validate those external workflows.
@@ -55,7 +58,8 @@ python scripts/notebook_hygiene.py
 The cleanup removes only saved outputs, execution counts and execution
 timestamps to avoid committing private data or machine-specific results.
 The verifier flags empty cells, but **never deletes or modifies any notebook
-cell content**. Existing plots remain in the scientific code and regenerate
+cell content**. Already-clean notebook files are not rewritten, even when their
+JSON formatting differs from the cleaner's output style. Existing plots remain in the scientific code and regenerate
 when run. Keep the full explanatory walkthrough in `demo_pipeline.ipynb`; do
 not replace it with a shortened series of CLI commands to satisfy CI.
 

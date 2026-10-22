@@ -25,9 +25,14 @@ python scripts/notebook_hygiene.py
 This removes only generated cell outputs, execution counts, and timing metadata.
 It **does not remove or rewrite code cells, Markdown, figures referenced by
 Markdown, notebook metadata, or research instructions**. Empty cells are reported
-rather than silently deleted.
+rather than silently deleted. Already-clean files are left byte-for-byte unchanged,
+including their original JSON layout and line endings.
 
 CI checks the structure and cleanliness of all notebooks, and executes the
 self-contained `metrics_examples.ipynb` without network credentials. Notebooks
 that require CDS, third-party datasets or trained checkpoints still require
 their documented external prerequisites and are not claimed to execute in CI.
+
+The metrics execution job uses the inline plotting backend and checks that every
+explicit `plt.show()` cell produces a PNG figure. It also rejects skipped cells,
+error outputs, and changes to cell contents or order in the executed copy.

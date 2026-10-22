@@ -180,3 +180,83 @@ def test_duplicate_cell_ids_are_rejected_without_deleting_cells(
     assert "cell 1: duplicate cell id 'explain'" in check_or_clean(path)
     assert "cell 1: duplicate cell id 'explain'" in check_or_clean(path, clean=True)
     assert len(json.loads(path.read_text(encoding="utf-8"))["cells"]) == 2
+
+
+@pytest.mark.parametrize("indent", [None, 4])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_clean_mode_preserves_already_clean_file_bytes(
+    tmp_path: Path, indent: int | None, newline: str
+) -> None:
+    """A clean file must not be reformatted or have its line endings rewritten."""
+    notebook = _fixture_notebook()
+    cells = notebook["cells"]
+    assert isinstance(cells, list)
+    cells[1]["outputs"] = []
+    cells[1]["execution_count"] = None
+    del cells[1]["metadata"]["execution"]
+    original = (
+        (json.dumps(notebook, indent=indent) + "\n").replace("\n", newline).encode()
+    )
+    path = tmp_path / "already-clean.ipynb"
+    path.write_bytes(original)
+
+    assert check_or_clean(path, clean=True) == []
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("clean", [False, True])
+def test_zero_execution_count_is_not_treated_as_missing(
+    tmp_path: Path, *, clean: bool
+) -> None:
+    """An execution count of zero is saved state even without output objects."""
+    notebook = _fixture_notebook()
+    cells = notebook["cells"]
+    assert isinstance(cells, list)
+    cells[1]["outputs"] = []
+    cells[1]["execution_count"] = 0
+    del cells[1]["metadata"]["execution"]
+    path = tmp_path / "zero-count.ipynb"
+    path.write_text(json.dumps(notebook), encoding="utf-8")
+    before = path.read_bytes()
+
+    problems = check_or_clean(path, clean=clean)
+
+    if clean:
+        assert problems == []
+        assert json.loads(path.read_text())["cells"][1]["execution_count"] is None
+    else:
+        assert problems == ["cell 1: stored execution count"]
+        assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("string_source", [False, True])
+def test_cleaner_retains_attachments_raw_cells_and_display_metadata(
+    tmp_path: Path, *, string_source: bool
+) -> None:
+    """Only code-cell runtime state may be removed from a rich notebook."""
+    notebook = _fixture_notebook()
+    cells = notebook["cells"]
+    assert isinstance(cells, list)
+    cells[0]["attachments"] = {"figure.svg": {"image/svg+xml": "<svg>sea ice</svg>"}}
+    cells[0]["metadata"] = {"tags": ["teaching"], "custom": {"keep": True}}
+    cells[1]["metadata"]["collapsed"] = True
+    cells.append(
+        {
+            "cell_type": "raw",
+            "id": "notes",
+            "source": ["Arctic area in km²"],
+            "metadata": {"format": "text/latex"},
+        }
+    )
+    if string_source:
+        for cell in cells:
+            cell["source"] = "".join(cell["source"])
+    path = tmp_path / "rich.ipynb"
+    path.write_text(json.dumps(notebook, ensure_ascii=False), encoding="utf-8")
+    expected = json.loads(path.read_text())
+    expected["cells"][1]["outputs"] = []
+    expected["cells"][1]["execution_count"] = None
+    del expected["cells"][1]["metadata"]["execution"]
+
+    assert check_or_clean(path, clean=True) == []
+    assert json.loads(path.read_text()) == expected
