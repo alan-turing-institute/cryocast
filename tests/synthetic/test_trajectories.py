@@ -1,6 +1,6 @@
 """Tests for composing single trajectories into a multi-trajectory dataset."""
 
-import datetime
+import datetime as dt
 
 import numpy as np
 import pytest
@@ -99,8 +99,7 @@ class TestMultiTrajectoryDataset:
             n_trajectories=n_trajectories, n_timesteps=n_timesteps
         )
         start_dates = [
-            datetime.datetime(2021, 1, 1)
-            + datetime.timedelta(days=idx * (n_timesteps + gap))
+            dt.datetime(2021, 1, 1) + dt.timedelta(days=idx * (n_timesteps + gap))
             for idx in range(n_trajectories)
         ]
         dataset = generate_multi_trajectory_dataset(configs, start_dates)
@@ -119,13 +118,12 @@ class TestMultiTrajectoryDataset:
             n_trajectories=n_trajectories, n_timesteps=n_timesteps
         )
         start_dates = [
-            datetime.datetime(2021, 1, 1)
-            + datetime.timedelta(days=idx * (n_timesteps + gap))
+            dt.datetime(2021, 1, 1) + dt.timedelta(days=idx * (n_timesteps + gap))
             for idx in range(n_trajectories)
         ]
         dataset = generate_multi_trajectory_dataset(configs, start_dates)
         span_days = {
-            span.start_date + datetime.timedelta(days=offset)
+            span.start_date + dt.timedelta(days=offset)
             for span in dataset.spans
             for offset in range(n_timesteps)
         }
@@ -140,8 +138,7 @@ class TestMultiTrajectoryDataset:
             height=48, width=48, n_trajectories=n_trajectories, n_timesteps=n_timesteps
         )
         start_dates = [
-            datetime.datetime(2021, 1, 1)
-            + datetime.timedelta(days=idx * (n_timesteps + gap))
+            dt.datetime(2021, 1, 1) + dt.timedelta(days=idx * (n_timesteps + gap))
             for idx in range(n_trajectories)
         ]
         dataset = generate_multi_trajectory_dataset(configs, start_dates)
