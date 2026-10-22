@@ -1,5 +1,3 @@
-![CryoCast](docs/src/assets/logo/github-banner.png)
-
 [![Tests](https://github.com/alan-turing-institute/cryocast/actions/workflows/test_code.yaml/badge.svg)](https://github.com/alan-turing-institute/cryocast/actions/workflows/test_code.yaml)
 [![Docs](https://github.com/alan-turing-institute/cryocast/actions/workflows/build_docs.yml/badge.svg)](https://github.com/alan-turing-institute/cryocast/actions/workflows/build_docs.yml)
 [![Code style](https://github.com/alan-turing-institute/cryocast/actions/workflows/code_style.yaml/badge.svg)](https://github.com/alan-turing-institute/cryocast/actions/workflows/code_style.yaml)
