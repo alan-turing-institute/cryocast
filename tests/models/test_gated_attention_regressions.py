@@ -197,3 +197,98 @@ def test_mlp_dropout_configuration_is_applied_to_both_dropout_layers() -> None:
     dropouts = [layer for layer in block.mlp if isinstance(layer, nn.Dropout)]
     assert len(dropouts) == 2
     assert all(layer.p == pytest.approx(0.35) for layer in dropouts)
+
+
+@pytest.mark.parametrize("kind", ["attention", "block", "projected-block"])
+def test_attention_input_and_all_parameter_gradients_match_finite_differences(
+    kind: str,
+) -> None:
+    """Numerical derivatives cover the gate, both residuals and channel projection."""
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(624)
+        layer = (
+            (
+                GatedAttention(1, kernel_size=3, dilation=1)
+                if kind == "attention"
+                else build_block(1, 2 if kind == "projected-block" else 1)
+            )
+            .double()
+            .eval()
+        )
+        if isinstance(layer, GatedAttentionBlock):
+            with torch.no_grad():
+                layer.layer_scale_1.fill_(0.7)
+                layer.layer_scale_2.fill_(-0.4)
+        values = torch.randn(1, 1, 2, 3, dtype=torch.float64).requires_grad_()
+    names, parameters = tuple(dict(layer.named_parameters())), tuple(layer.parameters())
+    buffers = {name: value.clone() for name, value in layer.named_buffers()}
+    before = values.detach().clone()
+
+    def evaluate(x: torch.Tensor, *weights: torch.Tensor) -> torch.Tensor:
+        state = {**dict(zip(names, weights, strict=True)), **buffers}
+        return torch.func.functional_call(layer, state, (x,), strict=True)
+
+    assert torch.autograd.gradcheck(evaluate, (values, *parameters))
+    torch.testing.assert_close(values, before, rtol=0, atol=0)
+    for name, value in layer.named_buffers():
+        torch.testing.assert_close(value, buffers[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("probability", [0.25, 0.75])
+def test_drop_path_output_and_gradient_share_exact_per_sample_mask(
+    probability: float,
+) -> None:
+    """Inverse survival scaling must be applied to values and gradients alike."""
+    block = build_block(drop_path_prob=probability).double().train()
+    values = (
+        torch.linspace(0.2, 2.0, 24 * 3 * 2 * 3, dtype=torch.float64)
+        .reshape(24, 3, 2, 3)
+        .requires_grad_()
+    )
+    weights = torch.linspace(-0.5, 0.7, values.numel(), dtype=torch.float64).reshape_as(
+        values
+    )
+    before = values.detach().clone()
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(624)
+        mask = values.new_empty(24, 1, 1, 1).bernoulli_(1 - probability)
+        torch.manual_seed(624)
+        result = block._drop_path(values)
+    assert set(mask.flatten().tolist()) == {0.0, 1.0}
+    torch.testing.assert_close(
+        result, before * mask / (1 - probability), rtol=0, atol=0
+    )
+    (result * weights).sum().backward()
+    torch.testing.assert_close(
+        values.grad, weights * mask / (1 - probability), rtol=1e-12, atol=1e-12
+    )
+    torch.testing.assert_close(values, before, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_attention_block_preserves_input_and_expected_batchnorm_state(
+    *, training: bool
+) -> None:
+    """Only training updates BatchNorm buffers; neither mode mutates the input."""
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(624)
+        block = build_block(2, 3).double().train(training)
+        values = (
+            torch.randn(2, 2, 3, 4, dtype=torch.float64)
+            .transpose(-1, -2)
+            .requires_grad_()
+        )
+    snapshot = values.detach().clone()
+    version = values._version
+    buffers = {name: value.clone() for name, value in block.named_buffers()}
+    result = block(values)
+    result.square().mean().backward()
+    torch.testing.assert_close(values, snapshot, rtol=0, atol=0)
+    assert values._version == version
+    assert values.grad is not None
+    assert torch.isfinite(values.grad).all()
+    for name, value in block.named_buffers():
+        if training and name.endswith("num_batches_tracked"):
+            torch.testing.assert_close(value, buffers[name] + 1, rtol=0, atol=0)
+        elif not training:
+            torch.testing.assert_close(value, buffers[name], rtol=0, atol=0)

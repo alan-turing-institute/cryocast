@@ -1,5 +1,7 @@
 """Regression coverage for learnable latent affine scaling and offsets."""
 
+from io import BytesIO
+
 import pytest
 import torch
 from torch import nn
@@ -128,3 +130,113 @@ def test_shift_is_a_regular_nn_module() -> None:
         not torch.equal(parameter, before[name])
         for name, parameter in layer.named_parameters()
     )
+
+
+@pytest.mark.parametrize(
+    ("scale", "offset"), [(False, False), (True, False), (False, True), (True, True)]
+)
+def test_affine_nonleaf_view_preserves_sibling_branch_and_exact_gradients(
+    *, scale: bool, offset: bool
+) -> None:
+    """A shared noncontiguous input must retain its values and both gradient paths."""
+    layer = Shift(scale=scale, offset=offset).double()
+    a, b = (1.75 if scale else 1.0), (-0.5 if offset else 0.0)
+    with torch.no_grad():
+        if layer.scale is not None:
+            layer.scale.fill_(a)
+        if layer.offset is not None:
+            layer.offset.fill_(b)
+    leaf = (
+        torch.linspace(-1.0, 2.0, 24, dtype=torch.float64)
+        .reshape(2, 1, 3, 4)
+        .requires_grad_()
+    )
+    values = (leaf * 1.5).transpose(-1, -2)
+    assert not values.is_contiguous()
+    before = values.detach().clone()
+    version = values._version
+    sibling = values.square().sum()
+    result = layer(values)
+    expected = a * before + b
+    torch.testing.assert_close(result, expected, rtol=0, atol=0)
+    torch.testing.assert_close(values, before, rtol=0, atol=0)
+    assert values._version == version
+    (result.square().sum() + sibling).backward()
+    wanted = (1.5 * (2 * a * expected + 2 * before)).transpose(-1, -2)
+    torch.testing.assert_close(leaf.grad, wanted, rtol=1e-12, atol=1e-12)
+    if layer.scale is not None:
+        torch.testing.assert_close(
+            layer.scale.grad, (2 * expected * before).sum().reshape(1)
+        )
+    if layer.offset is not None:
+        torch.testing.assert_close(layer.offset.grad, (2 * expected).sum().reshape(1))
+
+
+@pytest.mark.parametrize(
+    ("scale", "offset"), [(False, False), (True, False), (False, True), (True, True)]
+)
+def test_affine_input_and_parameter_gradients_match_finite_differences(
+    *, scale: bool, offset: bool
+) -> None:
+    """Check the input and every enabled affine parameter in float64."""
+    layer = Shift(scale=scale, offset=offset).double()
+    with torch.no_grad():
+        if layer.scale is not None:
+            layer.scale.fill_(1.3)
+        if layer.offset is not None:
+            layer.offset.fill_(-0.7)
+    names, parameters = tuple(dict(layer.named_parameters())), tuple(layer.parameters())
+    values = (
+        torch.linspace(-0.6, 0.8, 6, dtype=torch.float64)
+        .reshape(1, 1, 2, 3)
+        .requires_grad_()
+    )
+
+    def evaluate(x: torch.Tensor, *weights: torch.Tensor) -> torch.Tensor:
+        return torch.func.functional_call(
+            layer, dict(zip(names, weights, strict=True)), (x,), strict=True
+        )
+
+    assert torch.autograd.gradcheck(evaluate, (values, *parameters))
+
+
+@pytest.mark.parametrize(
+    ("scale", "offset"), [(True, False), (False, True), (True, True)]
+)
+def test_affine_checkpoint_restores_predictions_and_next_adam_update(
+    *, scale: bool, offset: bool
+) -> None:
+    """The out-of-place fix keeps checkpoint keys and optimizer resumption intact."""
+    layer = Shift(scale=scale, offset=offset).double()
+    optimizer = torch.optim.AdamW(layer.parameters(), lr=0.02)
+    values = torch.linspace(-1, 2, 12, dtype=torch.float64).reshape(1, 1, 3, 4)
+
+    def update(module: Shift, optim: torch.optim.Optimizer) -> None:
+        optim.zero_grad(set_to_none=True)
+        (module(values) - 0.4).square().mean().backward()
+        optim.step()
+
+    update(layer, optimizer)
+    buffer = BytesIO()
+    torch.save(
+        {"model": layer.state_dict(), "optimizer": optimizer.state_dict()}, buffer
+    )
+    buffer.seek(0)
+    state = torch.load(buffer, weights_only=True)
+    restored = Shift(scale=scale, offset=offset).double()
+    restored.load_state_dict(state["model"], strict=True)
+    resumed = torch.optim.AdamW(restored.parameters(), lr=0.02)
+    resumed.load_state_dict(state["optimizer"])
+    torch.testing.assert_close(restored(values), layer(values), rtol=0, atol=0)
+    update(layer, optimizer)
+    update(restored, resumed)
+    for name, parameter in layer.state_dict().items():
+        torch.testing.assert_close(
+            restored.state_dict()[name], parameter, rtol=0, atol=0
+        )
+    for first, second in zip(
+        optimizer.state.values(), resumed.state.values(), strict=True
+    ):
+        assert first.keys() == second.keys()
+        for name in first:
+            torch.testing.assert_close(first[name], second[name], rtol=0, atol=0)

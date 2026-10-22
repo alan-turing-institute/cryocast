@@ -217,3 +217,112 @@ def test_gsta_one_step_optimizer_changes_prediction() -> None:
         updated = processor.rollout(x).prediction
     assert torch.isfinite(updated).all()
     assert not torch.equal(initial, updated)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (2, 3, 2, 6, 8),
+        (2, 1, 6, 6, 8),
+        (2, 6, 1, 6, 8),
+        (2, 2, 2, 6, 8),
+        (2, 6, 6, 8),
+        (2, 2, 3, 1, 6, 8),
+    ],
+    ids=[
+        "swapped-time-channel",
+        "one-history-six-channels",
+        "six-history-one-channel",
+        "wrong-channels",
+        "rank-four",
+        "rank-six",
+    ],
+)
+def test_gsta_rejects_mislabelled_history_before_mutating_batchnorm(
+    shape: tuple[int, ...],
+) -> None:
+    """Equal folded channel counts must not silently change forecast semantics."""
+    processor = build_processor(
+        channels=3, n_history_steps=2, n_forecast_steps=4
+    ).train()
+    buffers = {name: value.clone() for name, value in processor.named_buffers()}
+    with pytest.raises(ValueError, match="Expected history"):
+        processor.rollout(torch.zeros(shape))
+    for name, value in processor.named_buffers():
+        torch.testing.assert_close(value, buffers[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("n_blocks", [1, 3])
+def test_gsta_noncontiguous_history_matches_contiguous_values_and_gradients(
+    n_blocks: int,
+) -> None:
+    """Layout changes preserve the forecast, gradients and independence from targets."""
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(624)
+        processor = (
+            build_processor(
+                channels=3, n_history_steps=2, n_forecast_steps=4, n_blocks=n_blocks
+            )
+            .double()
+            .eval()
+        )
+        values = (
+            torch.randn(2, 2, 3, 8, 6, dtype=torch.float64)
+            .transpose(-1, -2)
+            .requires_grad_()
+        )
+    assert not values.is_contiguous()
+    reference = values.detach().contiguous().requires_grad_()
+    snapshot = values.detach().clone()
+    target = torch.full(
+        (2, 4, 3, 6, 8), float("nan"), dtype=torch.float64, requires_grad=True
+    )
+    actual = processor.rollout(values, target)
+    expected = processor.rollout(reference)
+    assert actual.prediction.shape == (2, 4, 3, 6, 8)
+    assert actual.loss is None
+    torch.testing.assert_close(
+        actual.prediction, expected.prediction, rtol=1e-12, atol=1e-12
+    )
+    params = tuple(processor.parameters())
+    gradients = torch.autograd.grad(
+        actual.prediction.square().mean(), (values, target, *params), allow_unused=True
+    )
+    reference_gradients = torch.autograd.grad(
+        expected.prediction.square().mean(), (reference, *params)
+    )
+    assert gradients[1] is None
+    for observed, wanted in zip(
+        (gradients[0], *gradients[2:]), reference_gradients, strict=True
+    ):
+        assert observed is not None
+        assert torch.isfinite(observed).all()
+        torch.testing.assert_close(observed, wanted, rtol=1e-10, atol=1e-12)
+    torch.testing.assert_close(values, snapshot, rtol=0, atol=0)
+
+
+def test_gsta_history_and_forecast_channel_order_has_exact_gradient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A one-shot reorder must send each forecast gradient to the correct history cell."""
+    processor = build_processor(channels=2, n_history_steps=3, n_forecast_steps=2)
+
+    class SelectHistory(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x[:, [4, 5, 0, 1]]
+
+    monkeypatch.setattr(processor, "translator", SelectHistory())
+    values = (
+        torch.arange(2 * 3 * 2 * 8 * 6, dtype=torch.float64)
+        .reshape(2, 3, 2, 8, 6)
+        .transpose(-1, -2)
+        .requires_grad_()
+    )
+    output = processor.rollout(values).prediction
+    torch.testing.assert_close(output, values[:, [2, 0]], rtol=0, atol=0)
+    weights = torch.arange(output.numel(), dtype=torch.float64).reshape_as(output)
+    (output * weights).sum().backward()
+    expected = torch.zeros_like(values)
+    expected[:, 2] = weights[:, 0]
+    expected[:, 0] = weights[:, 1]
+    torch.testing.assert_close(values.grad, expected, rtol=0, atol=0)
