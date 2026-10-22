@@ -1,0 +1,233 @@
+{
+  "source_revision": "ce99c371669d15278a1f451ad5bcbf4e752f100e",
+  "runner_sha256": "7713c8a50ee680083822c00ff1bf1fd2171a9bacee1f7ca6ba290e9351556e29",
+  "metrics_sha256": "d32422a9e0cc6d8779cb18d0b816bcd783e146556986448feefd0f8644c0c01f",
+  "frozen_utc": "2026-10-21T22:15:29.158440+00:00",
+  "smoke": false,
+  "seeds": [
+    575,
+    576,
+    577
+  ],
+  "norms": [
+    "batchnorm",
+    "groupnorm"
+  ],
+  "initial_updates": 96,
+  "additional_updates": 192,
+  "total_updates": 288,
+  "budget": "same full-grid reduced-capacity 1.26M model; not full-size production",
+  "grid": [
+    432,
+    432
+  ],
+  "latent_grid": [
+    144,
+    144
+  ],
+  "history_days": 3,
+  "forecast_days": 14,
+  "batch_size": 1,
+  "loss": "unchanged full-grid Huber delta=0.5",
+  "optimizer": "restore AdamW moments; weight_decay=0.01; clip_norm=1",
+  "restart_lr": 0.001,
+  "final_lr": 1e-05,
+  "scheduler": "predeclared per-update cosine restart; old terminal LR is 1e-6",
+  "validation_indices": [
+    0,
+    5,
+    9,
+    14,
+    15,
+    20,
+    24,
+    29
+  ],
+  "test_indices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29
+  ],
+  "selection": "minimum equal-support validation MSE at 96/144/192/240/288; includes original state",
+  "primary_comparison": "fixed final 288-update states; validation-selected states secondary",
+  "test_usage": "January previously explored; July added now; all final selections frozen before test",
+  "uncertainty": "three paired training seeds; overlapping windows are not independent replicates",
+  "python": "3.12.11",
+  "torch": "2.14.1",
+  "numpy": "2.4.6",
+  "anemoi": "0.5.45",
+  "device": "mps",
+  "determinism": "warn-only; MPS index_put accumulation is not guaranteed bitwise reproducible",
+  "checkpoints": [
+    {
+      "seed": 575,
+      "norm": "batchnorm",
+      "run_dir": "run-20261016_004719-9y8pwcle",
+      "checkpoint": "training-checkpoints/run-20261016_004719-9y8pwcle/checkpoints/epoch=0-step=96.ckpt",
+      "checkpoint_sha256": "1116eacc42420bc435840a0d4901e2cab58ad023480f6497d48690c298595e24",
+      "bytes": 15272815
+    },
+    {
+      "seed": 575,
+      "norm": "groupnorm",
+      "run_dir": "run-20261016_005303-ohrc2pag",
+      "checkpoint": "training-checkpoints/run-20261016_005303-ohrc2pag/checkpoints/epoch=0-step=96.ckpt",
+      "checkpoint_sha256": "4522432dd3c2897dc89cc77d4c68b4485f09dfc322f868716b465530aa032e0d",
+      "bytes": 15242041
+    },
+    {
+      "seed": 576,
+      "norm": "batchnorm",
+      "run_dir": "run-20261016_010036-l16lzvc5",
+      "checkpoint": "training-checkpoints/run-20261016_010036-l16lzvc5/checkpoints/epoch=0-step=96.ckpt",
+      "checkpoint_sha256": "26ff19f6c81d0f09804fb14a47046727f51b8eb0744a7345395111f6e9a30702",
+      "bytes": 15272815
+    },
+    {
+      "seed": 576,
+      "norm": "groupnorm",
+      "run_dir": "run-20261016_010601-nsrqdisf",
+      "checkpoint": "training-checkpoints/run-20261016_010601-nsrqdisf/checkpoints/epoch=0-step=96.ckpt",
+      "checkpoint_sha256": "0da09ad7aa9ba553fa75eedca2d0389dd83cc88d93286914f39988d4ec963a99",
+      "bytes": 15242041
+    },
+    {
+      "seed": 577,
+      "norm": "batchnorm",
+      "run_dir": "run-20261016_011029-56c49lv0",
+      "checkpoint": "training-checkpoints/run-20261016_011029-56c49lv0/checkpoints/epoch=0-step=96.ckpt",
+      "checkpoint_sha256": "cd5f68419b9a1b44a57cd1d4f47cb2d15eb8601b3549eb5f8f9d9a400f83d9ef",
+      "bytes": 15272815
+    },
+    {
+      "seed": 577,
+      "norm": "groupnorm",
+      "run_dir": "run-20261016_011457-x61xoct1",
+      "checkpoint": "training-checkpoints/run-20261016_011457-x61xoct1/checkpoints/epoch=0-step=96.ckpt",
+      "checkpoint_sha256": "ae8e3c2612f47bb0e4f68135f4ed170f342e64cce9c43fdd5e662ddcac05eae0",
+      "bytes": 15242041
+    }
+  ],
+  "source_data": {
+    "samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1": {
+      "metadata_sha256": {
+        ".zattrs": "3d76e713e6c3eafe17b68873652dc977545fdf7ba97e3940df6239c5496105db",
+        ".zgroup": "2383746e67b4bcc2762b3f100f06c3fa2d5f149ab5a8e5da5d33521464a01959",
+        "dates/.zarray": "d0bf660c4310c60a59fed3871ad809d06adbe6d4f18c0a8ba57c7ee6a8bb0ef7",
+        "dates/.zattrs": "be487cd65c30debb9a00feaa1f97a391a13cd07cdf46adcf8b1a812e01e4df90",
+        "dates/0": "6b8a0c93b6b5f6a56d0548665fd04f5c05889f3c91a7f521fd1ae7efd10c90f7",
+        "latitudes/.zarray": "bf17cead94734c6ec8b827a6c7b286ff46b020b2fbc1a1e7879231d40903011f",
+        "latitudes/.zattrs": "76928aa3864cb57bb354c10590561f1ddcde44320641275b8e49b0bb3e9fa0db",
+        "latitudes/0": "a77cf337cee4d324dd14fa09844e4f62c337cf40a56c9e5253de0c2a59883e9b",
+        "latitudes/1": "cfb78747f81caccb318fe270c45014123c37196db49097a4bbaec5ffc9089db6",
+        "latitudes/2": "cc70eb64bb0d9b32684b62266e660091b7579d11e7479991ffbf8134c5868a69",
+        "latitudes/3": "7b75896f47bcb4661f99ff5efa710599daab40e1a98f9e531479203b907f0211",
+        "longitudes/.zarray": "bf17cead94734c6ec8b827a6c7b286ff46b020b2fbc1a1e7879231d40903011f",
+        "longitudes/.zattrs": "76928aa3864cb57bb354c10590561f1ddcde44320641275b8e49b0bb3e9fa0db",
+        "longitudes/0": "4616a072415359e0524945f571ce316bd323e4b6b7fcd94fc2d1372025bee12c",
+        "longitudes/1": "05e66624f5352ce62149eb2e52b5dde13f45c95dc74dc663149bd542fd468f5b",
+        "longitudes/2": "0b2e308dd5a36d2b678a8c2085e82d75dc8a9abb94e13a441a87a5065b1019a6",
+        "longitudes/3": "74c0b01df47be6f13900a077a993193a1dfe89ea462f7521b3edabe5dd50dc2f",
+        "maximum/.zarray": "ae63460657e165d12910da7c5cd93553d5f16c99ab37895d4dec7ac6edfc45aa",
+        "maximum/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "maximum/0": "1ccbc6eda379b49967a2a0dee1e8d0b6f9c7ef450117fb9e16c1f208ec8a2de7",
+        "mean/.zarray": "ae63460657e165d12910da7c5cd93553d5f16c99ab37895d4dec7ac6edfc45aa",
+        "mean/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "mean/0": "4518f4dd03581ee1c6995f40b35ea6cdd2f4e3fe74cbebd9432e4da13f8e6eed",
+        "minimum/.zarray": "ae63460657e165d12910da7c5cd93553d5f16c99ab37895d4dec7ac6edfc45aa",
+        "minimum/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "minimum/0": "e35f73365b2f5ccc942a1a0ffeab97f754194b26492a0028b819443bc09ebe41",
+        "stdev/.zarray": "ae63460657e165d12910da7c5cd93553d5f16c99ab37895d4dec7ac6edfc45aa",
+        "stdev/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "stdev/0": "28b438e57ff39a768aaa4b759b8ec9ad633141d9a97e1b4da03aa6ba5dbf76b9"
+      },
+      "statistics_start_date": "2020-01-01T12:00:00",
+      "statistics_end_date": "2021-11-14T12:00:00",
+      "field_shape": [
+        432,
+        432
+      ],
+      "shape": [
+        855,
+        3,
+        1,
+        186624
+      ],
+      "missing_dates": 819
+    },
+    "samp-weathersouth-era5-25p0km-2020-2024-24h-v4": {
+      "metadata_sha256": {
+        ".zattrs": "79c2be819f6a0abbc1fefbfb60ef6621f6c38001358e265b512c7adbd237fcb9",
+        ".zgroup": "2383746e67b4bcc2762b3f100f06c3fa2d5f149ab5a8e5da5d33521464a01959",
+        "dates/.zarray": "d0bf660c4310c60a59fed3871ad809d06adbe6d4f18c0a8ba57c7ee6a8bb0ef7",
+        "dates/.zattrs": "be487cd65c30debb9a00feaa1f97a391a13cd07cdf46adcf8b1a812e01e4df90",
+        "dates/0": "6b8a0c93b6b5f6a56d0548665fd04f5c05889f3c91a7f521fd1ae7efd10c90f7",
+        "latitudes/.zarray": "bf17cead94734c6ec8b827a6c7b286ff46b020b2fbc1a1e7879231d40903011f",
+        "latitudes/.zattrs": "76928aa3864cb57bb354c10590561f1ddcde44320641275b8e49b0bb3e9fa0db",
+        "latitudes/0": "a77cf337cee4d324dd14fa09844e4f62c337cf40a56c9e5253de0c2a59883e9b",
+        "latitudes/1": "cfb78747f81caccb318fe270c45014123c37196db49097a4bbaec5ffc9089db6",
+        "latitudes/2": "cc70eb64bb0d9b32684b62266e660091b7579d11e7479991ffbf8134c5868a69",
+        "latitudes/3": "7b75896f47bcb4661f99ff5efa710599daab40e1a98f9e531479203b907f0211",
+        "longitudes/.zarray": "bf17cead94734c6ec8b827a6c7b286ff46b020b2fbc1a1e7879231d40903011f",
+        "longitudes/.zattrs": "76928aa3864cb57bb354c10590561f1ddcde44320641275b8e49b0bb3e9fa0db",
+        "longitudes/0": "4616a072415359e0524945f571ce316bd323e4b6b7fcd94fc2d1372025bee12c",
+        "longitudes/1": "05e66624f5352ce62149eb2e52b5dde13f45c95dc74dc663149bd542fd468f5b",
+        "longitudes/2": "0b2e308dd5a36d2b678a8c2085e82d75dc8a9abb94e13a441a87a5065b1019a6",
+        "longitudes/3": "74c0b01df47be6f13900a077a993193a1dfe89ea462f7521b3edabe5dd50dc2f",
+        "maximum/.zarray": "2e94fc52161695e468dbb816edeb991d993f8df6a1ece88f31c6baace7c22be1",
+        "maximum/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "maximum/0": "2fe5a606980bd80e5725c3ae37ec709e956c8dc7b566439ce58272cef5305095",
+        "mean/.zarray": "2e94fc52161695e468dbb816edeb991d993f8df6a1ece88f31c6baace7c22be1",
+        "mean/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "mean/0": "7c79dac216fa06bf39bd8a5a3591307f3fba0a9438353e3cf2a20fb8333b5cbc",
+        "minimum/.zarray": "2e94fc52161695e468dbb816edeb991d993f8df6a1ece88f31c6baace7c22be1",
+        "minimum/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "minimum/0": "06bb26eb0955db2b89bd60c217f9bb477330531699c402bdc92dd25e7a1eb1db",
+        "stdev/.zarray": "2e94fc52161695e468dbb816edeb991d993f8df6a1ece88f31c6baace7c22be1",
+        "stdev/.zattrs": "ee932d2d90557577b5adcbe3592c088da1c497a47b065330614e7d99b933cc1e",
+        "stdev/0": "a16f965fac62bd4205144491bc84de23c30a86ad67582aeb38ba9492a2eb4140"
+      },
+      "statistics_start_date": "2020-01-01T12:00:00",
+      "statistics_end_date": "2021-11-14T12:00:00",
+      "field_shape": [
+        432,
+        432
+      ],
+      "shape": [
+        855,
+        28,
+        1,
+        186624
+      ],
+      "missing_dates": 819
+    }
+  },
+  "ocean_mask_sha256": "82856453bbe80d2630ad6f3b957dd32478c535f4b66093efcf68b9fc80f889b2"
+}

@@ -1,0 +1,9 @@
+{
+  "runs": 6,
+  "added_optimizer_updates": 1152,
+  "protocol_sha256": "bcea0218e7ee9227d1043e1821908a6eae1d455c216d76cb936e8c21d42fe4a6",
+  "frozen_selections_sha256": "5d7e3c574073c89bf4d4b1b833f2098a570d83b33ab39596740f572e7058f000",
+  "per_case_sha256": "6472a463207a2c5a055f3c7ca82e08db57a412932e266b7cc1b6af24f1c210e7",
+  "original_checkpoint_and_metadata_unchanged": true,
+  "test_evaluated_after_all_selections_frozen": true
+}

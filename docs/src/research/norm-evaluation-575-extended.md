@@ -8,7 +8,7 @@ It does not replace the original production-configuration results.
 
 - Model: CryoCast CNN–UNet–CNN, with `UNetProcessor.start_out_channels=16`
   instead of the production setting of 128. Both normalization arms have
-  **1,256,655 trainable parameters**, so this is a lower-capacity ablation.
+  **1,256,655 total parameters** (1,256,337 trainable and 318 in the frozen, unused target encoder), so this is a lower-capacity ablation.
 - Change under test: the **processor's** `norm_type` is either `batchnorm` or
   `groupnorm`. The decoder's normalization is unchanged.
 - Inputs: 25 km OSI SAF southern-hemisphere sea ice concentration (SIC) and
