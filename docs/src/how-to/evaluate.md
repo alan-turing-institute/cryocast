@@ -30,6 +30,41 @@ See the [`evaluate` command reference](../user-guide/commands.md#evaluate) for f
 uv run cryocast evaluate --config-name <your-name>.local --checkpoint PATH_TO_CHECKPOINT
 ```
 
+### Model settings and checkpoint overrides
+
+Evaluation always restores the **trained model architecture and weights** from the
+checkpoint. Selecting a different model in an evaluation config or passing a
+Hydra override for an incompatible `model.*` setting **does not rebuild that
+model**. CryoCast now logs a warning identifying ignored model overrides,
+rather than silently evaluating a different model than requested.
+
+The supported exception is the **DiffusionProcessor inference sampler**:
+its DDPM/DDIM sampling settings do not change learned weights and can be
+overridden for one evaluation run, without editing either the checkpoint or
+the saved `files/model_config.yaml`:
+
+```bash
+uv run cryocast evaluate \
+  --checkpoint PATH_TO_CHECKPOINT \
+  '++model.processor.ddim_steps=50' \
+  '++model.processor.eta=0.0'
+```
+
+Here `ddim_steps=50` and `eta=0.0` select deterministic DDIM; use
+`ddim_steps=null` and `eta=1.0` for full-step ancestral DDPM. The
+trained diffusion `timesteps` must accommodate the requested `ddim_steps`.
+You can override either sampler option on its own; the other retains its
+loaded value. Invalid settings raise a validation error.
+
+These overrides affect **evaluation only**, not training or checkpoint weights.
+The evaluation run's recorded model configuration reflects the applied
+sampler settings. Other `model.*` options (such as processor class, latent
+dimensions or training diffusion timesteps) continue to come from the
+checkpoint, with a warning if explicitly changed. A different
+`--config-name` that selects a different model also produces a warning.
+The evaluation configuration may still set non-model options such as
+`evaluate.trainer.devices`, callbacks, and test data periods.
+
 ### Enabling visualisations
 
 By default, all visualisations are enabled (see `cryocast/config/evaluate/callbacks/plotting.yaml`). To disable forecast plots, set `make_static_plots` and `make_video_plots` to `false` in your local config:
