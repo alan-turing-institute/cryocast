@@ -1,0 +1,4 @@
+defaults:
+  - base
+  - override /data: seas5_demo
+  - _self_

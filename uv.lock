@@ -1486,6 +1486,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "eccodeslib", marker = "sys_platform != 'win32'" },
     { name = "mypy" },
     { name = "pandas-stubs" },
     { name = "pre-commit" },
@@ -1551,6 +1552,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "eccodeslib", marker = "sys_platform != 'win32'", specifier = "==2.47.3.21" },
     { name = "mypy", specifier = ">=1.17.0" },
     { name = "pandas-stubs", specifier = ">=3.0.5.260730" },
     { name = "pre-commit", specifier = ">=4.2.0" },

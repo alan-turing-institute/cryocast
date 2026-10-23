@@ -20,6 +20,32 @@ To create the synthetic dataset, use:
 uv run cryocast datasets create --config-name synthetic
 ```
 
+To exercise forecast-indexed ingestion with the small SEAS5 trajectory recipe,
+first [configure CDS API credentials](https://cds.climate.copernicus.eu/how-to-api)
+and review the required licences on the
+[dataset download page](https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=download#manage-licences).
+The licences must be accepted by the account used for the API request. A
+`403` response containing `required licences not accepted` indicates an
+unmet account licence prerequisite.
+
+Then run:
+
+```bash
+uv run cryocast datasets create --config-name seas5_demo
+uv run cryocast datasets inspect --config-name seas5_demo
+```
+
+This is an ingestion smoke test for Anemoi's trajectory layout: it preserves the
+forecast initialisation and lead-time axes instead of flattening them into analysis
+dates. It is not yet a training configuration for CryoCast. Its explicit
+statistics interval covers all seven forecast leads; shortening it excludes
+the only trajectory and prevents statistics from being computed.
+
+The offline SEAS5 finalisation tests use generated GRIB responses in place of
+CDS transport. They check dataset creation, complete forecast axes, numerical
+statistics, and repeat inspection without downloading again. A live CDS run
+still requires the credentials and licence acceptance described above.
+
 ## `datasets inspect`
 
 ```bash

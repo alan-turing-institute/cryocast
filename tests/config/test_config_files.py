@@ -34,10 +34,17 @@ class TestConfigFiles:
         body = next(iter(data.values()))
 
         assert body.get("group_as"), "missing or empty 'group_as'"
-        dates = body.get("dates") or {}
-        assert dates.get("start"), "missing 'dates.start'"
-        assert dates.get("end"), "missing 'dates.end'"
-        assert dates.get("frequency"), "missing 'dates.frequency'"
+        if "base_dates" in body or "steps" in body:
+            base_dates = body.get("base_dates") or {}
+            steps = body.get("steps") or {}
+            for key in ("start", "end", "frequency"):
+                assert base_dates.get(key), f"missing 'base_dates.{key}'"
+                assert steps.get(key), f"missing 'steps.{key}'"
+        else:
+            dates = body.get("dates") or {}
+            assert dates.get("start"), "missing 'dates.start'"
+            assert dates.get("end"), "missing 'dates.end'"
+            assert dates.get("frequency"), "missing 'dates.frequency'"
         # anemoi's 'input' recipe shape varies (a single source, or a pipe/join/concat
         # combinator), so only its presence as a non-empty mapping is source-agnostic.
         assert isinstance(body.get("input"), dict), "missing 'input' recipe"
