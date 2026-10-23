@@ -46,10 +46,7 @@ resolution-markers = [
 
 [manifest]
 constraints = [
-    { name = "aiohttp", specifier = ">=3.14.3" },
-    { name = "eckitlib", specifier = "<=2.1.0.21" },
-    { name = "erddapy", specifier = "!=3.3.0,!=3.3.1" },
-    { name = "odclib", specifier = "<=1.6.3.21" },
+    { name = "aiohttp", specifier = ">=3.14.4" },
     { name = "urllib3", specifier = ">=2.8.0" },
 ]
 
