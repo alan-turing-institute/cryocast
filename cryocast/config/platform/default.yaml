@@ -1,6 +1,5 @@
 # @package _global_
 defaults:
-  - override /train/trainer: default
   - _self_
 
 base_path: ../base
