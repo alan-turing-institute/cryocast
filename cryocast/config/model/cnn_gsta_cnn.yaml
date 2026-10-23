@@ -19,14 +19,15 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.GSTAProcessor
+  kernel_size: 15
   hid_channels: 256
-  n_blocks: 8
+  n_blocks: 6
 
 decoder:
   _target_: cryocast.models.decoders.CNNDecoder
   n_layers: 1
   mask_type: active
   norm_type: groupnorm
-  restrict_range: clamp
+  restrict_range: sigmoid
   skip_connection:
-    method: none
+    method: additive
