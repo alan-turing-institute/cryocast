@@ -49,10 +49,10 @@ The Alan Turing Institute. (2026). CryoCast [Source code]. GitHub. https://githu
 ## Model/System Details
 
 ### Description
-CryoCast is a multimodal forecasting system for Arctic and Antarctic sea ice, developed at the Alan Turing Institute. CryoCast integrates satellite observations, atmospheric reanalysis data and *in situ* ocean measurements to generate short-term sea ice concentration (SIC) forecasts. It is built around an encode-process-decode architecture, where dataset-specific encoders project each input into a shared latent space, a central processor operates on the combined representation, and output-specific decoders map back to the target resolution. This design makes it easy to add new input sources or prediction targets without restructuring the whole model. The codebase supports several model configurations, including a lightweight default setup suitable for quick tests, a CNN-based encoder-decoder variant wrapping a UNet processor, a vision transformer, a diffusion model variant and a persistence baseline for benchmarking.
+CryoCast is a multimodal forecasting system for Arctic and Antarctic sea ice, developed at the Alan Turing Institute. Available inputs include satellite observations, atmospheric reanalysis data and *in situ* ocean measurements for short-term sea ice concentration (SIC) forecasting. The selected data and model configuration determines which inputs are used. In the modular encode-process-decode models, dataset-specific encoders map inputs to a common latent grid, a processor forecasts from the combined representation, and a decoder maps the result to the target grid. Standalone models and baselines are also available. Configurations include a lightweight setup for quick tests, a CNN encoder-decoder with a UNet processor, a vision transformer, diffusion models and a persistence baseline.
 
 ### Intended Uses
-This model is intended for research and exploratory inference using historical or real-time climate and observational inputs to generate sea ice concentration forecasts. Model performance is evaluated across multiple forecast lead times, with training focused on short-range horizons. Training, fine-tuning, and evaluation are all supported through the provided pipeline. Typical direct uses include benchmarking against persistence and dynamical model baselines, sensitivity experiments such as varying input variables or data sources, and case-study analysis of notable sea ice events.
+This model is intended for research and exploratory inference using configured climate and observational inputs to generate SIC forecasts. The pipeline supports training, fine-tuning and evaluation at multiple forecast lead times. Typical uses include comparisons with persistence, sensitivity experiments that vary inputs or model settings, and case-study analysis. The presence of a model configuration or an illustrative forecast does not establish its accuracy for a particular region, season or lead time.
 
 ### Out-of-Scope Uses
 This stage of the codebase is not intended for operational forecasting, safety-critical decision making or issuing public warnings.
@@ -65,38 +65,39 @@ This stage of the codebase is not intended for operational forecasting, safety-c
 Arctic and Antarctic
 
 ### Temporal / Seasonal Domain
-Current CryoCast datasets use OSI SAF L3/L4 reprocessed SIC at 25 km resolution and ERA5 reanalysis, with configured records spanning 1979–2025. The wider satellite archive extends to 1978, but these combined datasets start in 1979. Argo float observations are available from 1999 onward and are being used in ongoing model training.
+Current full-data configurations use OSI SAF L3/L4 reprocessed SIC at 25 km resolution and ERA5 reanalysis, with configured records spanning 1979–2025. The wider satellite archive extends to 1978, but these combined datasets start in 1979. Argo configurations cover records from 1999 onward and are being used in ongoing model training. Usable coverage varies with missing dates and sensor availability; these archive ranges do not establish forecasting skill across every season and region.
 
 ### Approaches to Uncertainty & Variability
-Currently no default uncertainty quantification. The DDPM architecture supports epistemic uncertainty estimation through multiple sampling runs, producing a spread of plausible SIC forecasts rather than a single deterministic prediction.
+Repeated DDPM sampling with fixed trained weights can generate different SIC fields through stochastic sampling. The resulting spread does not by itself quantify uncertainty in the learned model parameters (epistemic uncertainty) or establish calibrated forecast probabilities. No uncertainty-calibration assessment is reported in this card.
 
 ## Training, Testing, Validation Datasets and Procedures
 
 ### Input Information
 - **Data sources:** OSI SAF L3/L4-derived SIC products, ERA5 atmospheric reanalysis, and Argo float observations, processed and normalised using Anemoi dataset tooling. Argo inputs are being used in ongoing training, and their contribution is not yet fully evaluated.
-- **Data leakage:** Strict temporal separation enforced, with test years held out exclusively for benchmarking and never exposed during development
-- **Input uncertainty:** Missing data identified and handled via Anemoi's built-in inspection tooling
+- **Data separation:** The shipped [full-data split](https://github.com/alan-turing-institute/cryocast/blob/main/cryocast/config/data/split/full_dataset.yaml) assigns records through 2021 to training, 2022–2023 to validation, 2024 to testing and 2025 to a designated holdout. [Sample configurations](https://github.com/alan-turing-institute/cryocast/blob/main/cryocast/config/data/split/sample_dataset.yaml) use narrower periods. Each reported experiment must document its actual splits, preprocessing and model-selection history before claiming an untouched evaluation set.
+- **Missing data:** Dataset recipes declare missing dates and apply dataset-specific filling or masking. Anemoi inspection checks dataset readiness; it does not establish observational accuracy or forecast uncertainty.
 
 Detailed input data table: pending project-team completion.
 
 ### Output Sea Ice Variables
-SIC as percentage ice coverage per grid cell, with 0% representing open water and 100% representing full ice cover.
+SIC is the fraction of each grid cell covered by ice. Current OSI SAF recipes convert source percentages to fractions, and the exported NetCDF `ice_conc` variable uses dimensionless units (`1`): 0 represents open water and 1 represents full ice cover, equivalent to 0% and 100%. Export reverses model normalisation to the stored dataset values.
 
 ### Output Information
-Predictions can be saved in NetCDF format during evaluation using `cryocast evaluate --save-predictions`.
+Predictions can be saved in NetCDF format during evaluation using `cryocast evaluate --save-predictions`. See the [evaluation guide](https://github.com/alan-turing-institute/cryocast/blob/main/docs/src/how-to/evaluate.md) for the required checkpoint, configuration and single-process export settings.
 
 ## Evaluation Details
 
 ### Evaluation Statement
-- Evaluation metrics: `sieerror (mean)`, `rmse (mean)`, `mae (mean)`, with a 15% sea ice threshold used for ice-edge classification
-- Model comparison: simple UNet, persistence
+- Configured metrics include `sieerror (mean)`, `rmse (mean)` and `mae (mean)`, with per-forecast-day results also available. Ice presence uses SIC greater than 0.15 (15%).
+- `sieerror` is signed predicted-minus-observed extent in km²; positive and negative errors can cancel. Interpret it alongside concentration and spatial-error metrics, using matched dates, masks, grid resolution and forecast lead times.
+- Model comparison: UNet and persistence configurations are available; reviewed comparative results remain to be reported.
 - Key findings: No comparative forecast-skill conclusions are reported in this card yet. The project team will add results once the benchmark evidence has been reviewed.
 
 ### Rationale for Current TRL
-The CryoCast system has made substantial progress through TRL 2, with optimised code, unit tests, initial curated datasets for in-situ data, and a basic software architecture established. Notably, several TRL 3 coding checkpoints have already been completed, including modular/reusable code structures and integration tests for module robustness. To complete TRL 2, preliminary benchmarking and evaluation results will be written up for publication.
+The CryoCast system has made substantial progress through TRL 2, with optimised code, unit tests, initial curated datasets for *in situ* data, and a basic software architecture established. Notably, several TRL 3 coding checkpoints have already been completed, including modular/reusable code structures and integration tests for module robustness. To complete TRL 2, preliminary benchmarking and evaluation results will be written up for publication.
 
 ### On-going Progress Towards Next TRL
 To complete TRL 2, there are two outstanding requirements: formal documentation of baseline model performance metrics and fully validated focused experiments confirming model behaviours and goals. For progress towards TRL 3, the sea ice team is actively looking for partners to narrow initial use cases for the CryoCast pipeline and develop tests that are grounded in real-world use.
 
 ### Ethical Considerations
-CryoCast is a research product and currently operates on publicly accessible data so there are no known ethical considerations.
+Publicly accessible inputs do not remove the need to assess downstream impacts. Users should respect dataset terms, communicate evaluation limitations and avoid relying on these research outputs for the operational or safety-critical uses excluded above.
