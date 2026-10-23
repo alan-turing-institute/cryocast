@@ -1,0 +1,128 @@
+[
+  {
+    "seed": 575,
+    "norm": "batchnorm",
+    "selection": "initial",
+    "file": "batchnorm-seed575-initial.npy",
+    "sha256": "a6a6e04d085d8b968196fdecb39c808639fb8f30ce0a13152e00c4151dd84af3"
+  },
+  {
+    "seed": 575,
+    "norm": "batchnorm",
+    "selection": "selected",
+    "file": "batchnorm-seed575-selected.npy",
+    "sha256": "0d68a66561eba2c585dc37fa0d57db46414ac53942feee64e99316b0ff73a78d"
+  },
+  {
+    "seed": 575,
+    "norm": "batchnorm",
+    "selection": "final",
+    "file": "batchnorm-seed575-final.npy",
+    "sha256": "6ca48d4de64d30652d73cb74015ef933900b1add3eee74816ce8894139ec5fbf"
+  },
+  {
+    "seed": 575,
+    "norm": "groupnorm",
+    "selection": "initial",
+    "file": "groupnorm-seed575-initial.npy",
+    "sha256": "b1e6f9f7d54cccfb812eb89d89b6ee0b2ce1f80ee212d912ce4143ce16783332"
+  },
+  {
+    "seed": 575,
+    "norm": "groupnorm",
+    "selection": "selected",
+    "file": "groupnorm-seed575-selected.npy",
+    "sha256": "5f3ed3ae45a7770b98b6986dfac55586f1da2379dff43ebfd829152d15a8e727"
+  },
+  {
+    "seed": 575,
+    "norm": "groupnorm",
+    "selection": "final",
+    "file": "groupnorm-seed575-final.npy",
+    "sha256": "8a9c8ff0f1cefc590a8269f0b2d675a98b7246bcbe59bf6b5923fcf813adcaff"
+  },
+  {
+    "seed": 576,
+    "norm": "batchnorm",
+    "selection": "initial",
+    "file": "batchnorm-seed576-initial.npy",
+    "sha256": "f1a58af66de5fd7324f4d88e5ad36e9ecc6b7921b2ce942ba4bd5a821bdb3302"
+  },
+  {
+    "seed": 576,
+    "norm": "batchnorm",
+    "selection": "selected",
+    "file": "batchnorm-seed576-selected.npy",
+    "sha256": "f1a58af66de5fd7324f4d88e5ad36e9ecc6b7921b2ce942ba4bd5a821bdb3302"
+  },
+  {
+    "seed": 576,
+    "norm": "batchnorm",
+    "selection": "final",
+    "file": "batchnorm-seed576-final.npy",
+    "sha256": "2e4c09600ad438d41a34aa50062c391c70784cf97ee12e47ef5b2a2185345e53"
+  },
+  {
+    "seed": 576,
+    "norm": "groupnorm",
+    "selection": "initial",
+    "file": "groupnorm-seed576-initial.npy",
+    "sha256": "ca1bacca05d9c27068a38316749a44bb746a3b07b8c3dcdf0f039244f90a5a8c"
+  },
+  {
+    "seed": 576,
+    "norm": "groupnorm",
+    "selection": "selected",
+    "file": "groupnorm-seed576-selected.npy",
+    "sha256": "13d9ab7b06ff2a0b3db860fa28cad09ac01bec03c8efa6a0bd1512b0373bedc5"
+  },
+  {
+    "seed": 576,
+    "norm": "groupnorm",
+    "selection": "final",
+    "file": "groupnorm-seed576-final.npy",
+    "sha256": "13d9ab7b06ff2a0b3db860fa28cad09ac01bec03c8efa6a0bd1512b0373bedc5"
+  },
+  {
+    "seed": 577,
+    "norm": "batchnorm",
+    "selection": "initial",
+    "file": "batchnorm-seed577-initial.npy",
+    "sha256": "4528a6196a71106fd45fbe43ac064be2f828d15791ea1fde42762d983b839977"
+  },
+  {
+    "seed": 577,
+    "norm": "batchnorm",
+    "selection": "selected",
+    "file": "batchnorm-seed577-selected.npy",
+    "sha256": "9edc5e1e91d9c8914a37b9fd882e0ce32f1ca3b8845df8659f438585de01e099"
+  },
+  {
+    "seed": 577,
+    "norm": "batchnorm",
+    "selection": "final",
+    "file": "batchnorm-seed577-final.npy",
+    "sha256": "9edc5e1e91d9c8914a37b9fd882e0ce32f1ca3b8845df8659f438585de01e099"
+  },
+  {
+    "seed": 577,
+    "norm": "groupnorm",
+    "selection": "initial",
+    "file": "groupnorm-seed577-initial.npy",
+    "sha256": "15b40a46b229e63a69b1f727e180bd0eb94c7b1d1cd3a21d5d7ecc21acc2039c"
+  },
+  {
+    "seed": 577,
+    "norm": "groupnorm",
+    "selection": "selected",
+    "file": "groupnorm-seed577-selected.npy",
+    "sha256": "ca4f9f6517932290ec5873474bf0662f83b0ba718c42587b7748396598623789"
+  },
+  {
+    "seed": 577,
+    "norm": "groupnorm",
+    "selection": "final",
+    "file": "groupnorm-seed577-final.npy",
+    "sha256": "b229000490bc4c761d19617e312b7df1f9d614ecb484c3e2eb1bb58ce4dd1dc8"
+  }
+]

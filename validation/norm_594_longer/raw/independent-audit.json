@@ -1,0 +1,72 @@
+{
+  "passed": true,
+  "matched_runs": 6,
+  "additional_optimizer_updates": 1152,
+  "calendar_disjoint": true,
+  "paired_training_arrays_identical": true,
+  "validation_only_selection": true,
+  "restored_optimizer_schedule_checked": true,
+  "test_windows": 30,
+  "test_leads": 14,
+  "unique_test_target_dates": 56,
+  "stored_masks_equal_training_only_reconstruction": true,
+  "test_months": [
+    "2024-01",
+    "2024-07"
+  ],
+  "scope": "Continuation with an identical LR restart, not uninterrupted scheduler continuation or full-size convergence",
+  "raw_forecast_arrays_verified": 18,
+  "reference_arrays_verified": 3,
+  "independently_rescored_cases": 7980,
+  "maximum_absolute_numeric_difference": 2.3646862246096134e-11,
+  "shared_truth_and_mask": true,
+  "prediction_dependent_exclusion": false,
+  "extent_absolute_before_averaging": true,
+  "raw_forecasts_sha256_verified": true,
+  "historical_replay": [
+    {
+      "seed": 575,
+      "norm": "batchnorm",
+      "january_windows": 10,
+      "maximum_rmse_absolute_difference": 1.3568053847112793e-08,
+      "old_checkpoint_predictions_reproduced_within_declared_tolerance": true
+    },
+    {
+      "seed": 575,
+      "norm": "groupnorm",
+      "january_windows": 10,
+      "maximum_rmse_absolute_difference": 7.542329386045488e-09,
+      "old_checkpoint_predictions_reproduced_within_declared_tolerance": true
+    },
+    {
+      "seed": 576,
+      "norm": "batchnorm",
+      "january_windows": 10,
+      "maximum_rmse_absolute_difference": 1.201838378817044e-08,
+      "old_checkpoint_predictions_reproduced_within_declared_tolerance": true
+    },
+    {
+      "seed": 576,
+      "norm": "groupnorm",
+      "january_windows": 10,
+      "maximum_rmse_absolute_difference": 5.173308018080469e-09,
+      "old_checkpoint_predictions_reproduced_within_declared_tolerance": true
+    },
+    {
+      "seed": 577,
+      "norm": "batchnorm",
+      "january_windows": 10,
+      "maximum_rmse_absolute_difference": 1.0957666995992099e-08,
+      "old_checkpoint_predictions_reproduced_within_declared_tolerance": true
+    },
+    {
+      "seed": 577,
+      "norm": "groupnorm",
+      "january_windows": 10,
+      "maximum_rmse_absolute_difference": 9.458835936726473e-09,
+      "old_checkpoint_predictions_reproduced_within_declared_tolerance": true
+    }
+  ],
+  "verifier_sha256": "f181e181e129734778e5f29f88cc420f50409cff502990dbd7d280e6c4664a62",
+  "no_new_independent_replications_claimed": true
+}

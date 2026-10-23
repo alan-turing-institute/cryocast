@@ -1,0 +1,29 @@
+{
+  "dataset": "samp-sicsouth-osisaf-25p0km-2020-2024-24h-v1",
+  "status_variable_index": 1,
+  "total_rows": 855,
+  "training_rows": 731,
+  "training_end": "2021-12-31",
+  "stored_hashes": {
+    "land": "82856453bbe80d2630ad6f3b957dd32478c535f4b66093efcf68b9fc80f889b2",
+    "active": "8030d8f228b6df24ad7d5abe3a2a2fbbc83eb0a38ca9dda2c56323d8c17f1b4c"
+  },
+  "source_policy": "status masks generated across all available source dates",
+  "mask_results": {
+    "land": {
+      "stored_matches_all_period_reconstruction": true,
+      "stored_matches_training_only": true,
+      "different_cells_from_training_only": 0,
+      "stored_valid_cells": 153319,
+      "training_only_valid_cells": 153319
+    },
+    "active": {
+      "stored_matches_all_period_reconstruction": true,
+      "stored_matches_training_only": true,
+      "different_cells_from_training_only": 0,
+      "stored_valid_cells": 49607,
+      "training_only_valid_cells": 49607
+    }
+  },
+  "scope": "Snapshot equivalence only; this does not prove all-period masking safe for every future dataset."
+}
