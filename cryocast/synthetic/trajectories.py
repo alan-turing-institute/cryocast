@@ -9,7 +9,7 @@ exercises whether a model learned the general translate-and-bounce rule rather t
 memorising one specific path. The per-trajectory task stays exactly as simple.
 """
 
-import datetime
+import datetime as dt
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -41,25 +41,25 @@ def generate_frames(config: TrajectoryConfig) -> ArrayTHW:
 class TrajectorySpan:
     """The calendar date range (inclusive) occupied by one trajectory."""
 
-    start_date: datetime.datetime
-    end_date: datetime.datetime
+    start_date: dt.datetime
+    end_date: dt.datetime
 
 
 @dataclass(frozen=True)
 class MultiTrajectoryDataset:
     frames: ArrayTHW
-    dates: list[datetime.datetime]
-    missing_dates: list[datetime.datetime]
+    dates: list[dt.datetime]
+    missing_dates: list[dt.datetime]
     spans: list[TrajectorySpan]
 
 
 def daily_dates(
-    start_date: datetime.datetime,
-    end_date: datetime.datetime,
-) -> list[datetime.datetime]:
+    start_date: dt.datetime,
+    end_date: dt.datetime,
+) -> list[dt.datetime]:
     """Return consecutive daily dates between `start_date` and `end_date`."""
     return [
-        start_date + datetime.timedelta(days=step)
+        start_date + dt.timedelta(days=step)
         for step in range((end_date - start_date).days + 1)
     ]
 
@@ -173,7 +173,7 @@ def generate_default_dataset(
     *,
     dynamics: str,
     grid_size: int,
-    start_dates: Sequence[datetime.datetime],
+    start_dates: Sequence[dt.datetime],
 ) -> MultiTrajectoryDataset:
     """Generate the standard multi-trajectory dataset for the requested dynamics."""
     trajectories: tuple[TrajectoryConfig, ...]
@@ -193,14 +193,14 @@ def generate_default_dataset(
 
 def generate_multi_trajectory_dataset(
     trajectories: Sequence[TrajectoryConfig],
-    start_dates: Sequence[datetime.datetime],
+    start_dates: Sequence[dt.datetime],
 ) -> MultiTrajectoryDataset:
     """Concatenate independent trajectories end-to-end, with gap days between them."""
     frame_chunks: list[ArrayTHW] = []
     spans: list[TrajectorySpan] = []
-    missing_dates: list[datetime.datetime] = []
+    missing_dates: list[dt.datetime] = []
 
-    last_end_date: datetime.datetime | None = None
+    last_end_date: dt.datetime | None = None
     for trajectory, start_date in zip(trajectories, start_dates, strict=True):
         if last_end_date is not None:
             if start_date <= last_end_date:
@@ -210,8 +210,8 @@ def generate_multi_trajectory_dataset(
                 )
                 raise ValueError(msg)
             gap_dates = daily_dates(
-                last_end_date + datetime.timedelta(days=1),
-                start_date - datetime.timedelta(days=1),
+                last_end_date + dt.timedelta(days=1),
+                start_date - dt.timedelta(days=1),
             )
             missing_dates.extend(gap_dates)
             frame_chunks.append(
@@ -222,7 +222,7 @@ def generate_multi_trajectory_dataset(
             )
 
         frame_chunks.append(generate_frames(trajectory))
-        end_date = start_date + datetime.timedelta(days=trajectory.n_timesteps - 1)
+        end_date = start_date + dt.timedelta(days=trajectory.n_timesteps - 1)
         spans.append(
             TrajectorySpan(
                 start_date=start_date,

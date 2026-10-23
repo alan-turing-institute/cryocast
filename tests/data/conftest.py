@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 
 import numpy as np
 import pytest
@@ -38,13 +38,13 @@ def cfg_common_data_module() -> DictConfig:
 
 @pytest.fixture(scope="session")
 def dates_as_np(
-    dates_as_dt: tuple[datetime.datetime, ...],
+    dates_as_dt: tuple[dt.datetime, ...],
 ) -> tuple[np.datetime64, ...]:
     """Fixture to provide a tuple of numpy datetime64 objects for testing."""
     return tuple(np.datetime64(f"{dt.date()}T12:00:00", "s") for dt in dates_as_dt)
 
 
 @pytest.fixture(scope="session")
-def dates_as_str(dates_as_dt: tuple[datetime.datetime, ...]) -> tuple[str, ...]:
+def dates_as_str(dates_as_dt: tuple[dt.datetime, ...]) -> tuple[str, ...]:
     """Fixture to provide a tuple of date strings for testing."""
     return tuple(dt.strftime(r"%Y-%m-%d") for dt in dates_as_dt)
