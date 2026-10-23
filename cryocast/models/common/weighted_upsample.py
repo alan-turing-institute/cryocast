@@ -36,6 +36,9 @@ class WeightedUpsample(nn.Module):
 
         """
         super().__init__()
+        if upsample_factor < 1:
+            msg = f"upsample_factor must be >= 1, got {upsample_factor}"
+            raise ValueError(msg)
 
         # Initial convolution to produce the required channels for PixelShuffle
         out_channels = out_channels if out_channels is not None else in_channels
@@ -58,6 +61,14 @@ class WeightedUpsample(nn.Module):
             initial_conv.weight.copy_(
                 group_weights.repeat_interleave(upsample_factor**2, dim=0)
             )
+            # Biases must also agree across subpixels to avoid an initial pattern.
+            # Repeat an existing phase bias without consuming additional RNG draws.
+            if initial_conv.bias is not None:
+                initial_conv.bias.copy_(
+                    initial_conv.bias[:: upsample_factor**2].repeat_interleave(
+                        upsample_factor**2
+                    )
+                )
 
         self.block = nn.Sequential(
             # Convolution: [N, C_in, H, W] -> [N, C_internal, H, W]

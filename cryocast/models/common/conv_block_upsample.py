@@ -45,6 +45,9 @@ class ConvBlockUpsample(nn.Module):
 
         """
         super().__init__()
+        if scale_factor < 1:
+            msg = f"scale_factor must be >= 1, got {scale_factor}"
+            raise ValueError(msg)
 
         # We use integer division here to ensure that out_channels is an integer.
         out_channels = (
