@@ -1,141 +1,134 @@
 # Submit forecasts to SIPN
 
-This guide records the requirements for a first manual CryoCast submission to the Sea Ice Prediction Network (SIPN) or SIPN South. Submission protocols change between seasons, so check the current call before generating files.
+This guide supports a first **manual** CryoCast contribution to the Sea Ice Outlook (SIO) or SIPN South. It records the published formats and the work still needed between a CryoCast evaluation export and a valid submission. It does not select a checkpoint, establish seasonal forecast skill, or implement conversion or upload.
 
-## Requirements at a glance
+## Protocol versions and dates
 
-| Programme | Forecast window | Main CryoCast-compatible outputs | Grid and metadata |
-| --- | --- | --- | --- |
-| 2026 Sea Ice Outlook | September 2026 | September mean extent; optionally daily sea-ice concentration or derived SIP/IFD/IAD fields | Extent follows the NSIDC >15% definition. The public full-field instructions do not prescribe one common grid or complete NetCDF schema. |
-| SIPN South 2025-2026 | 1 December 2025 to 28 February 2026, 90 daily steps | Total area, regional area, and sea-ice concentration | No common grid is specified; concentration files include `longitude`, `latitude`, `sftof`, and `areacello`. |
+**Checked on 23 October 2026.** Both dated calls below concern past submission rounds. Recheck the [SIO website](https://www.seaiceprediction.org/) and [SIPN South call page](https://fmassonn.github.io/sipn-south.github.io/call-contributions/) before preparing a new contribution.
 
-The remaining 2026 SIO schedule lists the September deadline as **14 September 2026** and states that the September Outlook is based on May-August data. Do not use September observations in the September submission. The latest published SIPN South protocol is still the 2025-2026 call; update its dates and filenames when the 2026-2027 call is published.
+| Published call | Target period | Deadline and status at this check |
+| --- | --- | --- |
+| [September 2026 SIO](https://www.seaiceprediction.org/sea-ice-outlook/september-2026-call-for-contributions) | September 2026 monthly mean extent | 14 September 2026, 18:00 AKDT, in the heading and schedule. Its linked submission form is closed. |
+| [SIPN South 2025-2026](https://fmassonn.github.io/sipn-south.github.io/call-contributions/) | 1 December 2025 to 28 February 2026 inclusive, 90 daily values | 8 December 2025. The public call page still describes this season; a 2026-2027 protocol was not found there. |
+
+The SIO page repeats an inconsistent August date in one paragraph; the September heading and schedule agree on 14 September. Do not treat either past deadline as an open invitation or infer a new deadline by changing the year. South filenames below are **historical examples**, to be replaced only from a confirmed new call.
+
+The September SIO call specifies May-August information. September observations, later reanalysis revisions or later initialisations must not enter that forecast. A retrospective experiment must be labelled as such and reproduce the declared information cutoff; downloading historical inputs now does not demonstrate that they were available then.
 
 ## Check the forecast horizon
 
-The tracked forecast-window configs in `cryocast/config/window/` currently provide 3-, 7-, 14-, and 21-step horizons; for daily SIC data these correspond to 3, 7, 14, and 21 days. A complete September forecast requires the whole month, and SIPN South requires 90 daily steps.
+The tracked `cryocast/config/window/` presets contain 3, 7, 14 and 21 forecast steps. These are days only for daily input frequency. A complete September requires 30 target days, plus any lead-in from an earlier initialisation; the historical South call requires 90. Ice-free and ice-advance dates may require additional melt/freeze-season coverage.
 
-Before preparing a submission, agree how the selected checkpoint will cover the required window. Use a checkpoint/configuration trained and validated for that horizon, or document and validate an agreed rollout strategy. Do not silently reinitialise with observations after the call's information cutoff, because that changes the forecast being submitted.
+Agree a checkpoint trained and evaluated for the required horizon, or a validated free-running rollout with an explicit conditioning strategy. Loading a checkpoint restores its saved model/window settings; simply overriding `window.n_forecast_steps` is not evidence of a valid longer forecast. Do not concatenate short forecasts reinitialised with later observations to simulate a single seasonal trajectory. This applies to every conditioning input, including ERA5 and Argo.
 
-## Choose the forecast run
+Record the checkpoint and configuration, code commit, initialisation time, information cutoff, ensemble method/seeds, output frequency, grid and mask provenance. Keep the original output alongside the converted files. Repeated diffusion samples do not by themselves establish calibrated probabilities.
 
-Use the best current model agreed by the project and record enough information to reproduce the submitted forecast:
+## What CryoCast currently exports
 
-- checkpoint path or identifier;
-- CryoCast git commit;
-- inference configuration;
-- forecast initialisation date and input-data cutoff;
-- forecast horizon and any rollout/reinitialisation strategy;
-- ensemble method and member count, if applicable;
-- native grid, coordinate reference information, and land/ocean mask;
-- units and missing-value convention for each field.
+The [evaluation guide](evaluate.md#saving-predictions-as-netcdf) describes the optional NetCDF writer already present in the code. For a retrospective evaluation with an existing local configuration and trusted checkpoint:
 
-Keep the unmodified model output together with the final submission files.
+```bash
+uv run cryocast evaluate \
+  --config-name my.local \
+  --checkpoint /path/to/run/checkpoints/model.ckpt \
+  --save-predictions \
+  train.trainer.devices=1
+```
+
+Replace the paths and configuration with the intended run and retain its `files/model_config.yaml`. The standard evaluation configuration inherits `train.trainer`, so this override keeps the complete trainer configuration and selects one device. For a custom evaluation trainer, verify its own single-process settings. The evaluation configuration must include the `prediction_writer` callback; the standard evaluation configuration does. See [configuration](../user-guide/configuration.md) and [commands](../user-guide/commands.md#evaluate) for setup.
+
+The writer saves `files/predictions.nc` in the run directory. It uses `data.split.test` and writes matching observed targets, so this is an **evaluation export**, not a standalone future-forecast or SIPN submission command. Missing future observations cannot be replaced with invented truth to make this route work.
+
+| Exported feature | Required submission check or conversion |
+| --- | --- |
+| `ice_conc` with dimensions `(forecast_reference_time, lead_time, y, x)` | Select a declared forecast origin/member and construct a continuous target-time series from `valid_time`. Flattening both time axes introduces duplicates and mixes initialisations. |
+| `ice_conc` in dimensionless units `1`, range 0-1 | South requires `siconc` in percent. Convert finite values once with `100 * ice_conc`, rename the variable and update units/range metadata. |
+| `ice_conc_observed` | Verification truth is not a forecast. Exclude it from the submission payload while retaining it separately for evaluation. |
+| `latitude`, `longitude` and optional binary `land_mask`/`active_mask` | Coordinate arrays must align with the submitted grid. An active-ice mask is not an ocean-fraction field; binary masks alone do not establish coastal ocean fractions. |
+| No `sftof` or `areacello` | Obtain and validate ocean fraction and cell area for the actual grid. Do not invent them from the presence of latitude/longitude or assume all grids have 25 km square cells. |
+| One value at each dataset valid time | A daily timestamp does not establish a daily mean. The OSI SAF recipes sample at 12:00 UTC; confirm aggregation/acceptance for the South daily-mean request. |
+
+The writer declares CF-1.10 metadata, not SIPN South CMIP6-format compliance. It can also clip out-of-range concentration and records clipping counts. Inspect these counts, missing values and masks before conversion. Land represented as zero in a model output must not silently become observed open water.
+
+A submission-ready long trajectory, conversion of its time axis and units, grid-area/ocean-fraction metadata, and protocol validation remain separate work. No current short-horizon export is declared ready to submit by this guide.
 
 ## Arctic Sea Ice Outlook
 
-The [2026 Sea Ice Outlook solicitation](https://www.seaiceprediction.org/sea-ice-outlook/august-2026-call-for-contributions) requests September monthly mean sea-ice extent and optionally full spatial forecast fields. It also solicits optional pan-Arctic extent-anomaly forecasts; those are outside this first manual workflow.
+### Core Outlook package
 
-### Core Outlook submission
+The [September 2026 call](https://www.seaiceprediction.org/sea-ice-outlook/september-2026-call-for-contributions) distinguishes the core Outlook form from the optional full-field upload. The core pan-Arctic contribution includes the September monthly mean extent, method description, plain-language summary and any justified uncertainty information. Pan-Antarctic and Alaska regional outlooks are additional contributions. Follow the selected form's units and fields; a new Outlook is required for each monthly round rather than carrying an older entry forward.
 
-A first manual SIO contribution does not require a full-field upload. Use the submission form linked from the relevant monthly call for the core Outlook package. For the pan-Arctic contribution, prepare:
+For the call's extent calculation, threshold concentration **for each day first**, sum qualifying cell areas, then average the daily extents across September. With concentration fraction `c`, valid ocean cells and cell areas `A` in km²:
 
-- the September monthly mean sea-ice extent forecast;
-- the forecasting method/model description;
-- uncertainty or probability information, where scientifically justified;
-- a plain-language executive summary describing the Outlook, contributing factors, and methodology.
+```text
+extent_day = sum(A[cell] for cells where c[day, cell] > 0.15)
+september_mean_extent = mean(extent_day over all September days)
+```
 
-Pan-Antarctic and Alaska regional extent forecasts are optional additions. Full spatial fields use the separate SIPN data-server route described below. The solicitation states that a new Outlook must be submitted for each month; earlier monthly Outlooks are not carried forward automatically.
+Thresholding a monthly mean concentration field is a different calculation. Likewise, the model's signed `sieerror` metric is an error against observations, not predicted extent. Exclude land and islands, document the treatment of partial-ocean cells, and reject unaccounted missing coverage rather than silently treating it as zero. Convert km² to million km² only when that is the requested reporting unit.
 
-### Sea-ice extent
-
-To match the NSIDC Sea Ice Index definition used by the call:
-
-1. For each day, sum the areas of grid cells whose sea-ice concentration exceeds 15%.
-2. Average the daily extent values over September to obtain the September monthly mean extent.
-
-The call accepts pan-Arctic and pan-Antarctic extent forecasts and an Alaska regional forecast covering the Bering, Chukchi, and Beaufort seas. The Alaska request references the NSIDC 25 km polar-stereographic regional mask. If a different regional definition is used, document it in the submission.
+For Alaska, the call requests the combined Bering, Chukchi and Beaufort seas, preferably using its linked NSIDC 25 km polar-stereographic regional mask. Report the region definition **and maximum possible ice extent over its ocean cells**. CryoCast's EASE2 grid is not that polar-stereographic grid; do not copy a mask by array index merely because shapes or nominal resolution match.
 
 ### Full spatial fields
 
-The call requests:
+The call requests SIP (ensemble fraction above 15% September concentration), IFD (first melt-season date below 15%) and, for August/September submissions, IAD (first post-minimum freeze-up date above 15%). IFD80/IAD80 are additional 80% diagnostics. Supply dates as day of year and record the season searched, treatment of never-crossing cells and ensemble conventions. Initial-condition fields and their dates are also requested where available; SIC models cannot supply unmodelled thickness.
 
-- Sea Ice Probability (SIP), the fraction of ensemble members with September sea-ice concentration above 15%;
-- Ice-Free Date (IFD), the first date concentration falls below 15%, with an optional 80% threshold;
-- Ice Advance Date (IAD) for August and September, reported as day of year, when freeze-up concentration first rises above 15%, with an optional 80% threshold;
-- spatial initial-condition fields, particularly sea-ice concentration and sea-ice thickness, with the initialisation date recorded.
+Daily SIC fields can be provided for the organisers to derive these metrics. This avoids inventing unconfirmed aggregation rules or presenting a one-member binary field as a calibrated ensemble probability. Confirm the required temporal coverage, including crossings outside September.
 
-Daily sea-ice concentration fields can be submitted instead of pre-computed SIP, IFD, and IAD fields; the organisers state that they can derive those metrics from daily concentration. For a single deterministic forecast, retaining and submitting daily concentration also avoids presenting a one-member binary field as an ensemble probability.
+The call links the [spatial-metrics instructions](https://www.atmos.washington.edu/~ed/sio_metrics/), which still label themselves 2025. Those instructions request latitude, longitude, grid area and land identified with the NetCDF variable's `_FillValue`. Include those explicit requirements; neither linked page specifies a mandatory common grid or a complete current upload schema. Confirm remaining schema, missing-value and horizon details with the SIO team before upload.
 
-The public 2026 call does not prescribe a common grid or complete NetCDF schema for full-field uploads. Preserve the model's geospatial metadata and confirm the current file-format and horizon expectations with the SIO team before upload. Existing contributors use the SIPN data server; new contributors can request access from the contact named in the current call.
+Optional pan-Arctic extent anomalies and supplemental material remain separate from this first SIC workflow. The call gives its own baseline-trend and anomaly-sign instructions; do not substitute a generic sign convention. Its supplemental-PDF limit is less than 20 MB.
 
 ## SIPN South
 
-The latest published [SIPN South call](https://fmassonn.github.io/sipn-south.github.io/call-contributions/) is for the 2025-2026 season. It requests **90 daily timesteps from 1 December 2025 through 28 February 2026**.
+The [published 2025-2026 call](https://fmassonn.github.io/sipn-south.github.io/call-contributions/) accepts one to five diagnostics in priority order. All three SIC-related formats below are not mandatory for a first contribution.
 
-SIPN South requests sea-ice **area**, while SIO requests sea-ice **extent**. Keep those calculations separate. Area is concentration-weighted ocean surface; extent counts qualifying grid cells at their full area. The published SIPN South call does not specify the SIO 15% extent threshold for its area diagnostic, so do not reuse that threshold automatically. Record the concentration treatment, ocean mask, and cell-area convention used to derive submitted area values.
+### Area diagnostics
 
-The SIPN South call also accepts grid-cell thickness (`sivol`) and long forecasts as low-priority diagnostics. They are outside this first SIC-focused workflow: the tracked SIC configs do not produce sea-ice thickness, and their current horizons are much shorter than the six-month minimum requested for the long-forecast diagnostic.
+The high-priority total-area file has one row of 90 comma-separated values. The medium-priority regional-area file has 36 rows of 90 values. Both use **million km²**, four decimal places and trailing zeroes. Historical filenames are:
 
-### Circumpolar sea-ice area
+```text
+<group-name>_<forecast-id>_20251201-20260228_total-area.txt
+<group-name>_<forecast-id>_20251201-20260228_regional-area.txt
+```
 
-Submit one text file containing one row of 90 comma-separated daily Antarctic sea-ice area values.
+Use `001` for a single forecast; an ensemble has one file per member with matching three-digit IDs across diagnostics. Regional rows cover successive half-open longitude intervals `[0, 10)`, `[10, 20)`, through `[350, 360)`. Normalize longitudes into `[0, 360)` and ensure each valid cell is counted once. Regional sums must reproduce the circumpolar total before rounding.
 
-- Units are 10^6 km².
-- Values use four decimal places, including trailing zeroes.
-- The 2025-2026 filename is `<group-name>_<forecast-id>_20251201-20260228_total-area.txt`.
-- Ensemble forecasts use one file per member and increment the three-digit forecast ID.
+South requests **sea ice area**, not SIO extent. Apply concentration weighting rather than the 15% extent threshold. Record whether concentration is defined over the entire cell or only its ocean portion: for whole-cell concentration use `sum(c * cell_area)`; for ocean-relative concentration use `sum(c * ocean_fraction * cell_area)`. Do not apply the ocean fraction twice. With area inputs in m², divide the resulting sum by `1e12` to obtain million km². Confirm the convention with the source metadata and organiser when it is ambiguous.
 
-### Regional sea-ice area
+### Concentration diagnostic
 
-Submit one text file containing 36 rows, each with 90 comma-separated daily values using the same units and precision as the circumpolar file.
-
-Rows represent successive 10° longitude bins from `0° <= longitude < 10°` through `350° <= longitude < 360°`.
-
-The 2025-2026 filename is `<group-name>_<forecast-id>_20251201-20260228_regional-area.txt`.
-
-### Sea-ice concentration
-
-Submit one NetCDF file with 90 daily timesteps. The protocol requires CMIP6-style conventions and these variables:
+The lower-priority spatial diagnostic requests a 90-timestep NetCDF using CMIP6 conventions:
 
 | Variable | Meaning | Units |
 | --- | --- | --- |
-| `siconc` | Sea-ice concentration | % |
-| `longitude` | Grid-cell longitude | degrees east |
-| `latitude` | Grid-cell latitude | degrees north |
+| `siconc` | Sea ice concentration | % |
+| `longitude`, `latitude` | Grid-cell coordinates | degrees east, degrees north |
 | `sftof` | Ocean fraction of each grid cell | % |
 | `areacello` | Grid-cell area | m² |
 
-The 2025-2026 filename is `<group-name>_<forecast-id>_20251201-20260228_concentration.nc`.
+The historical filename is `<group-name>_<forecast-id>_20251201-20260228_concentration.nc`, with one file per ensemble member. No mandatory common spatial grid is stated. Keep aligned coordinates, cell areas, ocean fractions and documented missing-value conventions on the contributor grid.
 
-The protocol does not specify a mandatory common spatial grid for concentration submissions. Keep the forecast on its documented contributor grid and include longitude, latitude, ocean fraction, and cell area. For ensembles, use one file per member and increment the forecast ID.
+The South page's regional/concentration headings say "February", but their explicit date ranges, counts and filenames span December-February. Use all 90 stated days for this historical protocol and confirm any ambiguous future call before generating files. Do not infer a new season's timestep count without checking its calendar.
 
-## Validate the files
+### Other requested diagnostics
 
-Before submission, check that:
+Lower-priority `sivol` is grid-cell mean ice thickness (volume per cell area), in metres; SIC alone cannot produce it. The published thickness filename ends in `20251228` despite a 90-day specification, so obtain clarification rather than silently choosing an end date. The optional long-forecast diagnostic requests monthly area from forecasts initialised in 2025 and extending at least six months into 2026. Neither is covered by the current SIC-only short-horizon presets.
 
-- the intended checkpoint, commit, and configuration are recorded;
-- the first and last forecast dates match the current call;
-- the forecast contains every required daily timestep without gaps or duplicate dates;
-- the forecast does not use observations beyond the permitted information cutoff; for the September 2026 SIO, this means no September observations;
-- concentration units match the protocol, especially `%` for SIPN South `siconc`;
-- longitude, latitude, ocean fraction, and cell area align with the forecast grid;
-- land and missing values are handled consistently;
-- area or extent diagnostics reproduce from the archived spatial fields and recorded conventions;
-- every ensemble member has a unique forecast identifier;
-- filenames use the current season's required dates and naming convention.
+## Validate before submission
 
-Keep a submission record containing the checkpoint identifier, git commit, configuration, initialisation date, input-data cutoff, forecast horizon, generated filenames, and submission date.
+Check the exact current call and record its URL, retrieval date, target period and submission cutoff. Then verify:
+
+1. **Provenance and horizon.** Approved checkpoint/configuration, code commit, origin, conditioning-data availability, ensemble seeds and complete required horizon. No post-cutoff observations or reused retrospective truth.
+2. **Calendar and frequency.** Correct first/last valid times, calendar, daily-mean convention and no missing/duplicate target dates. Each trajectory retains its own initialisation and member identity.
+3. **Units and geography.** Fractions versus percentages, area conversions, coordinate ordering, CRS, masks, coastal ocean fractions and cell areas agree. Missing cells and clipping are accounted for.
+4. **Numerical consistency.** Recompute extent/area from the archived fields. Check regional-total agreement before four-decimal rounding and confirm the text-file shape, delimiters and precision.
+5. **Payload and naming.** Only requested forecast products, unique matching member IDs, current season filenames and protocol-compliant time/variable metadata. Do not upload verification observations or credentials.
+
+Archive the unmodified output, exact final files, hashes and validation record before any submission. Successful unit tests or file checks establish implementation behaviour, not forecast accuracy or organiser acceptance.
 
 ## Submit manually
 
-For the first implementation:
+Use the current round's form for core SIO contributions and the separately documented SIPN data server for full fields. New full-field contributors should contact the person named in the current call for access and schema clarification. The September 2026 form is closed; retrospective contributions require organiser agreement.
 
-1. Generate the required forecast from the selected current model.
-2. Convert the output into the current call's scalar and/or spatial formats.
-3. Run the validation checklist above.
-4. Archive the exact files being submitted in shared project storage.
-5. Submit through the route specified by the current call.
-6. Record the submission date and forecast identifiers.
-
-For Arctic SIO full fields, use the SIPN data-server process described in the current call. For SIPN South, the latest protocol asks contributors to place the files in a URL-accessible archive, provide that URL through the submission form, and notify the organiser after submission.
+The historical South workflow asks for a URL-accessible archive, its URL and method/contact metadata in the linked form, then an email to the organiser confirming submission. The call states that forecast and verification data will be made public. Confirm the applicable season, data-sharing permission and current route before making files accessible. This documentation change does not upload forecasts, submit forms or send email.
