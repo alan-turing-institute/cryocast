@@ -1,0 +1,33 @@
+samp-weathernorth-carra2-2p5km-2020-2024-24h-v1:
+  name: samp-weathernorth-carra2-2p5km-2020-2024-24h-v1
+  group_as: carra2
+  description: Weather from CARRA2 pan-Arctic regional reanalysis
+  attribution: ECMWF/C3S
+  licence: CC-BY-4.0
+
+  dates:
+    start: '2020-01-01T12:00:00'
+    end: '2024-07-31T12:00:00'
+    frequency: 24h
+    # To reduce size, only retain the date ranges used by the sample split.
+    missing:
+    - start: 2022-01-01T12:00:00
+      end: 2022-06-30T12:00:00
+    - start: 2022-08-01T12:00:00
+      end: 2022-12-31T12:00:00
+    - start: 2023-02-01T12:00:00
+      end: 2023-12-31T12:00:00
+    - start: 2024-02-01T12:00:00
+      end: 2024-06-30T12:00:00
+
+  input:
+    carra2:
+      level_type: single_levels
+      variables:
+      - 2m_temperature
+      - surface_pressure
+      - 10m_u_component_of_wind
+      - 10m_v_component_of_wind
+      - mean_sea_level_pressure
+      product_type: analysis
+      data_format: grib
