@@ -7,6 +7,10 @@ on:  # yamllint disable-line rule:truthy
     branches: [main]
   pull_request:
 
+# Fail if uv.lock is out of date with pyproject.toml instead of re-resolving
+env:
+  UV_LOCKED: 1
+
 jobs:
   run_tests:
     runs-on: ubuntu-latest
@@ -28,18 +32,18 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          version: "0.8.3"
+          python-version: ${{ matrix.python-version }}
+
       - name: Run pytest
         run: uv run --group dev pytest
+
       - name: Run mypy
         run: uv run --group dev mypy .
+
       # For security reasons, PRs created from forks cannot generate PR comments directly
       # (see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/).
       # Instead we need to trigger another workflow after this one completes.
@@ -48,6 +52,7 @@ jobs:
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
+
       # Save the coverage comment for later use
       # See https://github.com/py-cov-action/python-coverage-comment-action/blob/main/README.md
       - name: Save coverage comment as an artifact

@@ -7,6 +7,10 @@ on:  # yamllint disable-line rule:truthy
     branches: [main]
   pull_request:
 
+# Fail if uv.lock is out of date with pyproject.toml instead of re-resolving
+env:
+  UV_LOCKED: 1
+
 permissions:
   contents: read
   pages: write
@@ -27,9 +31,6 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
