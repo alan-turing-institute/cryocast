@@ -44,7 +44,7 @@ dependencies = [
     "pillow>=11.3.0",
     "pydantic>=2.11.7",
     "pyproj>=3.7.2",
-    "pytorch-triton>=0.0; sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types
+    "pytorch-triton>=3.5.1; sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types. 3.5.1 is the first release with cp314 wheels
     "pyyaml>=6.0.3",
     "scikit-learn>=1.9.0",
     "torch>=2.11.0", # https://github.com/advisories/GHSA-rrmf-rvhw-rf47 requires >=2.10.0. 2.10.0 has broken metadata https://github.com/astral-sh/uv/issues/17711
