@@ -36,7 +36,7 @@ processor:
   ddim_steps: 50
   eta: 0.0
   beta_schedule: cosine
-  start_out_channels: 64
+  start_out_channels: 48
   time_embed_dim: 256
   dropout_rate: 0.05
   use_autoregressive: true
@@ -47,6 +47,10 @@ decoder:
   kernel_size: 5
   mask_type: active
   n_layers: 1
+  n_subblocks: 3
   norm_type: groupnorm
   restrict_range: sigmoid
   scale_factor: 3
+  zero_init_output: true
+  skip_connection:
+    method: additive
