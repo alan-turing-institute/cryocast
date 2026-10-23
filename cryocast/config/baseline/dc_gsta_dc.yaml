@@ -7,5 +7,5 @@ defaults:
 # Custom learning rate and weight decay
 train:
   optimizer:
-    lr: 4e-04
-    weight_decay: 1e-05
+    lr: 5e-05
+    weight_decay: 1e-04
