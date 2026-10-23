@@ -49,10 +49,10 @@ uv run cryocast <command> ++base_path=/local/path/to/my/data
 
 ## HPC systems
 
-For shared HPC systems (Baskerville, DAWN, Isambard-AI, or JASMIN), add the matching `platform` override, which sets the pre-downloaded data path and the right GPU accelerator:
+For shared HPC systems (Baskerville, Isambard-AI, or JASMIN), add the matching `platform` override, which sets the pre-downloaded data path and the right GPU accelerator:
 
 ```bash
-uv run cryocast <command> --config-name <your local config>.local platform=isambardai data=full_north  # or platform=baskerville, platform=dawn, or platform=jasmin
+uv run cryocast <command> --config-name <your local config>.local platform=isambardai data=full_north  # or platform=baskerville, or platform=jasmin
 ```
 
 ## Datasets
