@@ -1361,6 +1361,7 @@ dependencies = [
     { name = "argopy" },
     { name = "cdsapi" },
     { name = "earthkit-data" },
+    { name = "eccodeslib" },
     { name = "filelock" },
     { name = "haversine" },
     { name = "hydra-core" },
@@ -1426,6 +1427,7 @@ requires-dist = [
     { name = "argopy", specifier = ">=1.4.0" },
     { name = "cdsapi", specifier = ">=0.7.6" },
     { name = "earthkit-data", specifier = ">=0.20.0" },
+    { name = "eccodeslib", specifier = ">=2.47.3.21" },
     { name = "filelock", specifier = ">=3.32.2" },
     { name = "haversine", specifier = ">=2.9.0" },
     { name = "hydra-core", specifier = ">=1.3.3" },
@@ -2000,6 +2002,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/33/1fb02f5c7346a82e6dc075e199aa27d6bf7fd25c42f2416fe16f3ee91f13/eccodes-2.49.0-cp313-cp313-win_amd64.whl", hash = "sha256:63bc732fabb2ca63290bafcdcb8dd332e1814330b65ebacea9225b17db696662", size = 7603123, upload-time = "2026-09-30T21:44:15.369Z" },
     { url = "https://files.pythonhosted.org/packages/27/2d/e6513162116c673f669a7987ff72217d482ee63f405f20c61656e9078d95/eccodes-2.49.0-cp314-cp314-win_amd64.whl", hash = "sha256:c54c7cb75be1ba6e8b342a1149c3c1175d13eb8f51dd18893e6426348332e058", size = 7638094, upload-time = "2026-09-30T21:44:47.429Z" },
     { url = "https://files.pythonhosted.org/packages/23/ac/6a1ebac067ab142ab5fe9592d6633164e7a3842f55bc5580f993e4a12911/eccodes-2.49.0-py3-none-any.whl", hash = "sha256:b2a51d05fc97a0739cf38c18e181e7b99706961330a5f1df6e538a4365ab3d84", size = 91621, upload-time = "2026-09-30T21:45:05.98Z" },
+]
+
+[[package]]
+name = "eccodeslib"
+version = "2.47.3.21"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "eckitlib" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ea/f0/e632b43e69e48ba6d2ddf499d44008fb3482302b42f68fe94dd2fcabc2a5/eccodeslib-2.47.3.21-cp311-cp311-macosx_13_0_arm64.whl", hash = "sha256:f85c7adbdb69e7301a4c134664bc2fc4dec08d235c15135bb7ba910120cca13c", size = 9028159, upload-time = "2026-06-25T14:50:04.148Z" },
+    { url = "https://files.pythonhosted.org/packages/73/24/16239a49d1925705f4c4381412f893aa711b80ec45c892c8f9a09263713b/eccodeslib-2.47.3.21-cp311-cp311-macosx_13_0_x86_64.whl", hash = "sha256:e36af63f3c61576722e49ba440cf81edf5f86f38b0acc026db911925222a064d", size = 8838802, upload-time = "2026-06-25T14:39:05.932Z" },
+    { url = "https://files.pythonhosted.org/packages/60/21/72a3db13d74ea6307d84bdd239bfc5c8b63aa334b84286b1136566be9835/eccodeslib-2.47.3.21-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:e5eb64ed8ff3a70138fb39570132dbbe5c4254001cbe823694adca08cab9a7eb", size = 9112804, upload-time = "2026-06-25T14:35:04.817Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/6d/2d298f36465835ecd499015ce01d2917aaa4e55f56cf92545e45a6fc2d7d/eccodeslib-2.47.3.21-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:552a5903e2ec5c7bea8a730c1875633821322a333352f2b3b782041e648cbde9", size = 9012384, upload-time = "2026-06-25T14:35:14.095Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/63/815e2b04527beb484a1fa9a6e2078f0ebf91be170f30518c008097b8e22f/eccodeslib-2.47.3.21-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:6402dd5e0ca46999b362d570df0dd53d2ca82421b8be8239dea9ccc5d37a9783", size = 9028141, upload-time = "2026-06-25T15:07:51.154Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/8b/ff69d262638253368779b56175c0bad7d75c8fe4892f91f84610847ab705/eccodeslib-2.47.3.21-cp312-cp312-macosx_13_0_x86_64.whl", hash = "sha256:9c5b04f70bab30188ea51e40387d34cafb01af77035f768e0d0a49443e73b3ae", size = 8838806, upload-time = "2026-06-25T15:19:53.127Z" },
+    { url = "https://files.pythonhosted.org/packages/46/a3/73ad3e28852d865012c1f27aa0ea83d07bf6fdfb8ea755b3b44d462413d5/eccodeslib-2.47.3.21-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:2404c0ab63b52b56ba7b9293e227784c2f70ae378d29d925391d10512175419f", size = 9112802, upload-time = "2026-06-25T14:36:03.94Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/55/d1daa7be3f51e766d63a63d187f02313a785b7d407f09ae70eb8634e91ac/eccodeslib-2.47.3.21-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:a695c897882a63609a5ec655bf526f5acd633969bfde85b4d1ccf347069afad5", size = 9012383, upload-time = "2026-06-25T14:35:40.158Z" },
+    { url = "https://files.pythonhosted.org/packages/17/48/482d1f7b89b59a16cd2a92dc9f7de0bd018b96de02c992d47ff03b45cc65/eccodeslib-2.47.3.21-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:0b7801f2a34ae49a125941509b3645a31e489a25fc34324f0dfc8d5eca99d1be", size = 9028142, upload-time = "2026-06-25T15:03:51.961Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/1f/24f1e1551e2f9a853c9ee68996132e609278501b2a87d4296c8c00c4c829/eccodeslib-2.47.3.21-cp313-cp313-macosx_13_0_x86_64.whl", hash = "sha256:c4bdea8eda9b2194d0b1f797b54c0b42e9b0833c940c0677fcbf7965855add59", size = 8838818, upload-time = "2026-06-25T14:40:05.602Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/4a/37aad5c0da3b15c456d2ad5b3d0ef3cdb58ab6eb94150bbd86549fea2af0/eccodeslib-2.47.3.21-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:f8e5615cc7b6dcd74e42ee7df63765bd122662fac972c21cc011db094fd33617", size = 9112803, upload-time = "2026-06-25T14:33:01.943Z" },
+    { url = "https://files.pythonhosted.org/packages/14/83/a961cbd2750e5481f642b71260581111f07c19a4c79748740a77482a01fd/eccodeslib-2.47.3.21-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:d797d87640971c243b351de0a2f87c4af9d94a2a6160af1b48bb2ee66d781b7f", size = 9012387, upload-time = "2026-06-25T14:35:30.127Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/c8/c01eb1ea558099fc34412740a1a856cf74f08cdb86c999c102652f3e0cb0/eccodeslib-2.47.3.21-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:12b1ada1078a40a28b12e4c0b906eee4599f640e205e5172a6ac80243d2cd4c7", size = 9028130, upload-time = "2026-06-25T14:35:15.853Z" },
+    { url = "https://files.pythonhosted.org/packages/47/8e/50442c597f7fe2bbd7617486d46b8b16cab66c664434dca2392ebf8b7f08/eccodeslib-2.47.3.21-cp314-cp314-macosx_13_0_x86_64.whl", hash = "sha256:7fb9fee37cddbc7288505fc717c620149f9960802099efe1b1ba866825cd16cc", size = 8838822, upload-time = "2026-06-25T14:59:09.769Z" },
+    { url = "https://files.pythonhosted.org/packages/db/b1/439d03430637f2e807fe6f24f70532a0af41da78e5355e58bf8efd20dbaa/eccodeslib-2.47.3.21-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:e7a46a2ee488fcfa34e4b4b2df963029606d1d2f2b2be17b8accc2df6a6423ed", size = 9112804, upload-time = "2026-06-25T14:34:45.168Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/f2/3d3df398358741e05e42d4eaed9155ee05672868cd6e85ad3cfb92280a67/eccodeslib-2.47.3.21-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:29b828fffaf5eef6a8b7e09fc956cc164293e7438a20fae66c4710f06e6d4518", size = 9012386, upload-time = "2026-06-25T14:35:15.443Z" },
 ]
 
 [[package]]
