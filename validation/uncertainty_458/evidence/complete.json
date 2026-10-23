@@ -1,0 +1,8 @@
+{
+  "runs": 10,
+  "selections_per_run": 2,
+  "cases": 900,
+  "forecasts_sha256": "c78c522798d1da5325115ce694ff090bdb6cfdca16ae8532d72d0fd5218b8b79",
+  "per_case_sha256": "23fa333d4bd310d2ca22dd564ee32f4586a3d08f59d0252a5d9a2b10463f465c",
+  "protocol_sha256": "40ca21139d6dab1fe429982aa1a0bd97face049513000ee44bd61f61f7ada697"
+}

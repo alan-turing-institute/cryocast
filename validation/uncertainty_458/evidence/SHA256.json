@@ -1,0 +1,11 @@
+{
+  "protocol.json": "40ca21139d6dab1fe429982aa1a0bd97face049513000ee44bd61f61f7ada697",
+  "dates.json": "500fd0037c9ee29948670bf142521547ef6a24c3b915d57bbf6a276a59eaf2d7",
+  "raw-source-manifest.json": "b4fa3daaf059af88ba7846c59059e7d9cb1b6d637fae6bc77f10f1d0aff4f6b6",
+  "training-support.json": "75ab79956b5793b084a34640c107c42204555e073955f8a335f9b088cef720e4",
+  "frozen_checkpoints.json": "205c20b4860a615a2bad7598e9f09f71fb6547d3e5142728e383e626f8ece41c",
+  "complete.json": "ca903b8808e461045803965bfb7db6513d43905db97846c3970169bb8a8a9d36",
+  "per_case.csv": "23fa333d4bd310d2ca22dd564ee32f4586a3d08f59d0252a5d9a2b10463f465c",
+  "audit.json": "997ce1d93f1517cc25afad2e75f08779aec908cb51d7836d7bf7f212bef7dbbe",
+  "metrics.csv": "5c9fe8be96cbd8a21e13b17e273207e8f5e5e05597e5e8906d27d57819fa58de"
+}
