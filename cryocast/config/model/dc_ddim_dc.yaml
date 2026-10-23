@@ -1,0 +1,66 @@
+_target_: cryocast.models.EncodeProcessDecode
+
+name: dc-ddim-dc
+
+encoders:
+  latent_space: [144, 144]
+  era5:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    attention_heads: {1: 6}
+    hid_channels: [96, 192]
+    hid_blocks: [3, 3]
+    latent_channels: 96
+    pixel_shuffle: true
+    stride: 3
+  float-argo:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [16, 32]
+    hid_blocks: [1, 1]
+    latent_channels: 8
+    pixel_shuffle: true
+    stride: 3
+  sic-icenet:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [16, 32]
+    hid_blocks: [1, 1]
+    latent_channels: 2
+    pixel_shuffle: true
+    stride: 3
+  sic-osisaf:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 4
+    pixel_shuffle: true
+    stride: 3
+  sic-ssmis:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 16
+    pixel_shuffle: true
+    stride: 3
+
+processor:
+  _target_: cryocast.models.processors.DiffusionProcessor
+  timesteps: 1000
+  ddim_steps: 100  # sampler comparison in #641: best balance of results and sampling cost
+  eta: 1.0
+  beta_schedule: cosine
+  start_out_channels: 64
+  time_embed_dim: 256
+  dropout_rate: 0.05
+  use_autoregressive: true
+  loss: ${loss}
+
+decoder:
+  _target_: cryocast.models.decoders.DeepCompressionDecoder
+  attention_heads: {1: 4}
+  hid_channels: [64, 128]
+  hid_blocks: [2, 2]
+  mask_type: active
+  pixel_shuffle: true
+  restrict_range: sigmoid
+  stride: 3
+  skip_connection:
+    method: additive
