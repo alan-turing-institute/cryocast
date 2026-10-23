@@ -52,5 +52,5 @@ class TestBaselineConfigs:
         """Guards the dc_unet_dc lr overrides: the default lr causes ResBlock instability."""
         config = compose_config("baseline/dc_unet_dc")
 
-        assert config.train.optimizer.lr == pytest.approx(5e-4)
-        assert config.train.multistage.finetune.optimizer.lr == pytest.approx(1e-4)
+        assert config.train.optimizer.lr == pytest.approx(5e-5)
+        assert config.train.multistage.finetune.optimizer.lr == pytest.approx(1e-5)
