@@ -47,8 +47,7 @@ dependencies = [
     "pytorch-triton==3.5.1; sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types.
     "pyyaml==6.0.3",
     "scikit-learn==1.9.1",
-    "torch==2.11.0; sys_platform == 'linux' and (platform_machine == 'x86_64' or (platform_machine == 'aarch64' and 'nvidia' not in platform_release))", # Baskerville and IsambardAI use the cu128 index, which has no builds after 2.11.0
-    "torch==2.14.1; sys_platform != 'linux' or (platform_machine != 'x86_64' and (platform_machine != 'aarch64' or 'nvidia' in platform_release))",
+    "torch==2.14.1",
     "torchmetrics==1.9.0",
     "tqdm==4.70.1",
     "typer==0.27.3",
@@ -175,11 +174,6 @@ constraint-dependencies = [
 module-root = ""
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
@@ -192,26 +186,26 @@ explicit = true
 [tool.uv.sources]
 pytorch-triton = [
     # Baskerville
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
     # DGX Spark
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
     # IsambardAI
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
 ]
 pytorch-triton-xpu = { index = "pytorch-xpu" }
 torch = [
     # Baskerville
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
     # DGX Spark
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
     # IsambardAI
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
 ]
 triton = [
     # Baskerville
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
     # DGX Spark
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
     # IsambardAI
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
 ]
