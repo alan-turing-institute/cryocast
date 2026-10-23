@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for cryocast/ingestion/sources/argo.py: 87%</title>
+    <title>Coverage for cryocast/ingestion/sources/argo.py: 92%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_15cffcd0.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>cryocast<span class="sep">/</span>ingestion<span class="sep">/</span>sources<span class="sep">/</span>argo.py</b>:
-            <span class="pc_cov">87%</span>
+            <span class="pc_cov">92%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">89 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">77<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">12<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">82<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">7<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -184,8 +184,8 @@
     <p class="run"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">                <span class="nam">df</span> <span class="op">=</span> <span class="nam">_fetch_argo_dataframe_with_retry</span><span class="op">(</span><span class="nam">region</span><span class="op">,</span> <span class="nam">time_window</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">            <span class="key">except</span> <span class="nam">LookupError</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">                <span class="key">if</span> <span class="nam">self</span><span class="op">.</span><span class="nam">ignore_missing_dates</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">                    <span class="nam">ArgoSource</span><span class="op">.</span><span class="nam">missing_dates</span><span class="op">.</span><span class="nam">add</span><span class="op">(</span><span class="nam">date</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">                    <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">                    <span class="nam">ArgoSource</span><span class="op">.</span><span class="nam">missing_dates</span><span class="op">.</span><span class="nam">add</span><span class="op">(</span><span class="nam">date</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">                    <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">                <span class="key">raise</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">            <span class="com"># Get positions of observations</span>&nbsp;</span><span class="r"></span></p>
@@ -216,12 +216,12 @@
     <p class="run run2"><span class="n"><a id="t134" href="#t134">134</a></span><span class="t">                <span class="op">)</span><span class="op">.</span><span class="nam">reshape</span><span class="op">(</span><span class="op">*</span><span class="nam">grid_shape</span><span class="op">)</span>  <span class="com"># shape: (n_lat, n_lon)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t135" href="#t135">135</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t136" href="#t136">136</a></span><span class="t">        <span class="key">if</span> <span class="nam">self</span><span class="op">.</span><span class="nam">ignore_missing_dates</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t137" href="#t137">137</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t138" href="#t138">138</a></span><span class="t">                <span class="str">&quot;Identified %d missing dates:&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t139" href="#t139">139</a></span><span class="t">                <span class="nam">len</span><span class="op">(</span><span class="nam">ArgoSource</span><span class="op">.</span><span class="nam">missing_dates</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">            <span class="key">for</span> <span class="nam">missing_date</span> <span class="key">in</span> <span class="nam">sorted</span><span class="op">(</span><span class="nam">ArgoSource</span><span class="op">.</span><span class="nam">missing_dates</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">                <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="nam">missing_date</span><span class="op">.</span><span class="nam">isoformat</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t137" href="#t137">137</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t138" href="#t138">138</a></span><span class="t">                <span class="str">&quot;Identified %d missing dates:&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t139" href="#t139">139</a></span><span class="t">                <span class="nam">len</span><span class="op">(</span><span class="nam">ArgoSource</span><span class="op">.</span><span class="nam">missing_dates</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">            <span class="key">for</span> <span class="nam">missing_date</span> <span class="key">in</span> <span class="nam">sorted</span><span class="op">(</span><span class="nam">ArgoSource</span><span class="op">.</span><span class="nam">missing_dates</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">                <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="nam">missing_date</span><span class="op">.</span><span class="nam">isoformat</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t">        <span class="com"># Construct an xarray dataset</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t">        <span class="nam">ds_out</span> <span class="op">=</span> <span class="nam">xr</span><span class="op">.</span><span class="nam">Dataset</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -296,10 +296,10 @@
     <p class="run"><span class="n"><a id="t214" href="#t214">214</a></span><span class="t">    <span class="key">for</span> <span class="nam">attempt</span> <span class="key">in</span> <span class="nam">range</span><span class="op">(</span><span class="num">1</span><span class="op">,</span> <span class="nam">max_attempts</span> <span class="op">+</span> <span class="num">1</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t215" href="#t215">215</a></span><span class="t">        <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t216" href="#t216">216</a></span><span class="t">            <span class="key">return</span> <span class="nam">argopy</span><span class="op">.</span><span class="nam">DataFetcher</span><span class="op">(</span><span class="op">)</span><span class="op">.</span><span class="nam">region</span><span class="op">(</span><span class="nam">region</span> <span class="op">+</span> <span class="nam">time_window</span><span class="op">)</span><span class="op">.</span><span class="nam">to_dataframe</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t217" href="#t217">217</a></span><span class="t">        <span class="key">except</span> <span class="op">(</span><span class="nam">FileNotFoundError</span><span class="op">,</span> <span class="nam">TimeoutError</span><span class="op">)</span> <span class="key">as</span> <span class="nam">exc</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t218" href="#t218">218</a></span><span class="t">            <span class="com"># Annoyingly, both 50x errors and 404 errors raise a FileNotFoundError and</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t219" href="#t219">219</a></span><span class="t">            <span class="com"># the error message does not contain the HTTP status code so we need to</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t">            <span class="com"># retry both cases.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t217" href="#t217">217</a></span><span class="t">        <span class="key">except</span> <span class="nam">OSError</span> <span class="key">as</span> <span class="nam">exc</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t218" href="#t218">218</a></span><span class="t">            <span class="com"># Annoyingly, we cannot distinguish between a 50x error and a 404 error, as</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t219" href="#t219">219</a></span><span class="t">            <span class="com"># both cases raise an OSError with a message that does not contain the HTTP</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t">            <span class="com"># status code. Therefore, we need to retry both cases.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t">                <span class="str">&quot;Downloading %s attempt %d/%d failed.&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">                <span class="nam">data_target</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>

@@ -60,7 +60,7 @@
 | cryocast/ingestion/preprocessors/composite.py                      |        9 |        0 |    100% |           |
 | cryocast/ingestion/preprocessors/ipreprocessor.py                  |        8 |        0 |    100% |           |
 | cryocast/ingestion/sources/\_\_init\_\_.py                         |       24 |        0 |    100% |           |
-| cryocast/ingestion/sources/argo.py                                 |       89 |       12 |     87% |60-61, 105-106, 137-142, 234-240 |
+| cryocast/ingestion/sources/argo.py                                 |       89 |        7 |     92% |60-61, 234-240 |
 | cryocast/ingestion/sources/ftp.py                                  |       43 |        0 |    100% |           |
 | cryocast/ingestion/sources/lazy\_argopy.py                         |       13 |        2 |     85% |     29-30 |
 | cryocast/ingestion/sources/synthetic.py                            |       27 |       10 |     63% |33-42, 50-88 |
@@ -174,7 +174,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      115 |        1 |     99% |       183 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6699** |  **358** | **95%** |           |
+| **TOTAL**                                                          | **6699** |  **353** | **95%** |           |
 
 
 ## Setup coverage badge
