@@ -301,22 +301,37 @@ class TestRegridForecastRun:
         target_grid: tuple[xr.DataArray, xr.DataArray],
     ) -> None:
         """A variable without CF attributes is not labelled or clipped as sea ice."""
-        predictions["sst"] = (predictions["ice_conc"] + 270.0).assign_attrs(
-            long_name="predicted sea surface temperature", units="K"
+        ice_conc = predictions["ice_conc"]
+        predictions["sst"] = (
+            ice_conc.dims,
+            ice_conc.to_numpy() + 270.0,
+            {"long_name": "predicted sea surface temperature", "units": "K"},
         )
+        latitudes, longitudes = target_grid
         output = regrid_forecast_run(
             predictions,
-            *target_grid,
+            latitudes,
+            longitudes,
             "2024-01-14",
             variable="sst",
             output_variable="tos",
         )
-
+        # Assert metadata is preserved
         assert output["tos"].attrs == {
             "long_name": "predicted sea surface temperature",
             "units": "K",
         }
-        assert (output["tos"] > 270.0).all()
+        # Assert values are preserved
+        lon2d, lat2d = np.meshgrid(longitudes.to_numpy(), latitudes.to_numpy())
+        to_ease = Transformer.from_crs("EPSG:4326", "EPSG:6931", always_xy=True)
+        x_tgt, _ = to_ease.transform(lon2d, lat2d)
+        run = 1  # run issued at 2024-01-13T12
+        for lead in range(2):
+            np.testing.assert_allclose(
+                output["tos"].isel(time=lead),
+                linear_in_x(x_tgt, X_POINTS, lead, run) + 270.0,
+                atol=1e-4,
+            )
 
     def test_values_are_clipped_to_valid_range(
         self,
