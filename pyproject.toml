@@ -75,9 +75,11 @@ docs = [
 notebooks = [
     "cartopy>=0.26.0",
     "cmocean>=4.0.3",
-    "h5py>=3.16.0",
+    "dask>=2023.6.1",
+    "ipython>=7.6.0",
     "jupyter>=1.1.1",
     "s2sphere>=0.2.5",
+    "scipy>=1.16.1",
 ]
 
 [project.scripts]
