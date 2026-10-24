@@ -1,0 +1,13 @@
+defaults:
+  - base
+  - override /data: downscaling_north
+  - override /model: downscaler
+  - override /loss: mse
+  - override /variables: downscaling_north
+  - override /window: forecast-1-history-1
+  - override /reporting/metrics: downscaling
+  - _self_
+
+# Pair low- and high-resolution fields at the same valid time.
+window:
+  target_offset_steps: 0

@@ -20,6 +20,28 @@ To create the synthetic dataset, use:
 uv run cryocast datasets create --config-name synthetic
 ```
 
+To create the CARRA2 target for the initial Svalbard downscaling region
+(76-81°N, 15-35°E), use:
+
+```bash
+uv run cryocast datasets create data=downscaling_north
+```
+
+The stored target is the smallest rectangular window on the native CARRA2 2.5 km
+grid that covers this latitude/longitude box. The same configuration also loads the
+paired OSI SAF 25 km sea-ice concentration needed to train the downscaler.
+
+Train the downscaler with:
+
+```bash
+uv run cryocast train --config-name downscaling_north
+```
+
+The model starts from a coordinate-aligned bilinear interpolation baseline and learns a
+high-resolution residual against CARRA2. A trained `Downscaler` can also be attached to
+an existing forecast `ModelService` with `build_downscaling_pipeline()` so each
+low-resolution forecast lead time is downscaled onto the CARRA2 ROI grid.
+
 ## `datasets inspect`
 
 ```bash
@@ -193,3 +215,19 @@ forest's built-in feature importance. This is an exploratory signal for which in
 data supports, not a model-quality metric. The target group's own variables are included
 as features and typically dominate the top of the ranking, since the target's previous
 step is usually its best predictor.
+
+
+### Downscaling alignment checks
+
+Spatial downscaling pairs source and target fields at the same valid time.
+`Downscaler.forward` uses the last `n_forecast_steps` source frames, so a model
+service requires `target_offset_steps = n_history_steps - n_forecast_steps`.
+The supplied one-step configuration uses zero. Forecast-style offsets are rejected
+when constructing or restoring a downscaler instead of silently training on different
+days. A `DownscalingPipeline` can still apply the trained spatial mapping independently
+to every lead of a separate low-resolution forecast.
+
+The geographic mapping rejects nonfinite source or target coordinates. CARRA2
+cropping checks the coordinate arrays of every field, not just their tensor shapes.
+Known target masks are retained, and a nonfinite prediction at a valid target cell
+is an error rather than a reason to remove that cell from scoring.
