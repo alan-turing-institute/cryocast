@@ -7,21 +7,11 @@ from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
 
 
 class TestGaussianDiffusion:
-    def test_q_sample_t0_returns_clean_input(self) -> None:
-        diffusion = GaussianDiffusion(timesteps=4)
-        clean = torch.randn(2, 1, 4, 4)
-        noise = torch.randn_like(clean)
-        timesteps = torch.zeros(2, dtype=torch.long)
-
-        sampled = diffusion.q_sample(clean, timesteps, noise)
-
-        assert torch.equal(sampled, clean)
-
     def test_q_sample_and_calculate_v_match_definitions(self) -> None:
         diffusion = GaussianDiffusion(timesteps=4)
         clean = torch.randn(2, 1, 4, 4)
         noise = torch.randn_like(clean)
-        timesteps = torch.tensor([1, 3])
+        timesteps = torch.tensor([0, 3])
         sqrt_alpha = diffusion.sqrt_alphas_cumprod[timesteps].view(2, 1, 1, 1)
         sqrt_one_minus_alpha = diffusion.sqrt_one_minus_alphas_cumprod[timesteps].view(
             2, 1, 1, 1
@@ -36,6 +26,22 @@ class TestGaussianDiffusion:
         assert torch.allclose(
             velocity, sqrt_alpha * noise - sqrt_one_minus_alpha * clean
         )
+
+    def test_q_sample_and_v_round_trip_includes_t0(self) -> None:
+        diffusion = GaussianDiffusion(timesteps=4)
+        clean = torch.randn(2, 1, 4, 4)
+        noise = torch.randn_like(clean)
+        timesteps = torch.tensor([0, 3])
+        sqrt_alpha = diffusion.sqrt_alphas_cumprod[timesteps].view(2, 1, 1, 1)
+        sqrt_one_minus_alpha = diffusion.sqrt_one_minus_alphas_cumprod[timesteps].view(
+            2, 1, 1, 1
+        )
+
+        sampled = diffusion.q_sample(clean, timesteps, noise)
+        velocity = diffusion.calculate_v(clean, noise, timesteps)
+        reconstructed = sqrt_alpha * sampled - sqrt_one_minus_alpha * velocity
+
+        torch.testing.assert_close(reconstructed, clean)
 
     def test_p_sample_t0_uses_posterior_mean_without_noise(self) -> None:
         diffusion = GaussianDiffusion(timesteps=4)
