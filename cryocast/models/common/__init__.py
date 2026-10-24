@@ -6,6 +6,7 @@ from .conv_lstm_cell import ConvLSTMCell
 from .conv_norm_act_upsample import ConvNormActUpsample
 from .freezable import Freezable
 from .gated_attention import GatedAttentionBlock
+from .geographic_interpolation import GeographicInterpolation
 from .lite_mla import LiteMLA
 from .mask import Mask
 from .normalised_fold import NormalisedFold
@@ -31,6 +32,7 @@ __all__ = [
     "ConvNormActUpsample",
     "Freezable",
     "GatedAttentionBlock",
+    "GeographicInterpolation",
     "LiteMLA",
     "Mask",
     "NormalisedFold",
