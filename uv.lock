@@ -9,7 +9,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.15' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version >= '3.15' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.14.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -17,7 +17,7 @@ resolution-markers = [
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.14.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.14.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -25,7 +25,7 @@ resolution-markers = [
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -33,7 +33,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.12.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -41,7 +41,7 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 
 [manifest]
@@ -1124,7 +1124,7 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "numpy" },
@@ -1216,7 +1216,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.15' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version >= '3.15' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.14.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -1224,7 +1224,7 @@ resolution-markers = [
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.14.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.14.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -1232,7 +1232,7 @@ resolution-markers = [
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -1240,7 +1240,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.12.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "numpy" },
@@ -1751,7 +1751,7 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "wrapt" },
@@ -1773,7 +1773,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.15' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version >= '3.15' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.14.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -1781,7 +1781,7 @@ resolution-markers = [
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.14.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.14.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -1789,7 +1789,7 @@ resolution-markers = [
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -1797,7 +1797,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.12.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "wrapt" },
@@ -3985,7 +3985,7 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509", size = 2517025, upload-time = "2025-12-08T17:02:39.908Z" }
 wheels = [
@@ -4004,7 +4004,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.15' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version >= '3.15' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.14.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -4012,7 +4012,7 @@ resolution-markers = [
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.14.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.14.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -4020,7 +4020,7 @@ resolution-markers = [
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -4028,7 +4028,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.12.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/dc/76/3af777226b63a5e64a6b36b1ec5855c14e2b94a37096d4760e595fc43511/networkx-3.7.tar.gz", hash = "sha256:fd77a511bd90f39f3d016351345b52cf5319b813bdca01de3f755d3cca62e96a", size = 1866482, upload-time = "2026-09-21T16:45:16.974Z" }
 wheels = [
@@ -4809,7 +4809,7 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "flexcache" },
@@ -4834,7 +4834,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.15' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version >= '3.15' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.14.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -4842,7 +4842,7 @@ resolution-markers = [
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.14.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.14.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -4850,7 +4850,7 @@ resolution-markers = [
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
@@ -4858,7 +4858,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and 'nvidia' not in platform_release and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.12.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "flexcache" },
@@ -6390,15 +6390,15 @@ version = "2.14.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.15' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version >= '3.15' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version >= '3.15' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version >= '3.15' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.14.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.14.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.14.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.14.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.13.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.13.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.13.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version == '3.12.*' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version == '3.12.*' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version == '3.12.*' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version < '3.12' and platform_machine != 'aarch64' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64' and platform_machine != 'aarch64' and platform_machine != 'x86_64') or (python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_machine == 'aarch64' and sys_platform == 'win32') or (python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'win32') or (python_full_version < '3.12' and sys_platform != 'linux' and sys_platform != 'win32')",
 ]
 dependencies = [
     { name = "cuda-bindings", marker = "python_full_version < '3.15' and sys_platform == 'linux'" },
@@ -6664,7 +6664,7 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "21.14.9"
+version = "21.14.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
@@ -6673,9 +6673,9 @@ dependencies = [
     { name = "platformdirs" },
     { name = "python-discovery" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/04/2f69ba1207ce59630ecea8ebfdaf5c8f9a14726f2408ccd145a18d1ef619/virtualenv-21.14.9.tar.gz", hash = "sha256:4d1bee354cd81c820da3bee56e38be3426490f8d1fc54e10ea5b2072ebad8ef8", size = 5500672, upload-time = "2026-10-17T16:09:42.345Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/aa/bff50daee0488e16d611258a9b6c5a1d0c9e128f8ca424e9f4e1c0444ef2/virtualenv-21.14.13.tar.gz", hash = "sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905", size = 5570301, upload-time = "2026-10-22T20:10:16.952Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/e5/9a3918219745e8bdd64fe0fd9a2d7ce4fffde9268fbc791634b7d4779de9/virtualenv-21.14.9-py3-none-any.whl", hash = "sha256:ac51744da66ae56ff814b087d65096c94de698ec520adc624b108b679655809b", size = 5494452, upload-time = "2026-10-17T16:09:40.584Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/a9/c10d8a44a29fb94a18b43fdf11f38caca53ae7c9406f11a72b1cb8f624f1/virtualenv-21.14.13-py3-none-any.whl", hash = "sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788", size = 5557094, upload-time = "2026-10-22T20:10:15.096Z" },
 ]
 
 [[package]]
