@@ -38,7 +38,7 @@ processor:
   _target_: cryocast.models.processors.UNetProcessor
   kernel_size: 5
   norm_type: groupnorm
-  start_out_channels: 256
+  start_out_channels: 128
 
 decoder:
   _target_: cryocast.models.decoders.DeepCompressionDecoder
