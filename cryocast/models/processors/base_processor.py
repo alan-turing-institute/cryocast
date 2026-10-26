@@ -1,5 +1,6 @@
 from collections import deque
 from collections.abc import Iterable
+from numbers import Integral
 
 from torch import cat, nn, stack
 
@@ -16,7 +17,7 @@ class BaseProcessor(nn.Module):
         TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         computes_loss_in_latent_space: bool = False,
@@ -24,16 +25,42 @@ class BaseProcessor(nn.Module):
         data_space_target: DataSpace | None = None,
         n_forecast_steps: int,
         n_history_steps: int,
+        target_latent_space: DataSpace | None = None,
         target_channel_offset: int | None = None,
     ) -> None:
-        """Initialise a BaseProcessor."""
+        """Initialise a processor with optional prediction-target metadata.
+
+        ``data_space_target`` describes latent supervision. Full-latent loss
+        processors keep it equal to ``data_space``. ``target_latent_space`` and
+        ``target_channel_offset`` independently locate the output dataset's
+        encoder channels for prediction-only processors that persist other inputs.
+        Neither field changes a diffusion loss, forecast width or checkpoint state.
+        """
         super().__init__()
         self.computes_loss_in_latent_space = computes_loss_in_latent_space
         self.data_space = data_space
         self.data_space_target = data_space_target or data_space
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
+        self.target_latent_space = target_latent_space
         self.target_channel_offset = target_channel_offset
+        if target_latent_space is not None:
+            if target_latent_space.shape != data_space.shape:
+                msg = "target_latent_space must share the combined latent grid shape."
+                raise ValueError(msg)
+            if (
+                isinstance(target_channel_offset, bool)
+                or not isinstance(target_channel_offset, Integral)
+                or int(target_channel_offset) < 0
+                or int(target_channel_offset) + target_latent_space.channels
+                > data_space.channels
+            ):
+                msg = (
+                    "target_channel_offset must locate target_latent_space inside "
+                    "the combined latent channels."
+                )
+                raise ValueError(msg)
+            self.target_channel_offset = int(target_channel_offset)
         # The latent spatial dimensions (H, W) for the inputs and target must match
         if self.data_space_target.shape != self.data_space.shape:
             msg = (
@@ -79,9 +106,7 @@ class BaseProcessor(nn.Module):
 
         Args:
             x: Encoded input TensorNTCHW with (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-            y: during training: Encoded target TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_target, latent_height, latent_width)
-                where n_latent_channels_target = self.data_space_target.channels (<= n_latent_channels_total);
-                otherwise: None
+            y: during training: Encoded forecast TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width); otherwise: None
 
         Returns:
             ProcessorOutput with:

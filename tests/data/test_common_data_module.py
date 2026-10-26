@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 from torch.utils.data import RandomSampler, SequentialSampler
 
 from cryocast.data.calendar_day_climatology import CalendarDayClimatology
+from cryocast.data.combined_dataset import forecast_input_key
 from cryocast.data.common_data_module import CommonDataModule
 from cryocast.data.single_dataset import SingleDataset
 from cryocast.utils import mask_dir
@@ -642,6 +643,29 @@ class TestDataLoaders:
         assert batch["group1"].shape[2] == 2  # NTCHW: [batch, time, channels, H, W]
         assert batch["target"].shape[2] == 1
 
+    def test_training_forecast_inputs_are_opt_in_and_training_only(
+        self, mock_dataset: Path
+    ) -> None:
+        cfg = _single_group_config(
+            mock_dataset,
+            input_variables=["ice_conc", "temperature"],
+            target_variables=["ice_conc"],
+        )
+        dm = CommonDataModule(cfg)
+        original = dm.training_dataset
+        assert not original.include_forecast_inputs
+
+        dm.set_training_forecast_inputs(enabled=True)
+        assert dm.training_dataset is not original
+        assert dm.training_dataset.include_forecast_inputs
+
+        train_batch = next(iter(dm.train_dataloader(shuffle=False)))
+        key = forecast_input_key("group1")
+        assert key in train_batch
+        assert train_batch[key].shape[1] == dm.n_forecast_steps
+        assert key not in next(iter(dm.val_dataloader()))
+        assert key not in next(iter(dm.test_dataloader()))
+
 
 class TestTargetMaskDir:
     """Mask directory resolution for the target group, including multi-dataset groups."""
@@ -875,3 +899,37 @@ class TestCommonDataModuleClimatology:
             batch = next(iter(loader))
         assert "climatology" not in batch
         assert "Cannot build climatology" in caplog.text
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_forecast_input_toggle_preserves_evaluation_batches(
+    mock_dataset: Path,
+    *,
+    enabled: bool,
+) -> None:
+    """Changing latent supervision invalidates training data, leaving evaluation alone."""
+    cfg = _single_group_config(
+        mock_dataset,
+        input_variables=["ice_conc", "temperature"],
+        target_variables=["ice_conc"],
+    )
+    dm = CommonDataModule(cfg)
+    dm.set_training_forecast_inputs(enabled=enabled)
+    before_train = dm.training_dataset
+    before_val = next(iter(dm.val_dataloader()))
+    before_test = next(iter(dm.test_dataloader()))
+    dm.set_training_forecast_inputs(enabled=enabled)
+    assert dm.training_dataset is before_train
+    dm.set_training_forecast_inputs(enabled=not enabled)
+    assert dm.training_dataset is not before_train
+    assert dm.training_dataset.include_forecast_inputs is not enabled
+    after_val = next(iter(dm.val_dataloader()))
+    after_test = next(iter(dm.test_dataloader()))
+    for before, after in ((before_val, after_val), (before_test, after_test)):
+        assert before.keys() == after.keys()
+        for name in before:
+            np.testing.assert_array_equal(before[name], after[name])
+    key = forecast_input_key("group1")
+    assert key not in next(iter(dm.val_dataloader()))
+    assert key not in next(iter(dm.test_dataloader()))
+    assert (key in next(iter(dm.train_dataloader(shuffle=False)))) is not enabled

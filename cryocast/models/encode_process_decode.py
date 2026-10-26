@@ -6,6 +6,7 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
+from cryocast.data.combined_dataset import forecast_input_key
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
 from cryocast.models.processors import BaseProcessor
@@ -105,40 +106,8 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg)
 
-        # Add an additional encoder that encodes the target dataset into latent space
-        # This will be used by any processors that need to compute latent space losses.
-        try:
-            self.target_encoder: BaseEncoder = (
-                hydra.utils.instantiate(
-                    encoders[self.output_space.name],
-                    data_space_in=DataSpace(
-                        name="target",
-                        channels=self.output_space.channels,
-                        shape=self.output_space.shape,
-                    ),
-                    latent_space=encoders["latent_space"],
-                    latitudes_fn=self.latitudes_fn,
-                    longitudes_fn=self.longitudes_fn,
-                )
-                if isinstance(encoders, Mapping)
-                else encoders.pop(
-                    next(
-                        idx
-                        for idx, encoder in enumerate(encoders)
-                        if encoder.name == "target"
-                    )
-                )
-            )
-        except KeyError as exc:
-            msg = (
-                f"Error instantiating target encoder: {exc}. Please ensure that an "
-                f"encoder is specified for '{self.output_space.name}', even if it is "
-                f"not one of the input spaces: {self.input_spaces}."
-            )
-            raise ValueError(msg) from exc
-
         # Verify the output channels for each encoder
-        for encoder in (*self.encoders, self.target_encoder):
+        for encoder in self.encoders:
             encoder.verify_output_channels(self.device)
 
         # Add a processor
@@ -147,21 +116,18 @@ class EncodeProcessDecode(BaseModel):
             channels=sum(encoder.data_space_out.channels for encoder in self.encoders),
             shape=latent_shapes.pop(),
         )
-        target_input_encoder = self.target_input_encoder
+        target_latent_space, target_channel_offset = self._prediction_target_metadata()
         self.processor: BaseProcessor = (
             processor
             if isinstance(processor, BaseProcessor)
             else hydra.utils.instantiate(
                 processor,
                 data_space=combined_latent_space,
-                data_space_target=(
-                    self.target_encoder
-                    if target_input_encoder is None
-                    else target_input_encoder
-                ).data_space_out,
+                data_space_target=combined_latent_space,
+                target_latent_space=target_latent_space,
+                target_channel_offset=target_channel_offset,
                 n_forecast_steps=self.n_forecast_steps,
                 n_history_steps=self.n_history_steps,
-                target_channel_offset=self._find_target_channel_offset(),
             )
         )
 
@@ -197,17 +163,55 @@ class EncodeProcessDecode(BaseModel):
         # Freeze unused modules
         self._freeze_unused_modules()
 
+    @override
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Record the latent-target contract independently of tensor shapes."""
+        super().on_save_checkpoint(checkpoint)
+        if self.processor.computes_loss_in_latent_space:
+            checkpoint["latent_target_layout"] = "full_combined_v1"
+
+    @override
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Reject incompatible latent targets; retain ordinary-model checkpoints."""
+        if self.processor.computes_loss_in_latent_space:
+            if checkpoint.get("latent_target_layout") != "full_combined_v1":
+                msg = (
+                    "A full combined-latent model requires a checkpoint marked "
+                    "latent_target_layout='full_combined_v1'. Unversioned or "
+                    "target-slice diffusion checkpoints are not interchangeable, "
+                    "even when their tensor shapes match. Use the checkpoint's "
+                    "original code for evaluation, or retrain the processor and "
+                    "finetuning stages with full-latent targets."
+                )
+                raise ValueError(msg)
+        elif "state_dict" in checkpoint:
+            # The removed target encoder was frozen and unused by non-latent
+            # processors. Drop only that namespace, in memory, keeping strict
+            # loading for all parameters that actually participate in forecasting.
+            checkpoint["state_dict"] = {
+                key: value
+                for key, value in checkpoint["state_dict"].items()
+                if not key.startswith("target_encoder.")
+            }
+        super().on_load_checkpoint(checkpoint)
+
     @property
     def multistage_only(self) -> bool:
         return self.processor.computes_loss_in_latent_space
 
-    @property
-    def target_input_encoder(self) -> BaseEncoder | None:
-        """Return the input encoder whose dataset contains the forecast target."""
-        for encoder, input_space in zip(self.encoders, self.input_spaces, strict=True):
-            if input_space.name == self.output_space.name:
-                return encoder
-        return None
+    def _prediction_target_metadata(self) -> tuple[DataSpace | None, int | None]:
+        """Locate the output dataset's encoder without changing latent supervision.
+
+        Encoder widths and registration order define this slice, not physical
+        ``target_variable_indices``. A separate output dataset has no input slice.
+        No additional encoder or trainable parameter is created.
+        """
+        offset = 0
+        for encoder in self.encoders:
+            if encoder.name == self.output_space.name:
+                return encoder.data_space_out, offset
+            offset += encoder.data_space_out.channels
+        return None, None
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all input datasets and concatenate along the channel dimension.
@@ -225,33 +229,35 @@ class EncodeProcessDecode(BaseModel):
         ]
         return torch.cat(latent_inputs, dim=2)
 
-    def _encode_target_latent(
-        self, inputs: dict[str, TensorNTCHW], target: TensorNTCHW
-    ) -> TensorNTCHW:
-        """Encode a forecast target in the decoder-compatible latent space."""
-        if tuple(target.shape[2:]) != self.output_space.chw:
+    def _encode_forecast_inputs(self, batch: dict[str, TensorNTCHW]) -> TensorNTCHW:
+        """Encode the complete forecast window with the same encoders as history."""
+        try:
+            forecast_inputs = {
+                encoder.name: batch[forecast_input_key(encoder.name)]
+                for encoder in self.encoders
+            }
+        except KeyError as exc:
             msg = (
-                f"Target CHW {tuple(target.shape[2:])} does not match output space "
-                f"(C, H, W)={self.output_space.chw}."
+                "Latent-loss training requires forecast input windows for every input "
+                "dataset. Build the training dataset with include_forecast_inputs=True."
             )
-            raise ValueError(msg)
-
-        target_input_encoder = self.target_input_encoder
-        if target_input_encoder is None:
-            return self.target_encoder.rollout(target)
-
-        # The forecast target may contain only a subset of variables from the target
-        # dataset. We persist omitted variables from the last observed frame.
-        target_input = inputs[self.output_space.name]
-        full_target = (
-            target_input[:, -1:].expand(-1, target.shape[1], -1, -1, -1).clone()
-        )
-        full_target[:, :, self.target_variable_indices, :, :] = target
-
-        # Detach so that the latent loss cannot move its own target, e.g. by shrinking
-        # the target latent. During finetune the shared encoder still receives
-        # gradients through the conditioning path while the decoder is frozen.
-        return target_input_encoder.rollout(full_target).detach()
+            raise ValueError(msg) from exc
+        # Validate before BaseEncoder.rollout can reshape a malformed physical
+        # tensor into an apparently valid latent with different axis semantics.
+        batch_size = batch[self.encoders[0].name].shape[0]
+        for encoder in self.encoders:
+            future = forecast_inputs[encoder.name]
+            expected = (batch_size, self.n_forecast_steps, *encoder.data_space_in.chw)
+            if tuple(future.shape) != expected:
+                msg = (
+                    f"Forecast input '{encoder.name}' has shape {tuple(future.shape)}; "
+                    f"expected {expected}."
+                )
+                raise ValueError(msg)
+        # Clean supervision does not need an autograd graph. Keep each encoder's
+        # mode unchanged; history encoding remains differentiable during finetuning.
+        with torch.no_grad():
+            return self._encode_inputs(forecast_inputs)
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the last frame's target variables as the decoder skip-connection anchor.
@@ -267,14 +273,6 @@ class EncodeProcessDecode(BaseModel):
         if not self.decoder.skip_connection:
             return None
         return window[:, -1, self.target_variable_indices, :, :]
-
-    def _find_target_channel_offset(self) -> int | None:
-        """Find the channel offset of the target dataset within the combined latent space, if present."""
-        target_input_encoder = self.target_input_encoder
-        if target_input_encoder is None:
-            return None
-        idx = self.encoders.index(target_input_encoder)
-        return sum(encoder.data_space_out.channels for encoder in self.encoders[:idx])
 
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.
@@ -303,7 +301,11 @@ class EncodeProcessDecode(BaseModel):
         ).prediction
 
         # Use persistence as the skip-connection anchor, if required
-        persistence = self._extract_anchor(inputs[self.output_space.name])
+        persistence = (
+            self._extract_anchor(inputs[self.output_space.name])
+            if self.decoder.skip_connection
+            else None
+        )
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
         return self.decoder.rollout(
@@ -387,15 +389,9 @@ class EncodeProcessDecode(BaseModel):
 
     def _freeze_unused_modules(self) -> None:
         """Freeze unused modules."""
-        # Processors that compute loss in latent space do not touch the decoder, and
-        # only use the target_encoder if the target dataset is not also an input.
-        # Other processors never touch the target_encoder.
-        # We therefore explicitly freeze the unused modules.
-        latent_loss = self.processor.computes_loss_in_latent_space
-        if latent_loss:
+        # Processors that compute their own latent-space loss do not train the decoder.
+        if self.processor.computes_loss_in_latent_space:
             self.decoder.freeze()
-        if not latent_loss or self.target_input_encoder is not None:
-            self.target_encoder.freeze()
 
     def _validate_rollout_options(
         self, rollout_space: RolloutSpace | str
@@ -445,7 +441,8 @@ class EncodeProcessDecode(BaseModel):
         loss by comparing the decoded prediction to the target.
 
         Processors that set the flag `computes_loss_in_latent_space=True` are a special
-        case. We encode the inputs and target into latent space, call `rollout()` on the
+        case. We encode the input history and complete forecast input window into latent
+        space with the same encoders, then call `rollout()` on the
         processor, which returns both a latent prediction and a loss. We pass this
         prediction through a frozen decoder in order to calculate metrics, but we use
         the loss returned by the processor for backpropagation.
@@ -463,9 +460,9 @@ class EncodeProcessDecode(BaseModel):
 
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
-            # Encode inputs and target into decoder-compatible latent space.
+            # Encode history and the complete forecast input window with the same encoders.
             latent_input_combined = self._encode_inputs(batch)
-            target_latent = self._encode_target_latent(batch, target)
+            target_latent = self._encode_forecast_inputs(batch)
 
             # Process in latent space
             processor_output = self.processor.rollout(
@@ -483,7 +480,11 @@ class EncodeProcessDecode(BaseModel):
 
             # Decode under no_grad for metrics/callbacks only.
             # Use persistence as the skip-connection anchor, if required.
-            anchor = self._extract_anchor(batch[self.output_space.name])
+            anchor = (
+                self._extract_anchor(batch[self.output_space.name])
+                if self.decoder.skip_connection
+                else None
+            )
             with torch.no_grad():
                 prediction = self.decoder.rollout(
                     processor_output.prediction,
