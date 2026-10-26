@@ -10,12 +10,22 @@ from cryocast.models import DDPM
 
 class TestDDPM:
     @staticmethod
-    def _make_model(cfg_loss: DictConfig, *, use_autoregressive: bool = True) -> DDPM:
+    def _make_model(
+        cfg_loss: DictConfig,
+        *,
+        use_autoregressive: bool = True,
+        osisaf_channels: int = 1,
+        target_variable_indices: list[int] | None = None,
+    ) -> DDPM:
         return DDPM(
             name="ddpm",
             hemisphere="north",
             input_spaces=[
-                {"channels": 1, "name": "osisaf-north", "shape": (16, 16)},
+                {
+                    "channels": osisaf_channels,
+                    "name": "osisaf-north",
+                    "shape": (16, 16),
+                },
                 {"channels": 2, "name": "era5", "shape": (8, 8)},
             ],
             loss=cfg_loss,
@@ -31,6 +41,9 @@ class TestDDPM:
             scheduler={},
             lr_scheduler={},
             start_out_channels=4,
+            target_variable_indices=[0]
+            if target_variable_indices is None
+            else target_variable_indices,
             timesteps=4,
             use_autoregressive=use_autoregressive,
         )
@@ -48,6 +61,12 @@ class TestDDPM:
 
         with pytest.raises(NotImplementedError, match="training_step"):
             model(self._make_batch())
+
+    def test_rejects_mismatched_target_variable_indices(
+        self, cfg_loss: DictConfig
+    ) -> None:
+        with pytest.raises(ValueError, match="target_variable_indices selects 2"):
+            self._make_model(cfg_loss, target_variable_indices=[0, 1])
 
     def test_prepare_inputs_combines_conditioning_channels(
         self, cfg_loss: DictConfig
@@ -241,6 +260,49 @@ class TestDDPM:
         assert torch.all(conditioning_windows[0]["era5"][:, 1] == 20)
         assert torch.all(conditioning_windows[1]["era5"][:, 0] == 20)
         assert torch.all(conditioning_windows[1]["era5"][:, 1] == 30)
+
+    def test_autoregressive_sample_overwrites_only_target_channels(
+        self,
+        cfg_loss: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Rollout writes predictions into target_variable_indices, not channel 0."""
+        model = self._make_model(
+            cfg_loss, osisaf_channels=3, target_variable_indices=[2]
+        )
+        batch = self._make_batch(batch_size=1)
+        # Each history step has distinct, non-zero values per channel
+        batch["osisaf-north"] = (
+            torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+            .reshape(1, 2, 3, 1, 1)
+            .expand(1, 2, 3, 16, 16)
+        )
+        conditioning_windows: list[torch.Tensor] = []
+
+        def prepare_inputs(current_batch: dict[str, torch.Tensor]) -> torch.Tensor:
+            conditioning_windows.append(current_batch["osisaf-north"].clone())
+            return torch.zeros((1, model.cond_channels, 16, 16))
+
+        monkeypatch.setattr(model, "prepare_inputs", prepare_inputs)
+        monkeypatch.setattr(
+            model.model,
+            "forward",
+            lambda noisy, _timesteps, _conditioning: torch.zeros_like(noisy),
+        )
+        monkeypatch.setattr(
+            model.diffusion, "p_sample", lambda x, _t, _pred_v: torch.zeros_like(x)
+        )
+
+        model.sample(batch)
+
+        # The second window ends with the first predicted frame: the non-target
+        # channels are carried forward from the last observed frame and only
+        # channel 2 is replaced by the (all-zero) prediction
+        predicted_frame = conditioning_windows[1][:, -1]
+        assert len(conditioning_windows) == model.n_forecast_steps
+        assert torch.all(predicted_frame[:, 0] == 4)
+        assert torch.all(predicted_frame[:, 1] == 5)
+        assert torch.count_nonzero(predicted_frame[:, 2]) == 0
 
     @pytest.mark.parametrize("step_name", ["validation_step", "test_step"])
     def test_evaluation_step_shapes(
