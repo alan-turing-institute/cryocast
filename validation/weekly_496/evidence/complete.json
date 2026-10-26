@@ -1,0 +1,7 @@
+{
+  "runs": 6,
+  "cases_per_run": 30,
+  "forecast_sha256": "f4e290cbcabd938eb761ceb419459fd30e34585f8e3f1d7813cfe9d7f1a24aed",
+  "per_case_sha256": "bb25e16ea39c47834dd9a048edaa5934a41afc21591b362984bd76a6593b688c",
+  "protocol_sha256": "55ff5aa8cc1a97eb5f17a9594011fa8ee127430abe18e732c596adffe69b5a4f"
+}
