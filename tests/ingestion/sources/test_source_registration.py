@@ -15,6 +15,8 @@ from anemoi.datasets.create.sources import source_registry
 
 from cryocast.ingestion.sources import (
     ArgoSource,
+    CARRA2Source,
+    CDSSource,
     FTPSource,
     SyntheticSource,
     register_sources,
@@ -27,6 +29,8 @@ class TestSourceRegistration:
     EXPECTED_SOURCES: ClassVar[dict] = {
         "ftp": FTPSource,
         "argo": ArgoSource,
+        "cds": CDSSource,
+        "carra2": CARRA2Source,
         "synthetic": SyntheticSource,
     }
 
@@ -59,6 +63,31 @@ class TestSourceRegistration:
             "model_rebuild() may have failed silently."
         )
 
+    def test_recipe_accepts_registered_cds_source(self) -> None:
+        """The rebuilt recipe model accepts the CDS source configuration."""
+        register_sources()
+        recipe = Recipe(
+            dates=StartEndDates(
+                start=dt.datetime(2024, 1, 1, 12, 0, 0),
+                end=dt.datetime(2024, 1, 2, 12, 0, 0),
+                frequency=dt.timedelta(hours=24),
+            ),
+            input={
+                "cds": {
+                    "dataset": "reanalysis-pan-carra",
+                    "time_from_dates": True,
+                    "request": {
+                        "level_type": "single_levels",
+                        "variable": ["sea_ice_area_fraction"],
+                        "product_type": "analysis",
+                        "data_format": "grib",
+                        "area": [81.0, 15.0, 76.0, 35.0],
+                    },
+                }
+            },
+        )
+        assert type(recipe.input).__name__ == "cds"
+
     def test_recipe_accepts_registered_synthetic_source(self) -> None:
         """The rebuilt recipe model accepts the synthetic source configuration."""
         register_sources()
@@ -86,3 +115,19 @@ class TestSourceRegistration:
         register_sources()
         registered_after = set(source_registry.registered)
         assert registered_before == registered_after
+
+
+def test_carra2_and_cds_recipe_sources_coexist() -> None:
+    """Rebuilding the action schema must preserve both CARRA2 ingestion routes."""
+    register_sources()
+    dates = StartEndDates(
+        start=dt.datetime(2024, 1, 15, 12),
+        end=dt.datetime(2024, 1, 15, 12),
+        frequency=dt.timedelta(hours=24),
+    )
+    recipe = Recipe(
+        dates=dates, input={"carra2": {"variables": ["sea_ice_area_fraction"]}}
+    )
+    assert type(recipe.input).__name__ == "carra2"
+    assert source_registry.lookup("cds") is CDSSource
+    assert source_registry.lookup("carra2") is CARRA2Source
