@@ -21,10 +21,9 @@ class Climatology(BaseModel):
             kwargs: Additional arguments passed to the base model.
 
         """
-        super().__init__(**kwargs)
+        super().__init__(target_variable_indices=target_variable_indices, **kwargs)
         self.automatic_optimization = False
         self.model = nn.Identity()
-        self.variable_indices = target_variable_indices
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         """Climatology model does not need an optimizer."""

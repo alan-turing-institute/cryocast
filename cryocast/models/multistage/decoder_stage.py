@@ -33,7 +33,11 @@ class DecoderStage(BaseModel):
         **kwargs: Any,
     ) -> None:
         """Initialise a DecoderStage with multiple frozen encoders and a trainable decoder."""
-        super().__init__(mask_dir=mask_dir, **kwargs)
+        super().__init__(
+            mask_dir=mask_dir,
+            target_variable_indices=target_variable_indices,
+            **kwargs,
+        )
 
         # This stage trains on a single time step so lead-time weighting is a no-op
         if isinstance(self.loss_fn, LeadTimeWeightedLoss):
@@ -73,14 +77,6 @@ class DecoderStage(BaseModel):
 
         # Decode from combined latent space to the configured output space
         self.target_name = target_dataset_name
-        self.target_variable_indices = target_variable_indices
-        if self.output_space.channels != len(target_variable_indices):
-            msg = (
-                f"output_space has {self.output_space.channels} channel(s) but "
-                f"target_variable_indices selects {len(target_variable_indices)}; "
-                f"check that variables.target is set correctly."
-            )
-            raise ValueError(msg)
         self.decoder: BaseDecoder = hydra.utils.instantiate(
             decoder,
             data_space_in=combined_latent_space,
