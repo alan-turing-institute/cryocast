@@ -12,6 +12,7 @@ from anemoi.datasets.create.sources import source_registry
 from pydantic import Discriminator
 
 from .argo import ArgoSource
+from .carra2 import CARRA2Source
 from .ftp import FTPSource
 from .synthetic import SyntheticSource
 
@@ -29,6 +30,7 @@ def register_sources() -> None:
     sources = {
         "ftp": FTPSource,
         "argo": ArgoSource,
+        "carra2": CARRA2Source,
         "synthetic": SyntheticSource,
     }
     for name, source in sources.items():
@@ -56,6 +58,7 @@ def register_sources() -> None:
 
 __all__ = [
     "ArgoSource",
+    "CARRA2Source",
     "FTPSource",
     "SyntheticSource",
     "register_sources",
