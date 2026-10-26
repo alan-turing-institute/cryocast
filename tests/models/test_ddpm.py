@@ -41,7 +41,9 @@ class TestDDPM:
             scheduler={},
             lr_scheduler={},
             start_out_channels=4,
-            target_variable_indices=target_variable_indices or [0],
+            target_variable_indices=[0]
+            if target_variable_indices is None
+            else target_variable_indices,
             timesteps=4,
             use_autoregressive=use_autoregressive,
         )
