@@ -164,6 +164,7 @@ max-args = 6
 [tool.uv]
 constraint-dependencies = [
     "aiohttp>=3.14.4", # Fixes GitHub advisories: GHSA-f9xw-jh8m-3mwq, GHSA-6cjc-53gc-5rqm, GHSA-gx76-c99x-2c96, GHSA-9xw5-w5jj-pvcg, GHSA-pqxq-w44r-73xw, GHSA-494j-54xm-rwp3, GHSA-5wr8-gcqf-gqf3, GHSA-2g87-pp6c-29x5
+    "setuptools>=84.1.0", # Fixes GitHub advisory: GHSA-xmj3-9gf7-h52w
     "urllib3>=2.8.0", # Fixes GitHub advisories: GHSA-vxq7-64xx-v4gw, GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g
 ]
 
