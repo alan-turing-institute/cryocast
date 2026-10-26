@@ -6,18 +6,21 @@ updates:
   # - .github/workflows/
   - package-ecosystem: "github-actions"
     directory: "/"
+    labels: ["dependencies", "area: ci"]
     schedule:
       interval: "weekly"
   # Pre-commit hooks
   # - .pre-commit-config.yaml
   - package-ecosystem: "pre-commit"
     directory: "/"
+    labels: ["dependencies", "area: ci"]
     schedule:
       interval: "weekly"
   # Python packages
   # - pyproject.toml
   - package-ecosystem: uv
     directory: "/"
+    labels: ["dependencies"]
     cooldown:
       default-days: 7  # only consider packages that were released at least 7 days ago
     schedule:

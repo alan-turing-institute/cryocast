@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
+requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
 [project]
@@ -22,62 +22,64 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "anemoi-datasets>=0.5.39,!=0.5.40", # 0.5.40 crashes on any dataset with missing dates. This behaviour is tested in test_anemoi_datasets.py
-    "anemoi-transform>=0.4.1",
-    "anemoi-utils>=0.5.9",
-    "argopy>=1.4.0",
-    "cdsapi>=0.7.6",
-    "earthkit-data>=0.20.0",
-    "filelock>=3.32.2",
-    "haversine>=2.9.0",
-    "hydra-core>=1.3.3",
-    "imageio-ffmpeg>=0.6.0",
-    "jaxtyping>=0.3.11",
-    "lightning>=2.6.0,!=2.6.2,!=2.6.3", # 2.6.2 and 2.6.3 are compromised https://www.aikido.dev/blog/pytorch-lightning-pypi-compromise-mini-shai-hulud
-    "matplotlib>=3.11.1",
-    "netcdf4>=1.7.0",
-    "numpy>=2.4.6,<2.5", # jaxtyping NDArray[...] syntax raises TypeErrors under numpy>=2.5
-    "omegaconf>=2.3.1",
-    "optuna>=4.9.0",
-    "pandas>=2.3.3",
-    "pillow>=11.3.0",
-    "pydantic>=2.11.7",
-    "pyproj>=3.7.2",
-    "pytorch-triton-xpu>=0.0; sys_platform == 'linux' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'", # only needed for XPU-enabled machines, but we don't have a simple way to determine that
-    "pytorch-triton>=0.0; sys_platform == 'linux' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types
-    "pyyaml>=6.0.3",
-    "scikit-learn>=1.9.0",
-    "torch>=2.8.0,!=2.10.0", # uv will constantly reinstall torch 2.10.0 due to incorrect metadata https://github.com/astral-sh/uv/issues/17711
-    "torchmetrics>=1.9.0",
-    "tqdm>=4.68.0",
-    "typer>=0.27.1",
-    "typing-extensions>=4.16.0",
-    "wandb>=0.28.1",
-    "xarray>=2025.3.0",
-    "zarr>=2.18", # anemoi-datasets==0.5.37 still depends on zarr<=3
+    "anemoi-datasets==0.5.47",  # note that no version is compatible with Python 3.14
+    "anemoi-transform==0.5.1",
+    "anemoi-utils==0.5.14",
+    "argopy==1.5.0",
+    "cdsapi==0.7.7", # indirect: CDS client used by anemoi-datasets for ERA5 downloads
+    "earthkit-data==0.20.0",
+    "eccodeslib==2.47.3.21", # indirect: binary libeccodes needed for ERA5 GRIB downloads
+    "filelock==4.2.4",
+    "haversine==2.9.0",
+    "hydra-core==1.3.7",
+    "imageio-ffmpeg==0.6.0",
+    "jaxtyping==0.3.11",
+    "lightning==2.6.6",
+    "matplotlib==3.11.2",
+    "netcdf4==1.7.5",
+    "numpy==2.4.6", # jaxtyping NDArray[...] syntax raises TypeErrors under numpy>=2.5
+    "omegaconf==2.3.1",
+    "optuna==5.0.0",
+    "pandas==2.3.3",
+    "pillow==13.0.0",
+    "pydantic==2.14.1",
+    "pyproj==3.7.2",
+    "pytorch-triton==3.5.1; sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types.
+    "pyyaml==6.0.3",
+    "scikit-learn==1.9.1",
+    "torch==2.14.1",
+    "torchmetrics==1.9.0",
+    "tqdm==4.70.1",
+    "typer==0.27.3",
+    "typing-extensions==4.16.0",
+    "wandb==0.31.0",
+    "xarray==2026.9.0",
+    "zarr==2.18.7", # anemoi-datasets still depends on zarr<=3
 ]
 
 [dependency-groups]
 dev = [
-    "mypy>=1.17.0",
-    "pandas-stubs>=3.0.5.260730",
-    "pre-commit>=4.2.0",
-    "pytest>=8.4.1",
-    "pytest-cov>=7.1.0",
-    "pytest-xdist>=3.8.0",
-    "types-cachetools>=7.0.0.20260518",
-    "types-pyyaml>=6.0.12.20260518",
+    "mypy==2.4.0",
+    "pandas-stubs==3.0.5.260914",
+    "pre-commit==4.7.0",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-xdist==3.8.0",
+    "types-cachetools==7.0.0.20260713",
+    "types-pyyaml==6.0.12.20260906",
 ]
 docs = [
-    "mkdocstrings-python>=2.0.5",
-    "zensical>=0.0.53",
+    "mkdocstrings-python==2.0.10",
+    "zensical==0.0.71",
 ]
 notebooks = [
-    "cartopy>=0.26.0",
-    "cmocean>=4.0.3",
-    "h5py>=3.16.0",
-    "jupyter>=1.1.1",
-    "s2sphere>=0.2.5",
+    "cartopy==0.26.0",
+    "cmocean==4.0.3",
+    "dask==2026.8.0",
+    "ipython==9.17.1",
+    "jupyter==1.1.1",
+    "s2sphere==0.2.5",
+    "scipy==1.17.1",
 ]
 
 [project.scripts]
@@ -161,18 +163,12 @@ max-args = 6
 
 [tool.uv]
 constraint-dependencies = [
-    "eckitlib<=2.1.0.21", # required by anemoi-datasets
-    "erddapy!=3.3.0,!=3.3.1", # required by argopy. argopy<=1.4.0 requires erddapy.erddapy._quote_string_constraints which are removed in 3.3.0
-    "odclib<=1.6.3.21", # required by anemoi-datasets
+    "aiohttp>=3.14.4", # Fixes GitHub advisories: GHSA-f9xw-jh8m-3mwq, GHSA-6cjc-53gc-5rqm, GHSA-gx76-c99x-2c96, GHSA-9xw5-w5jj-pvcg, GHSA-pqxq-w44r-73xw, GHSA-494j-54xm-rwp3, GHSA-5wr8-gcqf-gqf3, GHSA-2g87-pp6c-29x5
+    "urllib3>=2.8.0", # Fixes GitHub advisories: GHSA-vxq7-64xx-v4gw, GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g
 ]
 
 [tool.uv.build-backend]
 module-root = ""
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
@@ -187,30 +183,26 @@ explicit = true
 [tool.uv.sources]
 pytorch-triton = [
     # Baskerville
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
     # DGX Spark
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
     # IsambardAI
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
 ]
 pytorch-triton-xpu = { index = "pytorch-xpu" }
 torch = [
     # Baskerville
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'" },
-    # DAWN
-    { index = "pytorch-xpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
     # DGX Spark
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
     # IsambardAI
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
 ]
 triton = [
     # Baskerville
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_version != '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'" },
-    # DAWN
-    { index = "pytorch-xpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_version == '#1 SMP PREEMPT_DYNAMIC Wed Dec 17 11:57:42 GMT 2025'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
     # DGX Spark
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
     # IsambardAI
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
 ]

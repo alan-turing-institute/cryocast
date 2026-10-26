@@ -27,13 +27,17 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.DiffusionProcessor
-  timesteps: 150
-  ddim_steps: null   # null = all 150 timesteps -> DDPM sampling
+  timesteps: 250     # best in the sweep; 100 or 150 also did well and validate faster
+                     # (validation runs DDPM over all timesteps), so lower it if training time is limited
+  ddim_steps: null   # null = all 250 timesteps -> DDPM sampling
   eta: 1.0           # with ddim_steps=null, gives standard DDPM
+  # For evaluation, DDIM with ddim_steps: 100, eta: 1.0 is recommended: as good as full DDPM
+  # (within noise) with 2.5x fewer steps. To evaluate a trained run with DDIM, see the
+  # DiffusionProcessor docstring (cryocast/models/processors/diffusion.py).
   beta_schedule: cosine
   start_out_channels: 64
   time_embed_dim: 256
-  dropout_rate: 0.05
+  dropout_rate: 0.025
   use_autoregressive: true
   loss: ${loss}
 
@@ -42,6 +46,10 @@ decoder:
   kernel_size: 5
   mask_type: active
   n_layers: 1
+  n_subblocks: 3
   norm_type: groupnorm
   restrict_range: sigmoid
   scale_factor: 3
+  zero_init_output: true
+  skip_connection:
+    method: additive
