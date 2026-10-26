@@ -1,8 +1,10 @@
 import logging
+import os
 import pickle
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import ClassVar
 
 from filelock import FileLock
@@ -50,7 +52,7 @@ class SamplerStore:
         try:
             with self._sampler_path.open("rb") as f_sampler:
                 return pickle.load(f_sampler)  # noqa: S301
-        except (FileNotFoundError, EOFError, pickle.UnpicklingError):
+        except (FileNotFoundError, EOFError, pickle.UnpicklingError, ValueError):
             log.debug("Sampler could not be loaded from %s.", self._sampler_path)
             return self.temporary()
 
@@ -65,8 +67,27 @@ class SamplerStore:
         with self._lock:
             study.sampler = self._read()
             yield
-            with self._sampler_path.open("wb") as f_sampler:
-                pickle.dump(study.sampler, f_sampler)
+            self._write(study.sampler)
+
+    def _write(self, sampler: BaseSampler) -> None:
+        """Replace the saved state only after a complete write in the same directory."""
+        temporary_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                mode="wb",
+                dir=self._sampler_path.parent,
+                prefix=f".{self._sampler_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f_sampler:
+                temporary_path = Path(f_sampler.name)
+                pickle.dump(sampler, f_sampler)
+                f_sampler.flush()
+                os.fsync(f_sampler.fileno())
+            temporary_path.replace(self._sampler_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     def temporary(self) -> BaseSampler:
         """Construct an in-memory sampler of the configured class."""
