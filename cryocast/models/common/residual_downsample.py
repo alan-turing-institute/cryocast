@@ -42,6 +42,9 @@ class ResidualDownsample(nn.Module):
 
         """
         super().__init__()
+        if factor < 1:
+            msg = f"factor must be >= 1, got {factor}"
+            raise ValueError(msg)
         if pixel_shuffle:
             if factor > 1:
                 # Convolve before reshuffling to reduce the intermediate channel count.
@@ -51,12 +54,9 @@ class ResidualDownsample(nn.Module):
                     nn.PixelUnshuffle(factor),
                     ChannelAdaptor(conv_channels * factor**2, out_channels),
                 )
-            elif factor == 1:
+            else:
                 # If factor is 1, no downsampling is needed
                 self.parametric = nn.Conv2d(in_channels, out_channels, **kwargs)
-            else:
-                msg = f"factor must be >= 1, got {factor}"
-                raise ValueError(msg)
         else:
             self.parametric = nn.Conv2d(
                 in_channels, out_channels, stride=factor, **kwargs
