@@ -1,8 +1,13 @@
 # @package _global_
 defaults:
   - /base
-  - override /loss: huber
+  - override /loss: amse  # loss used for the hyperparameter sweep
   - override /model: ddpm
   - override /train/optimizer: ddpm
   - override /train/scheduler: ddpm
   - _self_
+
+train:
+  optimizer:
+    lr: 5e-4
+    weight_decay: 1e-2

@@ -6,4 +6,5 @@ dropout_rate: 0.05
 mask_type: active
 restrict_range: clamp
 start_out_channels: 64
-timesteps: 150
+timesteps: 250  # best in the sweep; 100 or 150 also did well and validate faster
+                # (validation runs DDPM over all timesteps), so lower it if training time is limited
