@@ -343,8 +343,21 @@ class BaseModel(LightningModule, ABC):
         if self.training_metadata is not None:
             checkpoint["training_metadata"] = asdict(self.training_metadata)
 
-    def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
-        """Calculate the loss given a prediction and target."""
+    def loss(
+        self,
+        prediction: TensorNTCHW,
+        target: TensorNTCHW,
+        uncertainty: TensorNTCHW | None = None,
+    ) -> torch.Tensor:
+        """Calculate loss, passing target uncertainty to losses that request it."""
+        if getattr(self.loss_fn, "requires_uncertainty", False):
+            if uncertainty is None:
+                msg = (
+                    f"{type(self.loss_fn).__name__} requires target uncertainty, but "
+                    "the batch did not contain `target_uncertainty`."
+                )
+                raise ValueError(msg)
+            return self.loss_fn(prediction, target, uncertainty)
         return self.loss_fn(prediction, target)
 
     @property
@@ -392,9 +405,10 @@ class BaseModel(LightningModule, ABC):
 
         """
         batch = self.process_batch(batch)
+        uncertainty = batch.pop("target_uncertainty", None)
         target = batch.pop("target")
         prediction = self(batch)
-        loss = self.loss(prediction, target)
+        loss = self.loss(prediction, target, uncertainty)
 
         # Log metrics; computation will be done at epoch end
         self.log(
@@ -432,9 +446,10 @@ class BaseModel(LightningModule, ABC):
 
         """
         batch = self.process_batch(batch)
+        uncertainty = batch.pop("target_uncertainty", None)
         target = batch["target"].clone().detach()
         prediction = self(batch)
-        loss = self.loss(prediction, target)
+        loss = self.loss(prediction, target, uncertainty)
 
         # Log metrics; computation will be done at epoch end
         self.log(
@@ -473,9 +488,10 @@ class BaseModel(LightningModule, ABC):
 
         """
         batch = self.process_batch(batch)
+        uncertainty = batch.pop("target_uncertainty", None)
         target = batch["target"].clone().detach()
         prediction = self(batch)
-        loss = self.loss(prediction, target)
+        loss = self.loss(prediction, target, uncertainty)
 
         # Log metrics; computation will be done at epoch end
         self.log(
