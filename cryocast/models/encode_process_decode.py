@@ -153,6 +153,8 @@ class EncodeProcessDecode(BaseModel):
             if isinstance(processor, BaseProcessor)
             else hydra.utils.instantiate(
                 processor,
+                # Nested configs (e.g. a `loss`) are built by the processor itself
+                _recursive_=False,
                 data_space=combined_latent_space,
                 data_space_target=(
                     self.target_encoder
