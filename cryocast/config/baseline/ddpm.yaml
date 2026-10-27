@@ -10,3 +10,6 @@ train:
   optimizer:
     lr: 5e-4
     weight_decay: 1e-2
+  # Fits a 24 h JASMIN A100 job with forecast-14-history-3, batch_size 1, bf16 (635 min/epoch)
+  trainer:
+    max_epochs: 2
