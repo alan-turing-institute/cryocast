@@ -766,6 +766,7 @@ class ModelService:
             decoder_model=decoder_model,
             target_encoder=target_encoder,
             mask_dir=str(self.data_module.mask_directory),
+            rollout_space=cast("EncodeProcessDecode", self.model).rollout_space,
         )
         log.info(
             "Training processor: history (%d, %d, %d, %d) -> forecast (%d, %d, %d, %d)",

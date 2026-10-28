@@ -17,7 +17,7 @@ from cryocast.model_service import ModelService
 from cryocast.model_service.checkpoints import CheckpointFile
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from cryocast.types import DataSpace
+from cryocast.types import DataSpace, RolloutSpace
 
 MAE_METRIC_CFG = {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"}
 
@@ -1284,6 +1284,7 @@ class TestModelService:
         service.config_ = DictConfig({"model": {"processor": {"foo": "bar"}}})
         service.data_module_ = MagicMock()
         service.data_module_.mask_directory = tmp_path
+        service.model_ = MagicMock(rollout_space=RolloutSpace.PHYSICAL)
         decoder_model = MagicMock()
         target_encoder = MagicMock()
         processor_model = MagicMock()
@@ -1315,6 +1316,7 @@ class TestModelService:
             decoder_model=decoder_model,
             target_encoder=target_encoder,
             mask_dir=str(tmp_path),
+            rollout_space=RolloutSpace.PHYSICAL,
         )
         processor_model.load_state_dict.assert_called_once_with("processor_state")
         assert result is processor_model

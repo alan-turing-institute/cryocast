@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 from typing_extensions import override
 
 from cryocast.models import EncodeProcessDecode
+from cryocast.types import RolloutSpace
 
 from .decoder_stage import DecoderStage
 from .encoder_stage import EncoderStage
@@ -57,8 +58,13 @@ class ProcessorStage(EncodeProcessDecode):
         decoder_model: DecoderStage,
         target_encoder: EncoderStage,
         mask_dir: str | None = None,
+        rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
     ) -> "ProcessorStage":
-        """Create a ProcessorStage from a trained DecoderStage."""
+        """Create a ProcessorStage from a trained DecoderStage.
+
+        The rollout_space must match the full model, so that the processor is trained in
+        the same mode as it will be finetuned and evaluated.
+        """
         return cls(
             decoder_model=decoder_model,
             hemisphere=decoder_model.hemisphere,
@@ -72,6 +78,7 @@ class ProcessorStage(EncodeProcessDecode):
             optimizer=copy.deepcopy(decoder_model.optimizer_cfg),
             output_space=decoder_model.output_space.to_dict(),
             processor=processor,
+            rollout_space=rollout_space,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             target_encoder=target_encoder,
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
