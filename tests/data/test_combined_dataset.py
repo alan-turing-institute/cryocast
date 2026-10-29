@@ -340,3 +340,51 @@ class TestCombinedDatasetClimatology:
         assert (
             combined.climatology_for(np.datetime64("2019-12-31T12:00:00", "s")) is None
         )
+
+
+class TestOptionalGroups:
+    """Optional inputs keep windows on days they are missing, with fill and flag.
+
+    The target comes from `mock_dataset` (all five days present). The optional input
+    comes from `mock_dataset_missing_dates_fill_value`, which is present on days 0, 2
+    and 4 only, and whose missing rows hold 99 in the zarr.
+    """
+
+    @staticmethod
+    def _combined(
+        target_path: Path,
+        optional_path: Path,
+        *,
+        optional_groups: tuple[str, ...] = ("optional",),
+        optional_date_ranges: list[dict[str, str | None]] | None = None,
+        optional_fill: str | float = "mean",
+    ) -> CombinedDataset:
+        target = SingleDataset(name="target_group", input_files=[target_path])
+        optional = SingleDataset(
+            name="optional",
+            input_files=[optional_path],
+            date_ranges=optional_date_ranges or [{"start": None, "end": None}],
+        )
+        return CombinedDataset(
+            datasets=[target, optional],
+            target_group_name="target_group",
+            target_variables=["ice_conc"],
+            n_history_steps=2,
+            n_forecast_steps=1,
+            optional_groups=optional_groups,
+            optional_fill=optional_fill,
+        )
+
+    def test_target_cannot_be_optional(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match="cannot be optional"):
+            self._combined(
+                mock_dataset, mock_dataset, optional_groups=("target_group",)
+            )
+
+    def test_unknown_optional_group_raises(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match="are not inputs of this dataset"):
+            self._combined(mock_dataset, mock_dataset, optional_groups=("unknown",))
+
+    def test_invalid_fill_raises(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match="optional_fill must be"):
+            self._combined(mock_dataset, mock_dataset, optional_fill="median")

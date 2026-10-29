@@ -98,6 +98,9 @@ CLIMATOLOGY_END = dt.datetime(2020, 1, 5)
 CLIMATOLOGY_MISSING = [dt.datetime(2017, 3, 15)]
 CLIMATOLOGY_VARIABLES = ["ice_conc", "ice_thickness"]
 
+# Value written into the rows of missing dates, as Argo recipes do
+MISSING_FILL_VALUE = 99.0
+
 
 def climatology_value(channel: int, dt: dt.datetime) -> float:
     """Return the synthetic value for a channel and date.
@@ -404,6 +407,29 @@ def mock_dataset_missing_dates(
         full_dates=list(dates_as_dt),
         missing_dates=[dates_as_dt[1], dates_as_dt[3]],
     )
+
+
+@pytest.fixture(scope="session")
+def mock_dataset_missing_dates_fill_value(
+    dates_as_dt: tuple[dt.datetime, ...],
+    mock_data_path: Path,
+    mock_data_missing_dates: dict[str, dict[str, Any]],
+) -> Path:
+    """Fixture like `mock_dataset_missing_dates`, with the missing rows holding 99.
+
+    Recipes write a fill value into the rows of missing dates (99 for Argo), so these
+    rows must never be read. The statistics only use the available dates.
+    """
+    path = build_zarr(
+        mock_data_path / "anemoi" / "mock_dataset_missing_dates_fill_value.zarr",
+        mock_data_missing_dates,
+        full_dates=list(dates_as_dt),
+        missing_dates=[dates_as_dt[1], dates_as_dt[3]],
+    )
+    data = zarr.open_group(str(path), mode="r+")["data"]
+    for idx in (1, 3):
+        data[idx] = MISSING_FILL_VALUE
+    return path
 
 
 @pytest.fixture(scope="session")
