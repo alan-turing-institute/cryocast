@@ -215,12 +215,12 @@ class CombinedDataset(Dataset):
     ) -> ArrayTCHW:
         """Return the history of an optional input with a ``flag_filled`` channel added.
 
-        A day is present if it is in the dataset's `dates`. Present days hold the
+        A day has data if it is in the dataset's `dates`. Days with data hold the
         normalised data, missing days hold the fill value, and the last channel is 1 on
-        filled days and 0 on present days.
+        filled days and 0 otherwise.
 
         The zarr still has a row for each missing day, holding a placeholder (99 for
-        Argo), so a slice is only used when every day in the window is present.
+        Argo), so a slice is only used when every day in the window has data.
 
         Returns:
             An array of shape [n_history_steps, C + 1, H, W].
@@ -228,8 +228,8 @@ class CombinedDataset(Dataset):
         """
         history_steps = self.get_history_steps(start_date)
         date_set = self._optional_date_sets[dataset.name]
-        present = np.array([date in date_set for date in history_steps])
-        if present.all():
+        has_data = np.array([date in date_set for date in history_steps])
+        if has_data.all():
             data = dataset.get_tchw_slice(start_date, self.n_history_steps, check=False)
         else:
             dtype = np.dtype(dataset.dataslices[0].dtype)
@@ -242,16 +242,16 @@ class CombinedDataset(Dataset):
                 fill.astype(dtype),
                 (self.n_history_steps, *dataset.space.chw),
             ).copy()
-            if present.any():
-                data[present] = dataset.get_tchw(
+            if has_data.any():
+                data[has_data] = dataset.get_tchw(
                     [
                         date
-                        for date, ok in zip(history_steps, present, strict=True)
+                        for date, ok in zip(history_steps, has_data, strict=True)
                         if ok
                     ]
                 )
         flag = np.broadcast_to(
-            (~present).astype(data.dtype).reshape(-1, 1, 1, 1),
+            (~has_data).astype(data.dtype).reshape(-1, 1, 1, 1),
             (self.n_history_steps, 1, *dataset.space.shape),
         )
         return np.concatenate([data, flag], axis=1)
