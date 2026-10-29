@@ -11,7 +11,7 @@ from .single_dataset import SingleDataset
 
 
 class CombinedDataset(Dataset):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         datasets: Sequence[SingleDataset],
         target_group_name: str,
@@ -20,6 +20,8 @@ class CombinedDataset(Dataset):
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
+        optional_groups: Sequence[str] = (),
+        optional_fill: str | float = "mean",
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -38,6 +40,16 @@ class CombinedDataset(Dataset):
                 batch also contains a ``climatology`` key holding the calendar-day
                 mean field for each forecast step. When ``None`` the batches are
                 unchanged.
+            optional_groups: Input groups that can have missing days, e.g.
+                ``["float-argo"]``. A window is kept even if one of these groups is
+                missing a day: that day is filled with ``optional_fill``, and a
+                ``flag_filled`` channel is added (1 for filled, 0 for real data), so the
+                group has C + 1 channels. For example, if Argo is missing the middle
+                day of a 3-day history, its ``flag_filled`` channel is [0, 1, 0]. The
+                target cannot be optional. Empty by default.
+            optional_fill: What to fill missing days with: ``"mean"`` for each
+                channel's mean, or a number such as ``0.0``. Both are in normalised
+                units, like the data.
 
         """
         super().__init__()
@@ -61,6 +73,23 @@ class CombinedDataset(Dataset):
             msg = f"Cannot combine datasets with different frequencies: {frequencies}."
             raise ValueError(msg)
         self.frequency = frequencies[0]
+
+        # Inputs that are allowed to be missing on some days
+        input_names = {ds.name for ds in self.inputs}
+        if unknown := sorted(set(optional_groups) - input_names):
+            msg = (
+                f"Optional groups {unknown} are not inputs of this dataset. "
+                f"Available inputs: {sorted(input_names)}."
+            )
+            raise ValueError(msg)
+        if target_group_name in optional_groups:
+            msg = f"The target dataset {target_group_name!r} cannot be optional."
+            raise ValueError(msg)
+        if not (optional_fill == "mean" or isinstance(optional_fill, (int, float))):
+            msg = f"optional_fill must be 'mean' or a number, not {optional_fill!r}."
+            raise ValueError(msg)
+        self.optional_groups = set(optional_groups)
+        self.optional_fill = optional_fill
 
     @cached_property
     def dates(self) -> list[np.datetime64]:
