@@ -38,3 +38,4 @@ train:
   # Fits a single-stage 24h JASMIN A100 job with forecast-14-history-3, batch_size 1, bf16 (40 min/epoch)
   trainer:
     max_epochs: 31
+    precision: bf16-mixed
