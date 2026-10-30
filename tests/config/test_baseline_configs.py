@@ -53,4 +53,4 @@ class TestBaselineConfigs:
         config = compose_config("baseline/dc_unet_dc")
 
         assert config.train.optimizer.lr == pytest.approx(5e-5)
-        assert config.train.multistage.finetune.optimizer.lr == pytest.approx(1e-5)
+        assert config.train.multistage.finetune.optimizer.lr == pytest.approx(5e-6)

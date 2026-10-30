@@ -154,6 +154,55 @@ class TestEncodeProcessDecode:
         )
         assert model.multistage_only is expected_multistage_only
 
+    def test_init_processor_builds_its_own_loss(
+        self,
+        cfg_decoder: DictConfig,
+        cfg_encoders: DictConfig,
+        cfg_input_space: DictConfig,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+    ) -> None:
+        """A processor `loss` config reaches the processor uninstantiated.
+
+        Hydra must not instantiate nested processor configs itself: a loss config
+        carrying `lead_time_exponent` is only valid when built by `build_loss`.
+        """
+        loss = OmegaConf.merge(cfg_loss, {"lead_time_exponent": 1.0})
+        output_space = DictConfig(
+            {
+                "channels": 1,
+                "name": cfg_input_space["name"],
+                "shape": cfg_input_space["shape"],
+            }
+        )
+        processor = DictConfig(
+            {
+                "_target_": "cryocast.models.processors.DiffusionProcessor",
+                "timesteps": 2,
+                "start_out_channels": 8,
+                "loss": loss,
+            }
+        )
+        model = EncodeProcessDecode(
+            name="diffusion-latent-loss",
+            encoders=cfg_encoders,
+            processor=processor,
+            decoder=cfg_decoder,
+            hemisphere="north",
+            input_spaces=[cfg_input_space],
+            loss=loss,
+            metrics=cfg_metrics,
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=output_space,
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            target_variable_indices=[0],
+        )
+        assert isinstance(model.processor.loss_fn, LeadTimeWeightedLoss)
+        assert model.multistage_only
+
     @pytest.mark.parametrize(
         "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]
     )

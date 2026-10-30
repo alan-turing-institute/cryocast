@@ -697,6 +697,15 @@ class ModelService:
                 encoder_model.encoder.data_space_in.chw,
                 encoder_model.encoder.data_space_out.chw,
             )
+            # Completely linear encoders are parameter-free. Attempting to train them in
+            # isolation will cause the optimizer to throw an empty parameter list error.
+            if not any(p.requires_grad for p in encoder_model.parameters()):
+                log.info(
+                    "Skipping training for encoder '%s' as it has no trainable parameters.",
+                    encoder.name,
+                )
+                encoder_models.append(encoder_model)
+                continue
             trainer = self._fit(
                 model=encoder_model,
                 config=train_cfg,
@@ -766,6 +775,7 @@ class ModelService:
             decoder_model=decoder_model,
             target_encoder=target_encoder,
             mask_dir=str(self.data_module.mask_directory),
+            rollout_space=cast("EncodeProcessDecode", self.model).rollout_space,
         )
         log.info(
             "Training processor: history (%d, %d, %d, %d) -> forecast (%d, %d, %d, %d)",
