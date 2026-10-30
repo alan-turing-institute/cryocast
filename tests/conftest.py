@@ -98,7 +98,7 @@ CLIMATOLOGY_END = dt.datetime(2020, 1, 5)
 CLIMATOLOGY_MISSING = [dt.datetime(2017, 3, 15)]
 CLIMATOLOGY_VARIABLES = ["ice_conc", "ice_thickness"]
 
-# Value written into the rows of missing dates, as Argo recipes do
+# Placeholder stored in the rows of missing dates, as in the Argo data
 MISSING_FILL_VALUE = 99.0
 
 
@@ -417,8 +417,8 @@ def mock_dataset_missing_dates_fill_value(
 ) -> Path:
     """Fixture like `mock_dataset_missing_dates`, with the missing rows holding 99.
 
-    Recipes write a fill value into the rows of missing dates (99 for Argo), so these
-    rows must never be read. The statistics only use the available dates.
+    The Argo zarr stores 99 in the rows of missing dates, so these rows must never be
+    read. The statistics only use the available dates.
     """
     path = build_zarr(
         mock_data_path / "anemoi" / "mock_dataset_missing_dates_fill_value.zarr",
