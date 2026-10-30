@@ -1,4 +1,4 @@
 # PyTorch Lightning optimizer settings
 _target_: torch.optim.AdamW
-lr: 5e-3
-weight_decay: 1e-2
+lr: 5.0e-3
+weight_decay: 1.0e-2

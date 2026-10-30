@@ -3,4 +3,4 @@ defaults:
   - default
   - _self_
 
-eta_min: 5e-6
+eta_min: 5.0e-6

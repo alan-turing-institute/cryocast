@@ -6,13 +6,35 @@ defaults:
   - _self_
 
 train:
+  # Fits in two multistage 24h JASMIN A100 jobs with forecast-14-history-3, batch_size 1, bf16
+  # First job: encoders (48 min/epoch), decoder (19 min/epoch)
+  # Second job: processor (89 min/epoch), finetune (104 min/epoch)
   multistage:
+    encoders:
+      scheduler:
+        T_max: 19
+      trainer:
+        max_epochs: 19
+    decoder:
+      scheduler:
+        T_max: 19
+      trainer:
+        max_epochs: 19
+    processor:
+      scheduler:
+        T_max: 7
+      trainer:
+        max_epochs: 7
     finetune:
       optimizer:
-        lr: 1e-5  # set to lower than for the other stages
+        lr: 5.0e-6  # 0.1 * learning rate used elsewhere
+      scheduler:
+        T_max: 6
+      trainer:
+        max_epochs: 6
   optimizer:
-    lr: 5e-5
-    weight_decay: 1e-06
+    lr: 5.0e-5
+    weight_decay: 1.0e-6
   # Fits a single-stage 24h JASMIN A100 job with forecast-14-history-3, batch_size 1, bf16 (104 min/epoch)
   trainer:
     max_epochs: 12
