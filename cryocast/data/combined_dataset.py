@@ -9,6 +9,9 @@ from cryocast.types import ArrayTCHW
 from .calendar_day_climatology import CalendarDayClimatology
 from .single_dataset import SingleDataset
 
+# Name of the channel added to each optional input group: 1 on filled days, 0 otherwise
+FILL_FLAG_VARIABLE = "flag_filled"
+
 
 class CombinedDataset(Dataset):
     def __init__(  # noqa: PLR0913
@@ -269,6 +272,12 @@ class CombinedDataset(Dataset):
             start_date + idx * self.frequency for idx in range(self.n_history_steps)
         ]
 
+    def input_variable_names(self, dataset: SingleDataset) -> list[str]:
+        """Return the channel names of an input, including any ``flag_filled`` channel."""
+        if dataset.name in self.optional_groups:
+            return [*dataset.variable_names, FILL_FLAG_VARIABLE]
+        return list(dataset.variable_names)
+
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.
 
@@ -286,7 +295,7 @@ class CombinedDataset(Dataset):
         variable_ids = [
             f"{ds.name}/{variable_name}"
             for ds in self.inputs
-            for variable_name in ds.variable_names
+            for variable_name in self.input_variable_names(ds)
         ]
         return [
             f"Combined dataset has {len(variable_ids)} input variables:",
