@@ -471,6 +471,15 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
 
+    def test_variable_list_includes_fill_flag(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
+        assert combined.variable_list()[-2:] == [
+            "4) optional/ice_conc",
+            "5) optional/flag_filled",
+        ]
+
     def test_target_cannot_be_optional(self, mock_dataset: Path) -> None:
         with pytest.raises(ValueError, match="cannot be optional"):
             self._combined(
