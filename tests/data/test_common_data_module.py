@@ -642,6 +642,41 @@ class TestDataLoaders:
         assert batch["group1"].shape[2] == 2  # NTCHW: [batch, time, channels, H, W]
         assert batch["target"].shape[2] == 1
 
+    def test_forecast_step_inputs_omitted_by_default(self, mock_dataset: Path) -> None:
+        """Until a model asks for them, batches hold no forecast-step inputs."""
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+
+        for name in ("train", "val", "test", "predict"):
+            batch = next(iter(getattr(dm, f"{name}_dataloader")()))
+            assert "future_group1" not in batch
+
+    @pytest.mark.parametrize(
+        ("split", "expected"),
+        [("train", True), ("val", True), ("test", False), ("predict", False)],
+    )
+    def test_forecast_step_inputs_only_in_train_and_val(
+        self, mock_dataset: Path, split: str, *, expected: bool
+    ) -> None:
+        """Test and predict batches never hold forecast-step inputs.
+
+        Turning the flag on also restricts the valid dates, so applying it to test and
+        predict would evaluate some models on fewer dates than others.
+        """
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+        dm.include_forecast_step_inputs = True
+
+        batch = next(iter(getattr(dm, f"{split}_dataloader")()))
+        assert ("future_group1" in batch) is expected
+        if expected:
+            # NTCHW: one forecast step, matching the target
+            assert batch["future_group1"].shape == batch["target"].shape
+
 
 class TestTargetMaskDir:
     """Mask directory resolution for the target group, including multi-dataset groups."""

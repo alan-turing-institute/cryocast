@@ -200,7 +200,14 @@ class EncodeProcessDecode(BaseModel):
         self._freeze_unused_modules()
 
     @property
+    @override
     def multistage_only(self) -> bool:
+        return self.processor.computes_loss_in_latent_space
+
+    @property
+    @override
+    def needs_forecast_step_inputs(self) -> bool:
+        # Latent-space losses compare against encoded inputs over the forecast steps
         return self.processor.computes_loss_in_latent_space
 
     @property
@@ -436,6 +443,7 @@ class EncodeProcessDecode(BaseModel):
             self._freeze_unused_modules()
         return self
 
+    @override
     def training_step(
         self,
         batch: dict[str, TensorNTCHW],
