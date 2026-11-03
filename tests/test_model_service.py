@@ -45,6 +45,7 @@ class FakeModel:
     input_spaces: ClassVar[list[DataSpace]] = [DataSpace(5, "input", (20, 20))]
     n_forecast_steps = 2
     n_history_steps = 3
+    needs_forecast_step_inputs = True
     output_space = DataSpace(1, "output", (10, 10))
 
     @classmethod
@@ -200,6 +201,7 @@ class TestModelService:
             )
             service = ModelService.from_config(cfg_model_service)
             assert isinstance(service.model, FakeModel)
+            assert service.data_module.include_forecast_step_inputs is True
 
         args, kwargs = mock_instantiate.call_args
         assert args[0] is cfg_model_service["model"]
@@ -245,6 +247,7 @@ class TestModelService:
             assert isinstance(service.model, FakeModel)
             assert service.config == cfg_model_service
             assert service.model.checkpoint_epoch == 3
+            assert service.data_module.include_forecast_step_inputs is True
 
     def test_from_checkpoint_sets_checkpoint_epoch_to_none_when_absent(
         self, cfg_model_service: DictConfig, tmp_path: Path

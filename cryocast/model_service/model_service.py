@@ -104,6 +104,10 @@ class ModelService:
             _convert_="object",
             _recursive_=False,
         )
+        # Configure whether the data module should load forecast-step inputs
+        builder.data_module.include_forecast_step_inputs = (
+            builder.model.needs_forecast_step_inputs
+        )
 
         return builder
 
@@ -159,6 +163,10 @@ class ModelService:
             **non_checkpoint_kwargs,
         )
         builder.model_.checkpoint_epoch = checkpoint.get("epoch")
+        # Configure whether the data module should load forecast-step inputs
+        builder.data_module.include_forecast_step_inputs = (
+            builder.model.needs_forecast_step_inputs
+        )
 
         builder._verify_model_matches_data()
         return builder

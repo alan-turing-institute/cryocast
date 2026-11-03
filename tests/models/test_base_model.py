@@ -205,6 +205,7 @@ class TestBaseModel:
         assert model.output_space.name == "target"
         assert model.output_space.shape == test_output_chw[1:]
         assert model.checkpoint_epoch is None
+        assert model.needs_forecast_step_inputs is False
 
     def test_init_mask_dir_without_land_mask_does_not_raise(
         self, tmp_path: Path

@@ -153,6 +153,7 @@ class TestEncodeProcessDecode:
             target_variable_indices=[0],
         )
         assert model.multistage_only is expected_multistage_only
+        assert model.needs_forecast_step_inputs is expected_multistage_only
 
     def test_init_processor_builds_its_own_loss(
         self,
