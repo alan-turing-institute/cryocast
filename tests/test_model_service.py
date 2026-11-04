@@ -45,6 +45,7 @@ class FakeModel:
     input_spaces: ClassVar[list[DataSpace]] = [DataSpace(5, "input", (20, 20))]
     n_forecast_steps = 2
     n_history_steps = 3
+    needs_forecast_step_inputs = True
     output_space = DataSpace(1, "output", (10, 10))
 
     @classmethod
@@ -75,9 +76,9 @@ class FakeModel:
 def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
     """Build a real full model and a pretrained ProcessorStage to hand over from.
 
-    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. As the
-    target dataset is also an input, the DiffusionProcessor's latent loss uses the
-    input encoder rather than the target encoder, which is only handed over here.
+    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. The
+    DiffusionProcessor's latent loss uses the input encoders rather than the target
+    encoder, which is only handed over here.
     """
     space = DictConfig({"name": "sic", "channels": 1, "shape": [16, 16]})
     encoder = DictConfig(
@@ -200,6 +201,7 @@ class TestModelService:
             )
             service = ModelService.from_config(cfg_model_service)
             assert isinstance(service.model, FakeModel)
+            assert service.data_module.include_forecast_step_inputs is True
 
         args, kwargs = mock_instantiate.call_args
         assert args[0] is cfg_model_service["model"]
@@ -245,6 +247,7 @@ class TestModelService:
             assert isinstance(service.model, FakeModel)
             assert service.config == cfg_model_service
             assert service.model.checkpoint_epoch == 3
+            assert service.data_module.include_forecast_step_inputs is True
 
     def test_from_checkpoint_sets_checkpoint_epoch_to_none_when_absent(
         self, cfg_model_service: DictConfig, tmp_path: Path
@@ -1298,9 +1301,11 @@ class TestModelService:
         model = cast("EncodeProcessDecode", service.model)
         model.eval()
         pretrained.eval()
+        future_sic = torch.rand(2, 2, 1, 16, 16)
         batch = {
             "sic": torch.rand(2, 2, 1, 16, 16),
-            "target": torch.rand(2, 2, 1, 16, 16),
+            "future_sic": future_sic,
+            "target": future_sic.clone(),
         }
 
         def loss(module: EncodeProcessDecode) -> torch.Tensor:

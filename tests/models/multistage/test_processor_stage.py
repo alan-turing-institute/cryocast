@@ -127,37 +127,6 @@ class TestProcessorStage:
         assert torch.equal(output.target, batch["target"])
         assert output.loss.shape == torch.Size([])
 
-    def test_training_step_raises_on_target_shape_mismatch(
-        self,
-        processor_stage: ProcessorStage,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # The shape check only guards the custom loss path, which is the only one that
-        # feeds the target through target_encoder; the standard path never touches it.
-        monkeypatch.setattr(
-            processor_stage.processor, "computes_loss_in_latent_space", True
-        )
-        batch_size = 2
-        batch = {
-            "test-input": torch.rand(
-                batch_size,
-                2,
-                cfg_input_space["channels"],
-                *cfg_input_space["shape"],
-            ),
-            "target": torch.rand(
-                batch_size,
-                1,
-                cfg_output_space["channels"] + 1,
-                *cfg_output_space["shape"],
-            ),
-        }
-
-        with pytest.raises(ValueError, match="does not match"):
-            processor_stage.training_step(batch, 0)
-
     def test_training_step_uses_processor_supplied_loss(
         self,
         processor_stage: ProcessorStage,
@@ -187,6 +156,12 @@ class TestProcessorStage:
                 cfg_input_space["channels"],
                 *cfg_input_space["shape"],
             ),
+            "future_test-input": torch.rand(
+                batch_size,
+                n_forecast_steps,
+                cfg_input_space["channels"],
+                *cfg_input_space["shape"],
+            ),
             "target": torch.rand(
                 batch_size,
                 1,
@@ -205,7 +180,7 @@ class TestProcessorStage:
             *cfg_output_space["shape"],
         )
 
-    def test_latent_target_uses_decoder_target_input_encoder(
+    def test_latent_target_encodes_forecast_step_inputs(
         self,
         encoder_stage: EncoderStage,
         target_encoder_stage: EncoderStage,
@@ -230,32 +205,21 @@ class TestProcessorStage:
             target_encoder=target_encoder_stage,
         )
 
-        target_input_encoder = processor_stage.encoders[0]
-        assert processor_stage.target_input_encoder is target_input_encoder
-        assert (
-            processor_stage.processor.data_space_target
-            == target_input_encoder.data_space_out
-        )
-        assert (
-            processor_stage.processor.data_space_target
-            != processor_stage.target_encoder.data_space_out
-        )
-
+        name = cfg_input_space["name"]
+        input_encoder = processor_stage.encoders[0]
         history = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
-        target = torch.rand(2, 1, 1, 16, 16)
-        full_target = history[:, -1:].clone()
-        full_target[:, :, 2:3] = target
-        expected_target_latent = target_input_encoder.rollout(full_target)
+        future = torch.rand(2, 1, cfg_input_space["channels"], 16, 16)
+        expected_target_latent = input_encoder.rollout(future)
 
         processor_stage.training_step(
-            {cfg_input_space["name"]: history, "target": target}, 0
+            {name: history, f"future_{name}": future, "target": future[:, :, 2:3]}, 0
         )
 
         capture = processor_stage.processor
         assert isinstance(capture, _CaptureLatentLossProcessor)
         assert capture.target is not None
         torch.testing.assert_close(capture.target, expected_target_latent)
-        assert capture.target.shape[2] == target_input_encoder.data_space_out.channels
+        assert capture.target.shape[2] == processor_stage.processor.data_space.channels
 
     @pytest.mark.parametrize(
         "rollout_space",

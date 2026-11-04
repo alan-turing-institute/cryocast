@@ -59,13 +59,9 @@ class _OracleProcessor(BaseProcessor):
 
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
         assert y is not None
-        assert self.target_channel_offset is not None
+        assert y.shape[2] == x.shape[2]
         self.target = y
-        start = self.target_channel_offset
-        end = start + self.data_space_target.channels
-        prediction = x[:, -1:].expand(-1, self.n_forecast_steps, -1, -1, -1).clone()
-        prediction[:, :, start:end] = y
-        return ProcessorOutput(prediction=prediction, loss=torch.zeros(()))
+        return ProcessorOutput(prediction=y.clone(), loss=torch.zeros(()))
 
 
 class TestEncodeProcessDecode:
@@ -153,6 +149,7 @@ class TestEncodeProcessDecode:
             target_variable_indices=[0],
         )
         assert model.multistage_only is expected_multistage_only
+        assert model.needs_forecast_step_inputs is expected_multistage_only
 
     def test_init_processor_builds_its_own_loss(
         self,
@@ -341,15 +338,15 @@ class TestEncodeProcessDecode:
         # Guard against a degenerate case where weighting makes no difference
         assert result.loss.item() != pytest.approx(per_step.mean().item())
 
-    def test_latent_target_uses_target_input_encoder(
+    @pytest.fixture
+    def latent_loss_model(
         self,
         cfg_decoder: DictConfig,
         cfg_encoders: DictConfig,
         cfg_input_space: DictConfig,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
-    ) -> None:
-        """Latent supervision uses the same target-dataset encoder as history."""
+    ) -> EncodeProcessDecode:
         output_space = DictConfig(
             {
                 "channels": 1,
@@ -364,7 +361,7 @@ class TestEncodeProcessDecode:
             }
         )
         model = EncodeProcessDecode(
-            name="shared-target-latent",
+            name="latent-loss",
             encoders=cfg_encoders,
             processor=processor,
             decoder=cfg_decoder,
@@ -381,32 +378,48 @@ class TestEncodeProcessDecode:
             target_variable_indices=[2],
         )
         model.eval()
+        return model
 
-        target_input_encoder = model.encoders[0]
-        assert model.target_input_encoder is target_input_encoder
-        assert model.processor.data_space_target == target_input_encoder.data_space_out
-        assert model.processor.data_space_target != model.target_encoder.data_space_out
-
+    def test_latent_target_encodes_forecast_step_inputs(
+        self, latent_loss_model: EncodeProcessDecode, cfg_input_space: DictConfig
+    ) -> None:
+        """Latent supervision is the encoded inputs over the forecast steps."""
+        model = latent_loss_model
+        name = cfg_input_space["name"]
         history = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
-        target = torch.rand(2, 2, 1, 16, 16)
-        full_target = history[:, -1:].expand(-1, 2, -1, -1, -1).clone()
-        full_target[:, :, 2:3] = target
+        future = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
 
-        expected = target_input_encoder.rollout(full_target)
-        actual = model._encode_target_latent({cfg_input_space["name"]: history}, target)
+        expected = model._encode_inputs({name: future})
+        actual = model._encode_target_latent(
+            {name: history, f"future_{name}": future, "target": future[:, :, 2:3]}
+        )
 
         torch.testing.assert_close(actual, expected)
+        assert actual.shape[2] == model.processor.data_space.channels
 
         # The latent loss must not train the shared encoder through the target latent
-        assert all(p.requires_grad for p in target_input_encoder.parameters())
+        assert all(p.requires_grad for p in model.encoders[0].parameters())
         assert not actual.requires_grad
+
+    def test_latent_target_requires_forecast_step_inputs(
+        self, latent_loss_model: EncodeProcessDecode, cfg_input_space: DictConfig
+    ) -> None:
+        name = cfg_input_space["name"]
+        batch = {
+            name: torch.rand(2, 2, cfg_input_space["channels"], 16, 16),
+            "target": torch.rand(2, 2, 1, 16, 16),
+        }
+
+        with pytest.raises(ValueError, match="needs forecast-step inputs"):
+            latent_loss_model.training_step(batch, 0)
 
     def test_perfect_latent_forecast_decodes_to_target(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """A perfect latent forecast decodes to the target, even with mismatched encoders.
+        """A perfect latent forecast decodes to the target.
 
-        The input and target encoders map `x` to `x` and `2x` respectively.
+        The input encoders map `x` to `x`. The unused target encoder maps `x` to `2x`,
+        so the forecast would be wrong if the latent target were built with it.
         """
         shape = (8, 8)
         era5 = DataSpace(channels=1, name="era5", shape=shape)
@@ -444,10 +457,13 @@ class TestEncodeProcessDecode:
             lr_scheduler=DictConfig({}),
             target_variable_indices=[1],
         )
+        future_sic = torch.rand(2, 2, 2, *shape)
         batch = {
             "era5": torch.rand(2, 2, 1, *shape),
             "sic": torch.rand(2, 2, 2, *shape),
-            "target": torch.rand(2, 2, 1, *shape),
+            "future_era5": torch.rand(2, 2, 1, *shape),
+            "future_sic": future_sic,
+            "target": future_sic[:, :, 1:2].clone(),
         }
 
         result = model.training_step(batch, 0)

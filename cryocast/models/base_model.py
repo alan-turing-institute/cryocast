@@ -214,6 +214,11 @@ class BaseModel(LightningModule, ABC):
     def multistage_only(self) -> bool:
         return False
 
+    @property
+    def needs_forecast_step_inputs(self) -> bool:
+        """Whether training needs every input over the forecast steps, not just history."""
+        return False
+
     def build_metrics(self, land_mask: torch.Tensor | None) -> MetricCollection:
         """Build a metric collection from the configured metrics.
 
