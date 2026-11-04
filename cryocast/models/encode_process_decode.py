@@ -234,33 +234,36 @@ class EncodeProcessDecode(BaseModel):
         ]
         return torch.cat(latent_inputs, dim=2)
 
-    def _encode_target_latent(
-        self, inputs: dict[str, TensorNTCHW], target: TensorNTCHW
-    ) -> TensorNTCHW:
-        """Encode a forecast target in the decoder-compatible latent space."""
-        if tuple(target.shape[2:]) != self.output_space.chw:
+    def _encode_target_latent(self, batch: dict[str, TensorNTCHW]) -> TensorNTCHW:
+        """Encode every input over the forecast steps into the combined latent space.
+
+        This is the ground truth for processors that compute their loss in latent space.
+
+        Args:
+            batch: Dictionary with a `future_<input>` TensorNTCHW entry per input
+                dataset with shape (batch, n_forecast_steps, n_input_channels_k, H_input_k, W_input_k)
+
+        Returns:
+            TensorNTCHW with shape (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
+
+        """
+        try:
+            forecast_step_inputs = {
+                input_space.name: batch[f"future_{input_space.name}"]
+                for input_space in self.input_spaces
+            }
+        except KeyError as exc:
             msg = (
-                f"Target CHW {tuple(target.shape[2:])} does not match output space "
-                f"(C, H, W)={self.output_space.chw}."
+                f"Processor {type(self.processor).__name__} computes its loss in "
+                f"latent space, so the batch needs forecast-step inputs, but {exc} is "
+                f"missing."
             )
-            raise ValueError(msg)
-
-        target_input_encoder = self.target_input_encoder
-        if target_input_encoder is None:
-            return self.target_encoder.rollout(target)
-
-        # The forecast target may contain only a subset of variables from the target
-        # dataset. We persist omitted variables from the last observed frame.
-        target_input = inputs[self.output_space.name]
-        full_target = (
-            target_input[:, -1:].expand(-1, target.shape[1], -1, -1, -1).clone()
-        )
-        full_target[:, :, self.target_variable_indices, :, :] = target
+            raise ValueError(msg) from exc
 
         # Detach so that the latent loss cannot move its own target, e.g. by shrinking
-        # the target latent. During finetune the shared encoder still receives
+        # the target latent. During finetune the shared encoders still receive
         # gradients through the conditioning path while the decoder is frozen.
-        return target_input_encoder.rollout(full_target).detach()
+        return self._encode_inputs(forecast_step_inputs).detach()
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the last frame's target variables as the decoder skip-connection anchor.
@@ -332,9 +335,10 @@ class EncodeProcessDecode(BaseModel):
         network reproduces persistence exactly.
 
         Non-target input groups hold their most recent OBSERVED frame for every forecast
-        step. No future information enters: only `inputs[...]`, which holds the
-        n_history_steps frames ending at the forecast origin, is ever read; the ground
-        truth lives under the separate reserved key "target" and is not touched here.
+        step. No future information enters: only the input groups, which hold the
+        n_history_steps frames ending at the forecast origin, are ever read. Information
+        from the n_forecast_steps future frames are held in the "target" and
+        "future_<input>" keys, which are not used here.
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -347,10 +351,13 @@ class EncodeProcessDecode(BaseModel):
         target_name = self.output_space.name
 
         # Non-target groups: hold the newest observed frame for the whole rollout.
+        # Only input groups are read, never other batch entries (e.g. future_<input>).
         windows: dict[str, TensorNTCHW] = {  # (B, n_history, C_k, H_k, W_k)
-            name: tensor[:, -1:].expand_as(tensor)
-            for name, tensor in inputs.items()
-            if name not in {target_name, "target"}
+            input_space.name: inputs[input_space.name][:, -1:].expand_as(
+                inputs[input_space.name]
+            )
+            for input_space in self.input_spaces
+            if input_space.name != target_name
         }
         target_window = inputs[target_name].clone()  # (B, n_history, C_t, H_t, W_t)
 
@@ -397,14 +404,12 @@ class EncodeProcessDecode(BaseModel):
     def _freeze_unused_modules(self) -> None:
         """Freeze unused modules."""
         # Processors that compute loss in latent space do not touch the decoder, and
-        # only use the target_encoder if the target dataset is not also an input.
-        # Other processors never touch the target_encoder.
+        # no processor touches the target_encoder.
         # We therefore explicitly freeze the unused modules.
-        latent_loss = self.processor.computes_loss_in_latent_space
-        if latent_loss:
+        if self.processor.computes_loss_in_latent_space:
             self.decoder.freeze()
-        if not latent_loss or self.target_input_encoder is not None:
-            self.target_encoder.freeze()
+        # The target encoder is currently unused
+        self.target_encoder.freeze()
 
     def _validate_rollout_options(
         self, rollout_space: RolloutSpace | str
@@ -455,14 +460,16 @@ class EncodeProcessDecode(BaseModel):
         loss by comparing the decoded prediction to the target.
 
         Processors that set the flag `computes_loss_in_latent_space=True` are a special
-        case. We encode the inputs and target into latent space, call `rollout()` on the
-        processor, which returns both a latent prediction and a loss. We pass this
-        prediction through a frozen decoder in order to calculate metrics, but we use
-        the loss returned by the processor for backpropagation.
+        case. We encode the inputs over both the history and the forecast steps into
+        latent space, and call `rollout()` on the processor, which returns both a latent
+        prediction and a loss. We pass this prediction through a frozen decoder in order
+        to calculate metrics, but we use the loss returned by the processor for
+        backpropagation.
 
         Args:
             batch: Dictionary with one NTCHW entry per input dataset (n_history_steps)
-                   and a "target" entry (n_forecast_steps).
+                   and a "target" entry (n_forecast_steps). Latent-loss processors also
+                   need one "future_<input>" entry per input dataset (n_forecast_steps).
 
         Returns:
             A ModelStepOutput containing the prediction, target and loss.
@@ -473,9 +480,9 @@ class EncodeProcessDecode(BaseModel):
 
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
-            # Encode inputs and target into decoder-compatible latent space.
+            # Encode history and forecast-step inputs into the combined latent space.
             latent_input_combined = self._encode_inputs(batch)
-            target_latent = self._encode_target_latent(batch, target)
+            target_latent = self._encode_target_latent(batch)
 
             # Process in latent space
             processor_output = self.processor.rollout(
