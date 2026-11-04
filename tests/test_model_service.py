@@ -76,9 +76,9 @@ class FakeModel:
 def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
     """Build a real full model and a pretrained ProcessorStage to hand over from.
 
-    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. As the
-    target dataset is also an input, the DiffusionProcessor's latent loss uses the
-    input encoder rather than the target encoder, which is only handed over here.
+    The CNNEncoder carries BatchNorm buffers, so the target encoder is stateful. The
+    DiffusionProcessor's latent loss uses the input encoders rather than the target
+    encoder, which is only handed over here.
     """
     space = DictConfig({"name": "sic", "channels": 1, "shape": [16, 16]})
     encoder = DictConfig(
@@ -1301,9 +1301,11 @@ class TestModelService:
         model = cast("EncodeProcessDecode", service.model)
         model.eval()
         pretrained.eval()
+        future_sic = torch.rand(2, 2, 1, 16, 16)
         batch = {
             "sic": torch.rand(2, 2, 1, 16, 16),
-            "target": torch.rand(2, 2, 1, 16, 16),
+            "future_sic": future_sic,
+            "target": future_sic.clone(),
         }
 
         def loss(module: EncodeProcessDecode) -> torch.Tensor:

@@ -79,8 +79,8 @@ class BaseProcessor(nn.Module):
 
         Args:
             x: Encoded input TensorNTCHW with (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-            y: during training: Encoded target TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_target, latent_height, latent_width)
-                where n_latent_channels_target = self.data_space_target.channels (<= n_latent_channels_total);
+            y: during training: Encoded forecast-step inputs TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width),
+                i.e. in the same space as `x`;
                 otherwise: None
 
         Returns:
