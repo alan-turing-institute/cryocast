@@ -17,6 +17,25 @@ Checkpoints are saved to `${BASE_DIR}/training/wandb/run-<date>-<id>/checkpoints
 Pre-trained checkpoints are available on Baskerville, DAWN, and Isambard-AI.
 Ask a team member for the path.
 
+### Diffusion timestep-zero compatibility
+
+Diffusion arrays use zero-based indices. The first stored timestep (`t=0`)
+contains scheduled noise; the clean field is the endpoint of the final reverse
+step. Forward corruption and the velocity target now use the same coefficients
+at this first timestep, fixing the previous clean-input special case.
+
+This correction does not change beta schedules, sampler defaults, checkpoint
+parameter shapes, or the reverse-sampling code. Existing weights remain loadable;
+sampling with identical weights and random state is unchanged. Training or
+resuming training now receives the corrected noisy input whenever `t=0` is drawn,
+so training trajectories can change. This is a mathematical consistency fix,
+not evidence of improved forecasting accuracy.
+
+The separate short-linear-chain schedule change is tracked in
+[#591](https://github.com/alan-turing-institute/cryocast/pull/591). A checkpoint
+must still use the schedule with which it was trained; timestep-zero consistency
+does not make a different training schedule compatible.
+
 ## 2. Create a local config
 
 If you do not already have a local config from a training run, create one at `cryocast/config/<your-name>.local.yaml`.
