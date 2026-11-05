@@ -5,3 +5,9 @@ defaults:
     - samp_weathernorth_era5_25p0km_2020_2024_24h_v4
   - split: sample_dataset
   - _self_
+
+# Input groups (group_as names) that may be missing on some days: their missing days
+# are filled with optional_fill ("mean", "climatology" or a number, in normalised units)
+# and a flag_filled channel is added (1 on filled days). With [] nothing changes.
+optional_groups: []
+optional_fill: mean

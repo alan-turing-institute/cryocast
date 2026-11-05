@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from functools import cached_property
 
 import numpy as np
@@ -25,6 +25,7 @@ class CombinedDataset(Dataset):
         climatology: ArrayTCHW | None = None,
         optional_groups: Sequence[str] = (),
         optional_fill: str | float = "mean",
+        optional_climatology: Mapping[str, ArrayTCHW] | None = None,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -51,8 +52,12 @@ class CombinedDataset(Dataset):
                 day of a 3-day history, its ``flag_filled`` channel is [0, 1, 0]. The
                 target cannot be optional. Empty by default.
             optional_fill: What to fill missing days with: ``"mean"`` for each
-                channel's mean, or a number such as ``0.0``. Both are in normalised
-                units, like the data.
+                channel's mean, ``"climatology"`` for the mean field of that calendar
+                day, or a number such as ``0.0``. All are in normalised units, like
+                the data.
+            optional_climatology: [366, C, H, W] calendar-day mean of each optional
+                group, indexed like ``climatology``. Needed when ``optional_fill`` is
+                ``"climatology"``.
 
         """
         super().__init__()
@@ -88,11 +93,24 @@ class CombinedDataset(Dataset):
         if target_group_name in optional_groups:
             msg = f"The target dataset {target_group_name!r} cannot be optional."
             raise ValueError(msg)
-        if not (optional_fill == "mean" or isinstance(optional_fill, (int, float))):
-            msg = f"optional_fill must be 'mean' or a number, not {optional_fill!r}."
+        if not (
+            optional_fill in {"mean", "climatology"}
+            or isinstance(optional_fill, (int, float))
+        ):
+            msg = (
+                "optional_fill must be 'mean', 'climatology' or a number, "
+                f"not {optional_fill!r}."
+            )
+            raise ValueError(msg)
+        optional_climatology = dict(optional_climatology or {})
+        if optional_fill == "climatology" and (
+            missing := sorted(set(optional_groups) - optional_climatology.keys())
+        ):
+            msg = f"optional_fill is 'climatology' but {missing} have no climatology."
             raise ValueError(msg)
         self.optional_groups = set(optional_groups)
         self.optional_fill = optional_fill
+        self.optional_climatology = optional_climatology
 
     @cached_property
     def dates(self) -> list[np.datetime64]:
@@ -236,15 +254,7 @@ class CombinedDataset(Dataset):
             data = dataset.get_tchw_slice(start_date, self.n_history_steps, check=False)
         else:
             dtype = np.dtype(dataset.dataslices[0].dtype)
-            fill = (
-                dataset.normalised_mean()
-                if self.optional_fill == "mean"
-                else np.full((dataset.space.channels, 1, 1), self.optional_fill)
-            )
-            data = np.broadcast_to(
-                fill.astype(dtype),
-                (self.n_history_steps, *dataset.space.chw),
-            ).copy()
+            data = self.optional_fill_for(dataset, history_steps).astype(dtype)
             if has_data.any():
                 data[has_data] = dataset.get_tchw(
                     [
@@ -258,6 +268,20 @@ class CombinedDataset(Dataset):
             (self.n_history_steps, 1, *dataset.space.shape),
         )
         return np.concatenate([data, flag], axis=1)
+
+    def optional_fill_for(
+        self, dataset: SingleDataset, dates: Sequence[np.datetime64]
+    ) -> ArrayTCHW:
+        """Return the fill for an optional input on the given dates, [T, C, H, W]."""
+        if self.optional_fill == "climatology":
+            table = self.optional_climatology[dataset.name]
+            return table[[CalendarDayClimatology.day_index(date) for date in dates]]
+        fill = (
+            dataset.normalised_mean()
+            if self.optional_fill == "mean"
+            else np.full((dataset.space.channels, 1, 1), self.optional_fill)
+        )
+        return np.broadcast_to(fill, (len(dates), *dataset.space.chw))
 
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive forecast dates for a given start date."""
