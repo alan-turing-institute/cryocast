@@ -336,6 +336,19 @@ class SingleDataset(Dataset):
             )
         return cast("ArrayType", (data - self._norm_offset) * self._norm_scale)
 
+    def normalised_mean(self) -> np.ndarray:
+        """Return the per-channel mean on the same scale as the data, shape [C, 1, 1].
+
+        The mean is min-max normalised in the same way as the data. If this dataset was
+        created with `normalise=False`, the raw mean is returned instead.
+        """
+        mean = self.statistics["mean"].reshape(-1, 1, 1)
+        if not self._normalise:
+            return mean
+        minimum = self.statistics["minimum"].reshape(-1, 1, 1)
+        maximum = self.statistics["maximum"].reshape(-1, 1, 1)
+        return (mean - minimum) / (maximum - minimum)
+
     def subset(
         self,
         *,

@@ -13,7 +13,7 @@ from cryocast.types import ArrayTCHW, DataloaderArgs, DataSpace, Hemisphere, Mas
 from cryocast.utils import mask_dir
 
 from .calendar_day_climatology import CalendarDayClimatology
-from .combined_dataset import CombinedDataset
+from .combined_dataset import FILL_FLAG_VARIABLE, CombinedDataset
 from .single_dataset import SingleDataset
 from .variable_selection import VariableSelection
 
@@ -52,6 +52,18 @@ class CommonDataModule(LightningDataModule):
             input_variables=config["variables"]["input"],
             target_variables=config["variables"]["target"],
         )
+
+        # Dataset groups that may be missing on some days, and how to fill those days
+        self.optional_groups = [
+            str(g) for g in config["data"].get("optional_groups", [])
+        ]
+        if unknown := sorted(set(self.optional_groups) - self.dataset_groups.keys()):
+            msg = (
+                f"Optional groups {unknown} are not dataset groups. "
+                f"Available groups: {sorted(self.dataset_groups.keys())}."
+            )
+            raise ValueError(msg)
+        self.optional_fill = config["data"].get("optional_fill", "mean")
 
         # Set periods for prediction, testing, training and validation
         self.batch_size = int(config["window"]["batch_size"])
@@ -161,9 +173,57 @@ class CommonDataModule(LightningDataModule):
         return hemisphere.pop()
 
     @cached_property
+    def optional_climatology(self) -> dict[str, ArrayTCHW]:
+        """Return the calendar-day mean of each optional group, used to fill gaps.
+
+        Only built when ``optional_fill`` is ``"climatology"``. Each [366, C, H, W]
+        table is the normalised mean over the group's training dates on each calendar
+        day, smoothed as in ``climatology``. Pixels with no data in the smoothing
+        window take the channel mean.
+        """
+        if self.optional_fill != "climatology":
+            return {}
+        tables = {}
+        for name in self.optional_groups:
+            if name not in self.datasets:
+                continue
+            dataset = self.datasets[name]
+            dates = [day for day in dataset.dates if self._in_train_periods(day)]
+            if not dates:
+                msg = (
+                    f"Cannot build a fill climatology for {name!r}: no training dates."
+                )
+                raise ValueError(msg)
+            log.info(
+                "Computing the fill climatology of %r over %d dates.", name, len(dates)
+            )
+            mean = CalendarDayClimatology.from_dataset(dataset, dates).mean
+            tables[name] = np.where(
+                np.isnan(mean), dataset.normalised_mean(), mean
+            ).astype(np.float32)
+        return tables
+
+    @cached_property
     def input_spaces(self) -> list[DataSpace]:
-        """Return the data space for each input."""
-        return [ds.space for ds in self.datasets.values()]
+        """Return the data space for each input.
+
+        Optional inputs have one extra channel, ``flag_filled``.
+        """
+        return [
+            DataSpace(
+                channels=len(self.input_variable_names(name)),
+                name=ds.space.name,
+                shape=ds.space.shape,
+            )
+            for name, ds in self.datasets.items()
+        ]
+
+    def input_variable_names(self, name: str) -> list[str]:
+        """Return the channel names of an input, including any ``flag_filled`` channel."""
+        variable_names = list(self.datasets[name].variable_names)
+        if name in self.optional_groups:
+            return [*variable_names, FILL_FLAG_VARIABLE]
+        return variable_names
 
     @cached_property
     def latitudes(self) -> dict[str, list[float]]:
@@ -267,6 +327,10 @@ class CommonDataModule(LightningDataModule):
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
+            # Groups with no requested variables are not inputs, so leave them out
+            optional_groups=[g for g in self.optional_groups if g in self.datasets],
+            optional_fill=self.optional_fill,
+            optional_climatology=self.optional_climatology,
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":

@@ -657,7 +657,7 @@ class ModelService:
                 channel_names = self.data_module.target_variables
             else:
                 dataset_name = encoder.name
-                channel_names = self.data_module.datasets[dataset_name].variable_names
+                channel_names = self.data_module.input_variable_names(dataset_name)
 
             if checkpoint_dir is not None and (
                 matches := sorted(
