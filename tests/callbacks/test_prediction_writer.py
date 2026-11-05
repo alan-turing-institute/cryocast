@@ -45,6 +45,33 @@ def _trainer(dataset: CombinedDataset, *, world_size: int = 1) -> Any:  # noqa: 
 
 
 class TestPredictionWriter:
+    @pytest.mark.parametrize("stride", [1, 7, 30])
+    def test_lead_axis_matches_strided_valid_dates(
+        self, tmp_path: Path, stride: int
+    ) -> None:
+        """Export the actual lead duration rather than the native daily spacing."""
+        dataset = _combined_dataset()
+        dataset.step_stride = stride
+        trainer = _trainer(dataset)
+        writer = PredictionWriter(enabled=True)
+        writer.output_path = tmp_path / "strided.nc"
+        output = torch.full((1, 2, 1, 2, 2), 0.5)
+        writer.on_test_start(trainer, LightningModule())
+        writer.on_test_batch_end(
+            trainer,
+            LightningModule(),
+            {"prediction": output, "target": output},
+            None,
+            0,
+        )
+        writer.on_test_end(trainer, LightningModule())
+        with NetCDFDataset(writer.output_path) as store:
+            leads = np.asarray(store.variables["lead_time"][:])
+            reference = np.asarray(store.variables["forecast_reference_time"][:])
+            valid = np.asarray(store.variables["valid_time"][:])
+            np.testing.assert_array_equal(leads, np.asarray([1, 2]) * stride * 86400)
+            np.testing.assert_array_equal(valid, reference[:, None] + leads[None, :])
+
     def test_disabled_writer_is_a_noop(self) -> None:
         writer = PredictionWriter()
 

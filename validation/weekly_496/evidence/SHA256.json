@@ -1,0 +1,13 @@
+{
+  "verified": true,
+  "artifact_sha256": {
+    "evidence/audit.json": "7d03a5609749c42e487a37468ba37940171f088a56d8213a7cb8aa7ca08a4ced",
+    "evidence/complete.json": "563cf126ced4373128ba7f73f10865db08685ba5991184926e1490c376b17cd9",
+    "evidence/dates.json": "1e2dfb466dc824365fa562029fe54281682ef10415c608b32689d779636bb9d3",
+    "evidence/frozen_checkpoints.json": "8dd083294798cce424747430dae63c29a098c99446d5bd2c27fae688869c95ed",
+    "evidence/metrics.csv": "72e76a784e9e6123b72c46216619e3cdc4cc1ce7f736179338add263b09b837f",
+    "evidence/per_case.csv": "bb25e16ea39c47834dd9a048edaa5934a41afc21591b362984bd76a6593b688c",
+    "evidence/protocol.json": "55ff5aa8cc1a97eb5f17a9594011fa8ee127430abe18e732c596adffe69b5a4f"
+  },
+  "scope": "Six locked small-model runs; exact dates and masks; independently recomputed errors. Weights and forecast arrays retained outside Git."
+}

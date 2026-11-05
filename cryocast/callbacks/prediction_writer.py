@@ -197,6 +197,7 @@ class PredictionWriter(Callback):
         lead_seconds = (
             np.arange(1, dataset.n_forecast_steps + 1, dtype=np.int64)
             * frequency_seconds
+            * getattr(dataset, "step_stride", 1)
         )
         _add_variable(
             netcdf,
