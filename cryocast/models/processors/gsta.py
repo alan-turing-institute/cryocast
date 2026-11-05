@@ -95,7 +95,18 @@ class GSTAProcessor(BaseProcessor):
 
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
         """Rollout the processor over a window of history/forecast timesteps."""
-        # Get the initial shape of the input tensor
+        # Check the semantic axes before folding them into convolution channels.
+        # Matching products of history and channels can otherwise pass silently.
+        if x.ndim != 5 or x.shape[1:3] != (  # noqa: PLR2004
+            self.n_history_steps,
+            self.data_space.channels,
+        ):
+            msg = (
+                "Expected history with shape "
+                f"(N, {self.n_history_steps}, {self.data_space.channels}, H, W), "
+                f"got {tuple(x.shape)}."
+            )
+            raise ValueError(msg)
         n, _, c, h, w = x.shape
 
         # Fold history timesteps into the channel dimension
@@ -105,6 +116,6 @@ class GSTAProcessor(BaseProcessor):
         prediction_nchw: TensorNCHW = self.translator(x_nchw)
 
         # Unfold the forecast timesteps from the channel dimension
-        prediction = prediction_nchw.reshape(n, -1, c, h, w)
+        prediction = prediction_nchw.reshape(n, self.n_forecast_steps, c, h, w)
 
         return ProcessorOutput(prediction=prediction)
