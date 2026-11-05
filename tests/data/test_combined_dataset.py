@@ -358,6 +358,7 @@ class TestOptionalGroups:
         optional_groups: tuple[str, ...] = ("optional",),
         optional_date_ranges: list[dict[str, str | None]] | None = None,
         optional_fill: str | float = "mean",
+        optional_climatology: dict[str, np.ndarray] | None = None,
     ) -> CombinedDataset:
         target = SingleDataset(name="target_group", input_files=[target_path])
         optional = SingleDataset(
@@ -373,6 +374,7 @@ class TestOptionalGroups:
             n_forecast_steps=1,
             optional_groups=optional_groups,
             optional_fill=optional_fill,
+            optional_climatology=optional_climatology,
         )
 
     def test_default_drops_windows_with_missing_input(
@@ -442,6 +444,35 @@ class TestOptionalGroups:
         history = combined[1]["optional"]
         np.testing.assert_array_equal(history[0, 0], 0.0)
         np.testing.assert_array_equal(history[:, 1, 0, 0], [1.0, 0.0])
+
+    def test_climatology_fill(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """Missing days take the climatology of their own calendar day."""
+        # A different value on every calendar day
+        table = np.broadcast_to(
+            (np.arange(366, dtype=np.float32) / 1000).reshape(-1, 1, 1, 1),
+            (366, 1, 2, 2),
+        )
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset_missing_dates_fill_value,
+            optional_fill="climatology",
+            optional_climatology={"optional": table},
+        )
+        # History days 1 (missing) and 2 (present)
+        history = combined[1]["optional"]
+        np.testing.assert_allclose(
+            history[0, 0], table[CalendarDayClimatology.day_index(dates_as_np[1]), 0]
+        )
+        np.testing.assert_array_equal(history[:, 1, 0, 0], [1.0, 0.0])
+
+    def test_climatology_fill_needs_a_table(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match="have no climatology"):
+            self._combined(mock_dataset, mock_dataset, optional_fill="climatology")
 
     def test_window_before_optional_input_starts(
         self,

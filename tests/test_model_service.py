@@ -1086,6 +1086,9 @@ class TestModelService:
         service.data_module_.datasets = {
             "era5": SimpleNamespace(variable_names=["t2m"])
         }
+        service.data_module_.input_variable_names.side_effect = lambda name: (
+            service.data_module_.datasets[name].variable_names
+        )
         service.data_module_.latitudes = {"input": [0.0]}
         service.data_module_.longitudes = {"input": [0.0]}
 
