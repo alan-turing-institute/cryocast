@@ -16,6 +16,7 @@ from .residual_downsample import ResidualDownsample
 from .residual_upsample import ResidualUpsample
 from .resizing_interpolation import ResizingInterpolation
 from .restrict_range import RestrictRange
+from .setconv import SetConv, SetConvCNN
 from .shift import Shift
 from .skip_connection import SkipConnection
 from .time_embed import TimeEmbed
@@ -41,6 +42,8 @@ __all__ = [
     "ResidualUpsample",
     "ResizingInterpolation",
     "RestrictRange",
+    "SetConv",
+    "SetConvCNN",
     "Shift",
     "SkipConnection",
     "TimeEmbed",
