@@ -40,6 +40,9 @@ class ConvBlockDownsample(nn.Module):
 
         """
         super().__init__()
+        if scale_factor < 1:
+            msg = f"scale_factor must be >= 1, got {scale_factor}"
+            raise ValueError(msg)
 
         if n_subblocks < 1:
             msg = f"n_subblocks must be at least 1, got {n_subblocks}."
