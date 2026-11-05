@@ -17,6 +17,7 @@ content:
   - weathersouth: weather data (southern hemisphere)
 source:
   - argo: Argo float data
+  - carra2: CARRA2 pan-Arctic regional reanalysis
   - era5: ERA5 weather data
   - icenet: SSMIS sea ice data from OSISAF via IceNet v1
   - ssmis: SSMIS sea ice data from OSISAF
@@ -25,6 +26,7 @@ source:
 resolution:
   - 0p25: 0.25 degree
   - 0p5: 0.5 degree
+  - 2p5km: 2.5km grid
   - 5p625: 32x32 global grid
   - 25k: 25km grid (deprecated)
   - 25p0km: 25km grid
