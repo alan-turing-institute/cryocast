@@ -72,8 +72,7 @@ class TestSourceRegistration:
                 "synthetic": {
                     "dynamics": "moving",
                     "grid_size": 32,
-                    "n_trajectories": 3,
-                    "start_date": "2020-01-01T00:00:00",
+                    "trajectory_start_dates": ["2020-01-01T00:00:00"],
                 }
             },
         )
