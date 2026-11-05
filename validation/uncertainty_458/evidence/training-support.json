@@ -1,0 +1,13 @@
+{
+  "eligible_pixels": 420621,
+  "valid_sic_pixels": 422912,
+  "global_weight_effective_sample_fraction": 0.48543124800604376,
+  "weight_p01_p50_p99": [
+    6.209571361541748,
+    504.98681640625,
+    3628.973876953125
+  ],
+  "input_sha256": "9f2cbf18498049f2f781b1956790282f7ee68d5e4a9084e93dbb72f5815ebad0",
+  "target_sha256": "f3778c1efa5e3bb2f2b9a6b08f207f9dc9f4e204c9a2056b9402ecdd71d2f01b",
+  "mask_sha256": "96f57a33f400414d7d59f5662105753c29266e7c7046143c8b4aee6427bc80ad"
+}

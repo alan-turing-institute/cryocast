@@ -63,6 +63,10 @@ class CommonDataModule(LightningDataModule):
         # Set history and forecast steps
         self.n_forecast_steps = int(config["window"].get("n_forecast_steps", 1))
         self.n_history_steps = int(config["window"].get("n_history_steps", 1))
+        uncertainty_variable = config.get("loss", {}).get("uncertainty_variable", None)
+        self.target_uncertainty_variable = (
+            None if uncertainty_variable is None else str(uncertainty_variable)
+        )
 
         # Set common arguments for the dataloader
         self._common_dataloader_kwargs = DataloaderArgs(
@@ -267,6 +271,7 @@ class CommonDataModule(LightningDataModule):
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
+            target_uncertainty_variable=self.target_uncertainty_variable,
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":
