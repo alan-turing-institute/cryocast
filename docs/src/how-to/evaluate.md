@@ -30,6 +30,27 @@ See the [`evaluate` command reference](../user-guide/commands.md#evaluate) for f
 uv run cryocast evaluate --config-name <your-name>.local --checkpoint PATH_TO_CHECKPOINT
 ```
 
+### Diffusion schedule compatibility
+
+A diffusion checkpoint must be evaluated with the schedule used during training.
+The opt-in linear schedule scales its beta endpoints by `1000 / timesteps` and
+caps beta at `0.999`. The canonical 1,000-step linear schedule and all cosine
+schedules remain unchanged. The shipped `cnn_ddpm_cnn` and `cnn_ddim_cnn` presets
+still use cosine, with 150 and 1,000 trained timesteps respectively.
+
+An older linear checkpoint trained with fixed endpoints at another chain length
+requires that original implementation for compatible evaluation, or retraining
+with the scaled schedule. Loading weights alone does not make a different
+training schedule compatible. Reducing `ddim_steps` selects fewer reverse steps
+from the existing trained schedule; changing `timesteps` changes that schedule.
+
+At 150 linear steps, the coefficient-based terminal signal-to-noise ratio falls
+from approximately `0.281` to `2.67e-5`. This is a numerical schedule check,
+not measured evidence of improved forecasting. Very short chains are clipped and
+do not have exactly zero terminal signal. One-step coefficient finiteness alone
+also does not establish forward-process consistency: the existing timestep-zero
+convention is tracked separately in [#580](https://github.com/alan-turing-institute/cryocast/issues/580).
+
 ### Enabling visualisations
 
 By default, all visualisations are enabled (see `cryocast/config/evaluate/callbacks/plotting.yaml`). To disable forecast plots, set `make_static_plots` and `make_video_plots` to `false` in your local config:
