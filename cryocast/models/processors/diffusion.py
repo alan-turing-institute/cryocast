@@ -42,6 +42,7 @@ frame and carried forward unchanged.
 """
 
 import logging
+import math
 from typing import Any
 
 import torch
@@ -85,6 +86,7 @@ class DiffusionProcessor(BaseProcessor):
         normalization: str = "groupnorm",
         activation: str = "SiLU",
         use_autoregressive: bool = True,
+        x0_scale: float = 1.0,
         loss: DictConfig | nn.Module,
         **kwargs: Any,
     ) -> None:
@@ -109,6 +111,14 @@ class DiffusionProcessor(BaseProcessor):
             activation (str): Activation function used throughout the network (e.g., "SiLU").
             use_autoregressive (bool): Whether to use autoregressive sampling and
                 one-step training. Default is True.
+            x0_scale (float): Positive finite divisor for clean target latents:
+                diffusion trains on ``y / x0_scale``. Conditioning history and
+                diffusion noise retain their original units. Samples and metric
+                predictions are multiplied by the same scale before decoding or
+                updating autoregressive history. Default is 1.0. To test unit-
+                variance targets, estimate this value from training-only target
+                latents and keep it unchanged when sampling that trained model;
+                the processor does not estimate it or subtract a mean.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
@@ -148,8 +158,13 @@ class DiffusionProcessor(BaseProcessor):
         self.c_target = c_target
         self.c_combined = c_combined
 
+        if not math.isfinite(x0_scale) or x0_scale <= 0:
+            msg = f"x0_scale must be positive and finite, got {x0_scale}."
+            raise ValueError(msg)
+
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+        self.x0_scale = x0_scale
 
         # Autoregressive training only optimises one forecast step at a time
         if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
@@ -348,12 +363,16 @@ class DiffusionProcessor(BaseProcessor):
             start_dim=1, end_dim=2
         )  # (B, T_hist * C_combined, H, W)
 
-        # Either take the first step (AR0) or fold all steps into channels (parallel)
-        y_flat: TensorNCHW = (
-            y[:, 0]  # (B, C_target, H, W)
-            if self.use_autoregressive
-            else y.reshape(b, self.n_forecast_steps * self.c_target, *y.shape[-2:])
-        )
+        # Normalize the clean target before diffusion. AR uses step 0 only; parallel folds
+        # all steps into channels.
+        y_scaled = y / self.x0_scale
+        if self.use_autoregressive:
+            # AR trains on forecast step 0 (T=0) only.
+            y_flat = y_scaled[:, 0]  # (B, C_target, H, W)
+        else:
+            y_flat = y_scaled.reshape(
+                b, self.n_forecast_steps * self.c_target, *y.shape[-2:]
+            )
 
         # Random diffusion timestep per sample.
         t = torch.randint(0, self.timesteps, (b,), device=device).long()
@@ -381,10 +400,10 @@ class DiffusionProcessor(BaseProcessor):
         with torch.no_grad():
             # calculate_v() has the same formula as the x_0 reconstruction,
             # so we reuse it by passing pred_v as x_start.
-            pred_x0: TensorNCHW = self.diffusion.calculate_v(
-                x_start=pred_v, noise=noisy_y, t=t
+            pred_x0 = self.diffusion.calculate_v(x_start=pred_v, noise=noisy_y, t=t)
+            prediction = self._build_metrics_prediction(
+                pred_x0 * self.x0_scale, last_frame
             )
-            prediction = self._build_metrics_prediction(pred_x0, last_frame)
 
         return ProcessorOutput(prediction=prediction, loss=loss)
 
@@ -476,8 +495,10 @@ class DiffusionProcessor(BaseProcessor):
 
         """
         if self.uses_ddpm_sampler:
-            return self._run_ddpm_reverse_diffusion(y, cond)
-        return self._run_ddim_reverse_diffusion(y, cond)
+            prediction = self._run_ddpm_reverse_diffusion(y, cond)
+        else:
+            prediction = self._run_ddim_reverse_diffusion(y, cond)
+        return prediction * self.x0_scale
 
     def _sample_autoregressive(self, x: TensorNTCHW) -> TensorNTCHW:
         """Autoregressive reverse diffusion sampling (one forecast step at a time).
