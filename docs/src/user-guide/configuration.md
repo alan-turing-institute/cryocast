@@ -112,6 +112,24 @@ variables:
 
 An empty list of target variables (e.g. `sic-osisaf: []`) selects every input variable in that dataset group.
 
+### CARRA2
+
+CryoCast includes a `carra2` ingestion source backed by the Copernicus Climate Data Store. The source submits one `reanalysis-pan-carra` request for each exact date/time requested by Anemoi, avoiding accidental Cartesian combinations of days and times.
+
+A sample native-grid recipe is available as `samp_weathernorth_carra2_2p5km_2020_2024_24h_v1`. It requests a small set of surface weather variables at 12:00 UTC for the sample date ranges. Custom recipes can select other CARRA2 variables, level types, level locations, or geographic subsets. The source currently uses GRIB output so downloaded fields can be materialised safely before temporary files are removed:
+
+```yaml
+input:
+  carra2:
+    level_type: pressure_levels
+    level_location: ["850"]
+    variables: [temperature]
+    product_type: analysis
+    data_format: grib
+```
+
+Before downloading CARRA2, configure CDS API credentials and accept the dataset terms in the Climate Data Store. The recipe keeps CARRA2 on its native grid; normal CryoCast encoders can then map it into the model's shared latent space, or a `reproject` filter can be added to a custom recipe.
+
 ### Generating Argo float missing dates
 
 Some dates have no Argo float data. When specifying a new Argo float dataset for the first time it is necessary to generate a list of missing dates for a dataset. This can be done as follows:

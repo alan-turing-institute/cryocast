@@ -1,0 +1,4 @@
+- name: mae
+  _target_: cryocast.metrics.MAEPerForecastDay
+- name: rmse
+  _target_: cryocast.metrics.RMSEPerForecastDay

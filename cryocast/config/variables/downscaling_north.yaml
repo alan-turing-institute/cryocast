@@ -1,0 +1,8 @@
+input:
+  sic-osisaf:
+    - ice_conc
+  sic-carra2:
+    - ice_conc
+target:
+  sic-carra2:
+    - ice_conc
