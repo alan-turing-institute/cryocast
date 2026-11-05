@@ -95,6 +95,14 @@ unchanged to any gridded continuous variable.
 `MAEPerForecastDay` and `RMSEPerForecastDay` compare concentration directly,
 pixel-by-pixel, independent of spatial pattern.
 
+At each lead, errors are pooled across examples, channels and unmasked pixels;
+unequal batch sizes are weighted by their element counts. RMSE takes the square
+root after pooling squared errors, rather than averaging per-image RMSEs.
+Float16 and bfloat16 inputs are promoted to float32 before computing errors and
+sums; float64 retains double precision. This avoids overflow on full-sized grids
+and underflow when squaring small errors. Nonfinite values on masked land are
+excluded, while invalid ocean errors remain visible in the score.
+
 **Limitations:** Although these two produce similar rankings, RMSE weights large errors more than MAE, so it separates a few big
 misses (`shifted edge`) from many small ones (`noisy`) more sharply than MAE does.
 Neither metric distinguishes a coherent structural error from scattered noise with
@@ -137,6 +145,12 @@ The `noisy` scenario scores 98 %+ despite non-zero MAE/RMSE, but `shifted edge` 
 
 `SeaIceExtentErrorPerForecastDay` sums total ice area over the whole field and takes the signed difference from the truth.
 Positive means the model over-predicts extent.
+
+The reported value is averaged over forecast examples at each lead and retains
+its sign. Opposite biases can cancel between examples: errors of +625 and -625
+km² average to zero, although their mean absolute extent error is 625 km².
+Taking the absolute value of the reported mean does not recover that per-example
+absolute error. Keep this signed bias distinct from absolute extent error and IIEE.
 
 **Limitations:** SIE error is blind to spatial displacement. `shifted edge` has the *same* total area as the truth every day, so its SIE error is near zero even though it is one of the worst scenarios by every other metric — area errors can cancel across the field even when the field is badly wrong locally.
 Combine it with a spatial metric such as IIEE, which does not let displacement errors cancel out.
