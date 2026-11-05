@@ -1,0 +1,10 @@
+defaults:
+  - cnn_unet_cnn
+  - _self_
+
+name: cnn-unet-cnn-attention
+
+fusion:
+  _target_: cryocast.models.common.LatentFusion
+  mode: attention
+  temperature: 1.0
