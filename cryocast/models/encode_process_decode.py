@@ -147,7 +147,6 @@ class EncodeProcessDecode(BaseModel):
             channels=sum(encoder.data_space_out.channels for encoder in self.encoders),
             shape=latent_shapes.pop(),
         )
-        target_input_encoder = self.target_input_encoder
         self.processor: BaseProcessor = (
             processor
             if isinstance(processor, BaseProcessor)
@@ -156,14 +155,8 @@ class EncodeProcessDecode(BaseModel):
                 # Nested configs (e.g. a `loss`) are built by the processor itself
                 _recursive_=False,
                 data_space=combined_latent_space,
-                data_space_target=(
-                    self.target_encoder
-                    if target_input_encoder is None
-                    else target_input_encoder
-                ).data_space_out,
                 n_forecast_steps=self.n_forecast_steps,
                 n_history_steps=self.n_history_steps,
-                target_channel_offset=self._find_target_channel_offset(),
             )
         )
 
@@ -279,14 +272,6 @@ class EncodeProcessDecode(BaseModel):
         if not self.decoder.skip_connection:
             return None
         return window[:, -1, self.target_variable_indices, :, :]
-
-    def _find_target_channel_offset(self) -> int | None:
-        """Find the channel offset of the target dataset within the combined latent space, if present."""
-        target_input_encoder = self.target_input_encoder
-        if target_input_encoder is None:
-            return None
-        idx = self.encoders.index(target_input_encoder)
-        return sum(encoder.data_space_out.channels for encoder in self.encoders[:idx])
 
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.
