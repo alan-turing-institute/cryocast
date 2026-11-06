@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from cryocast.data import CombinedDataset
 from cryocast.models import BaseModel
 from cryocast.types import (
+    ArrayTCHW,
     ArrayTHW,
     Metadata,
     ModelStepOutput,
@@ -213,7 +214,7 @@ class MediaLoggingCallback(Callback):
         else:
             return uncertainties
 
-    def make_plots(
+    def make_plots(  # noqa: C901
         self,
         trainer: Trainer,
         pl_module: LightningModule,
@@ -280,6 +281,20 @@ class MediaLoggingCallback(Callback):
         uncertainties = self.load_target_uncertainties(dataset, forecast_dates)
         climatology_tchw = dataset.climatology_for(start_date)
 
+        # Map input groups to their channel names and data on the forecast dates. If an
+        # input group has no data on one of the dates then it is left out.
+        grouped_input_data: dict[str, tuple[list[str], ArrayTCHW]] = {}
+        if self.make_input_plots:
+            np_forecast_dates = list(map(npdatetime_from_datetime, forecast_dates))
+            for input_ds in dataset.inputs:
+                try:
+                    grouped_input_data[input_ds.name] = (
+                        list(input_ds.variable_names),
+                        input_ds.get_tchw(np_forecast_dates),
+                    )
+                except IndexError as exc:
+                    log.warning("Skipping input plots for %s: %s", input_ds.name, exc)
+
         if self.make_static_plots:
             publisher.log_static_outputs(
                 self.cached_outputs_,
@@ -297,7 +312,10 @@ class MediaLoggingCallback(Callback):
             )
             if self.make_input_plots and not self.is_logged("static", forecast_dates):
                 publisher.log_static_inputs(
-                    dataset.inputs, forecast_dates, image_loggers, prefix=self.prefix
+                    grouped_input_data,
+                    forecast_dates,
+                    image_loggers,
+                    prefix=self.prefix,
                 )
 
         if self.make_video_plots:
@@ -317,7 +335,10 @@ class MediaLoggingCallback(Callback):
             )
             if self.make_input_plots and not self.is_logged("video", forecast_dates):
                 publisher.log_video_inputs(
-                    dataset.inputs, forecast_dates, video_loggers, prefix=self.prefix
+                    grouped_input_data,
+                    forecast_dates,
+                    video_loggers,
+                    prefix=self.prefix,
                 )
 
     def on_batch_end(  # noqa: PLR0913
