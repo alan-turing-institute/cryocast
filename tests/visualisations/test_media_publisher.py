@@ -1,19 +1,19 @@
 import logging
 from datetime import datetime
 from io import BytesIO
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
 import torch
 
-from cryocast.data import CombinedDataset, SingleDataset
 from cryocast.exceptions import InvalidArrayError, VideoRenderError
 from cryocast.types import Hemisphere, Metadata, ModelStepOutput, PlotSpec
 from cryocast.visualisations.land_mask import LandMask
 from cryocast.visualisations.matplotlib_renderer import MatplotlibRenderer
 from cryocast.visualisations.media_publisher import MediaPublisher
+from cryocast.visualisations.panel_renderer import PanelRenderer
 
 if TYPE_CHECKING:
     from PIL.ImageFile import ImageFile
@@ -27,53 +27,30 @@ FORECAST_DATES = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
 HISTORY_DATES = [datetime(2019, 12, 30), datetime(2019, 12, 31)]
 
 
-def fake_single_dataset() -> SingleDataset:
-    """Return a duck-typed SingleDataset stand-in, cast to satisfy MediaPublisher's typing."""
-
-    class FakeSingleDataset:
-        """Minimal SingleDataset stand-in exposing the attributes MediaPublisher reads."""
-
-        name = "example"
-        variable_names: ClassVar[list[str]] = ["ice_conc", "temperature"]
-
-        def __getitem__(self, _idx: int) -> np.ndarray:
-            """Return a deterministic [C, H, W] array for the requested timestep."""
-            return np.ones((N_CHANNELS, HEIGHT, WIDTH), dtype=np.float32)
-
-        def get_tchw(self, dates: list) -> np.ndarray:
-            """Return a deterministic [T, C, H, W] array for the requested dates."""
-            return np.ones((len(dates), N_CHANNELS, HEIGHT, WIDTH), dtype=np.float32)
-
-    return cast("SingleDataset", FakeSingleDataset())
+def fake_inputs() -> dict[str, tuple[list[str], np.ndarray]]:
+    """Return one input group whose [T, C, H, W] data equals 10 * t + c everywhere."""
+    data = (
+        10 * np.arange(N_TIMESTEPS).reshape(-1, 1, 1, 1)
+        + np.arange(N_CHANNELS).reshape(1, -1, 1, 1)
+    ) * np.ones((N_TIMESTEPS, N_CHANNELS, HEIGHT, WIDTH), dtype=np.float32)
+    return {"example": (["ice_conc", "temperature"], data)}
 
 
-def fake_combined_dataset(
-    *,
-    start_date: str = "2020-01-01",
-    end_date: str = "2020-01-10",
-    frequency: np.timedelta64 | None = None,
-    length: int = 10,
-    n_history_steps: int = 0,
-    inputs: list[SingleDataset] | None = None,
-) -> CombinedDataset:
-    """Return a duck-typed CombinedDataset stand-in for MediaPublisher's dataset arg."""
+TRAINING_METADATA = Metadata(
+    n_history_steps=0,
+    n_samples=10,
+    training_end="2020-01-10",
+    training_start="2020-01-01",
+)
 
-    class FakeCombinedDataset:
-        """Minimal CombinedDataset stand-in for MediaPublisher's metadata construction."""
 
-        def __init__(self) -> None:
-            self.start_date = np.datetime64(start_date)
-            self.end_date = np.datetime64(end_date)
-            self.frequency = (
-                frequency if frequency is not None else np.timedelta64(1, "D")
-            )
-            self.n_history_steps = n_history_steps
-            self.inputs = inputs if inputs is not None else []
-
-        def __len__(self) -> int:
-            return length
-
-    return cast("CombinedDataset", FakeCombinedDataset())
+def make_publisher(**plot_spec_kwargs: Any) -> MediaPublisher:
+    """Build a MediaPublisher with no land mask and a PlotSpec from the given kwargs."""
+    return MediaPublisher(
+        training_metadata=TRAINING_METADATA,
+        land_mask=LandMask(None),
+        plot_spec=PlotSpec(**plot_spec_kwargs),
+    )
 
 
 def make_model_step_output(
@@ -122,11 +99,7 @@ class TestLoggingHelpers:
 
     def test_log_videos_rewinds_for_each_logger_and_preserves_format(self) -> None:
         """Rewind shared buffers before every logger handoff."""
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(video_format="mp4"),
-        )
+        media_publisher = make_publisher(video_format="mp4")
         first = MagicMock()
         second = MagicMock()
         buffer = BytesIO(b"video")
@@ -151,7 +124,7 @@ class TestMetadataAndHemisphere:
     def test_metadata_subtitle_reflects_constructor_dataset(self) -> None:
         """Metadata built from the constructor's dataset/epoch/model appears in the footer."""
         media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
+            training_metadata=TRAINING_METADATA,
             land_mask=LandMask(None),
             plot_spec=PlotSpec(),
             model_name="unet",
@@ -165,11 +138,7 @@ class TestMetadataAndHemisphere:
 
     def test_plot_spec_hemisphere_is_used_as_given(self) -> None:
         """Hemisphere is read straight from the given plot_spec, not set separately."""
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(hemisphere=Hemisphere.SOUTH),
-        )
+        media_publisher = make_publisher(hemisphere=Hemisphere.SOUTH)
 
         assert media_publisher.panel_renderer.plot_spec.hemisphere == "south"
 
@@ -178,7 +147,7 @@ class TestMetadataAndHemisphere:
         new_land_mask = LandMask(None)
 
         media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
+            training_metadata=TRAINING_METADATA,
             plot_spec=PlotSpec(),
             land_mask=new_land_mask,
         )
@@ -187,11 +156,7 @@ class TestMetadataAndHemisphere:
 
     def test_trained_epochs_and_model_name_are_optional(self) -> None:
         """Omitting trained_epochs/model_name leaves the footer without those lines."""
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
 
         footer = media_publisher.panel_renderer.annotator.footer()
 
@@ -211,13 +176,9 @@ class TestLogStaticInputs:
         monkeypatch.setattr(MatplotlibRenderer, "panels_static", fake_render)
         image_logger = MagicMock()
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_inputs(
-            [fake_single_dataset()], FORECAST_DATES, [image_logger], prefix="validation"
+            fake_inputs(), FORECAST_DATES, [image_logger], prefix="validation"
         )
 
         assert fake_render.call_count == N_CHANNELS
@@ -242,14 +203,10 @@ class TestLogStaticInputs:
             MagicMock(side_effect=InvalidArrayError("bad array")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_static_inputs(
-                [fake_single_dataset()], FORECAST_DATES, [MagicMock()]
+                fake_inputs(), FORECAST_DATES, [MagicMock()]
             )
 
         assert "Image logging failed: bad array" in caplog.text
@@ -266,17 +223,34 @@ class TestLogStaticInputs:
             MagicMock(side_effect=ValueError("bad shape")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_static_inputs(
-                [fake_single_dataset()], FORECAST_DATES, [MagicMock()]
+                fake_inputs(), FORECAST_DATES, [MagicMock()]
             )
 
         assert "Image logging failed: bad shape" in caplog.text
+
+    def test_plots_the_selected_date(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Plot each channel at the selected timestep, labelled with that date.
+
+        Regression test: the publisher used to index the whole dataset by position,
+        plotting the zarr's row `selected_timestep` instead of the input on its date.
+        """
+        fake_singlet = MagicMock(return_value=object())
+        monkeypatch.setattr(PanelRenderer, "static_singlet", fake_singlet)
+
+        make_publisher(selected_timestep=1).log_static_inputs(
+            fake_inputs(), FORECAST_DATES, [MagicMock()]
+        )
+
+        # fake_inputs holds 10 * t + c, so timestep 1 gives 10 + c for channel c
+        assert fake_singlet.call_count == N_CHANNELS
+        for channel, singlet_call in enumerate(fake_singlet.call_args_list):
+            np.testing.assert_array_equal(
+                singlet_call.args[0], np.full((HEIGHT, WIDTH), 10 + channel)
+            )
+            assert singlet_call.kwargs["when"] == FORECAST_DATES[1]
 
 
 class TestLogStaticOutputs:
@@ -286,11 +260,7 @@ class TestLogStaticOutputs:
         monkeypatch.setattr(MatplotlibRenderer, "panels_static", fake_render)
         image_logger = MagicMock()
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_outputs(
             make_model_step_output(),
             [image_logger],
@@ -314,11 +284,7 @@ class TestLogStaticOutputs:
         monkeypatch.setattr(MatplotlibRenderer, "panels_static", fake_render)
         image_logger = MagicMock()
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_outputs(
             make_model_step_output(dtype=torch.bfloat16),
             [image_logger],
@@ -340,11 +306,7 @@ class TestLogStaticOutputs:
             (N_TIMESTEPS, N_CHANNELS, HEIGHT, WIDTH), dtype=np.float32
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_outputs(
             make_model_step_output(),
             [MagicMock()],
@@ -369,11 +331,7 @@ class TestLogStaticOutputs:
         image_logger = MagicMock()
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_outputs(
             make_model_step_output(channels=1),
             [image_logger],
@@ -398,11 +356,7 @@ class TestLogStaticOutputs:
         image_logger = MagicMock()
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_outputs(
             make_model_step_output(channels=1),
             [image_logger],
@@ -434,11 +388,7 @@ class TestLogStaticOutputs:
         image_logger = MagicMock()
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_static_outputs(
             make_model_step_output(),
             [image_logger],
@@ -482,11 +432,7 @@ class TestLogStaticOutputs:
         image_logger = MagicMock()
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(include_difference=False),
-        )
+        media_publisher = make_publisher(include_difference=False)
         media_publisher.log_static_outputs(
             make_model_step_output(),
             [image_logger],
@@ -514,11 +460,7 @@ class TestLogStaticOutputs:
             MagicMock(side_effect=InvalidArrayError("bad array")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_static_outputs(
                 make_model_step_output(),
@@ -542,11 +484,7 @@ class TestLogStaticOutputs:
             MagicMock(side_effect=MemoryError),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_static_outputs(
                 make_model_step_output(),
@@ -569,11 +507,7 @@ class TestLogStaticOutputs:
             MagicMock(return_value=image),
         )
         image_logger = MagicMock()
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(selected_timestep=1),
-        )
+        media_publisher = make_publisher(selected_timestep=1)
 
         media_publisher.log_static_outputs(
             make_model_step_output(),
@@ -606,11 +540,7 @@ class TestLogStaticOutputs:
         )
         image_logger = MagicMock()
 
-        MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        ).log_static_outputs(
+        make_publisher().log_static_outputs(
             make_model_step_output(channels=1),
             [image_logger],
             channel_names=["ice_conc"],
@@ -634,13 +564,9 @@ class TestLogVideoInputs:
         monkeypatch.setattr(MatplotlibRenderer, "panels_video", fake_render)
         video_logger = MagicMock()
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_inputs(
-            [fake_single_dataset()], FORECAST_DATES, [video_logger], prefix="validation"
+            fake_inputs(), FORECAST_DATES, [video_logger], prefix="validation"
         )
 
         assert fake_render.call_count == N_CHANNELS
@@ -669,14 +595,10 @@ class TestLogVideoInputs:
             MagicMock(side_effect=InvalidArrayError("bad array")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_video_inputs(
-                [fake_single_dataset()], FORECAST_DATES, [MagicMock()]
+                fake_inputs(), FORECAST_DATES, [MagicMock()]
             )
 
         assert "Video logging failed: bad array" in caplog.text
@@ -693,14 +615,10 @@ class TestLogVideoInputs:
             MagicMock(side_effect=VideoRenderError("encoding failed")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_video_inputs(
-                [fake_single_dataset()], FORECAST_DATES, [MagicMock()]
+                fake_inputs(), FORECAST_DATES, [MagicMock()]
             )
 
         assert "Video logging failed: encoding failed" in caplog.text
@@ -717,17 +635,28 @@ class TestLogVideoInputs:
             MagicMock(side_effect=ValueError("bad shape")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_video_inputs(
-                [fake_single_dataset()], FORECAST_DATES, [MagicMock()]
+                fake_inputs(), FORECAST_DATES, [MagicMock()]
             )
 
         assert "Video logging failed: bad shape" in caplog.text
+
+    def test_renders_each_channel_over_all_dates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pass each channel's full [T, H, W] series to the video renderer."""
+        fake_singlet = MagicMock(return_value=BytesIO())
+        monkeypatch.setattr(PanelRenderer, "video_singlet", fake_singlet)
+        inputs = fake_inputs()
+
+        make_publisher().log_video_inputs(inputs, FORECAST_DATES, [MagicMock()])
+
+        _, data = inputs["example"]
+        assert fake_singlet.call_count == N_CHANNELS
+        for channel, singlet_call in enumerate(fake_singlet.call_args_list):
+            np.testing.assert_array_equal(singlet_call.args[0], data[:, channel])
 
 
 class TestLogVideoOutputs:
@@ -737,11 +666,7 @@ class TestLogVideoOutputs:
         monkeypatch.setattr(MatplotlibRenderer, "panels_video", fake_render)
         video_logger = MagicMock()
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_outputs(
             make_model_step_output(),
             [video_logger],
@@ -765,11 +690,7 @@ class TestLogVideoOutputs:
         monkeypatch.setattr(MatplotlibRenderer, "panels_video", fake_render)
         video_logger = MagicMock()
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_outputs(
             make_model_step_output(dtype=torch.bfloat16),
             [video_logger],
@@ -791,11 +712,7 @@ class TestLogVideoOutputs:
             (N_TIMESTEPS, N_CHANNELS, HEIGHT, WIDTH), dtype=np.float32
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_outputs(
             make_model_step_output(),
             [MagicMock()],
@@ -820,11 +737,7 @@ class TestLogVideoOutputs:
         video_logger = MagicMock()
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_outputs(
             make_model_step_output(channels=1),
             [video_logger],
@@ -849,11 +762,7 @@ class TestLogVideoOutputs:
         video_logger = MagicMock()
         climatology = np.zeros((N_TIMESTEPS, 1, HEIGHT, WIDTH), dtype=np.float32)
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_outputs(
             make_model_step_output(channels=1),
             [video_logger],
@@ -886,11 +795,7 @@ class TestLogVideoOutputs:
         video_logger = MagicMock()
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         media_publisher.log_video_outputs(
             make_model_step_output(),
             [video_logger],
@@ -934,11 +839,7 @@ class TestLogVideoOutputs:
         video_logger = MagicMock()
         uncertainties = {0: torch.zeros((N_TIMESTEPS, HEIGHT, WIDTH)).numpy()}
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(include_difference=False),
-        )
+        media_publisher = make_publisher(include_difference=False)
         media_publisher.log_video_outputs(
             make_model_step_output(),
             [video_logger],
@@ -966,11 +867,7 @@ class TestLogVideoOutputs:
             MagicMock(side_effect=InvalidArrayError("bad array")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_video_outputs(
                 make_model_step_output(),
@@ -994,11 +891,7 @@ class TestLogVideoOutputs:
             MagicMock(side_effect=VideoRenderError("encoding failed")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_video_outputs(
                 make_model_step_output(),
@@ -1022,11 +915,7 @@ class TestLogVideoOutputs:
             MagicMock(side_effect=ValueError("bad shape")),
         )
 
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(),
-        )
+        media_publisher = make_publisher()
         with caplog.at_level(logging.WARNING):
             media_publisher.log_video_outputs(
                 make_model_step_output(),
@@ -1051,11 +940,7 @@ class TestLogVideoOutputs:
             lambda *args, **kwargs: buffer,  # noqa: ARG005
         )
         video_logger = MagicMock()
-        media_publisher = MediaPublisher(
-            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
-            land_mask=LandMask(None),
-            plot_spec=PlotSpec(video_format="gif"),
-        )
+        media_publisher = make_publisher(video_format="gif")
 
         media_publisher.log_video_outputs(
             make_model_step_output(channels=1),

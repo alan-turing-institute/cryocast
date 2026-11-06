@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, PropertyMock
 
 import numpy as np
@@ -36,23 +37,30 @@ def make_plots_args(mock_trainer: MagicMock) -> tuple[MagicMock, MagicMock, Magi
     return mock_trainer, pl_module, dataset
 
 
-def _stub_media_publisher(
-    callback: MediaLoggingCallback, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, MagicMock]:
-    """Replace load_target_uncertainties and MediaPublisher (as make_plots constructs it) with spies.
+def _callback_with_cache(
+    monkeypatch: pytest.MonkeyPatch, **kwargs: Any
+) -> tuple[MediaLoggingCallback, dict[str, MagicMock]]:
+    """Build a callback with a cached batch to plot, and stub what make_plots calls.
 
-    `make_plots` now builds a fresh `MediaPublisher(...)` locally on every call rather than
-    holding one on the callback, so the class itself is replaced with a MagicMock: its
-    `call_args_list` records each construction's kwargs (dataset/hemisphere/land_mask/
-    model_name/trained_epochs), and `.return_value` is the stub instance whose
-    log_* methods `make_plots` calls.
+    `make_plots` builds a new `MediaPublisher` on every call, so the class is replaced
+    with a MagicMock. Its `call_args_list` records the kwargs of each construction,
+    and its `return_value` is the instance whose `log_*` methods `make_plots` calls.
+    `load_target_uncertainties` is also stubbed to return no uncertainties.
+
+    Returns:
+        The callback, and a map from name to each stub.
+
     """
+    callback = MediaLoggingCallback(**kwargs)
+    callback.cached_batch_idx_ = 0
+    callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+
     publisher_class = MagicMock()
     publisher = publisher_class.return_value
     monkeypatch.setattr(
         "cryocast.callbacks.media_logging_callback.MediaPublisher", publisher_class
     )
-    mocks = {
+    stubs = {
         "load_target_uncertainties": MagicMock(return_value={}),
         "log_static_outputs": publisher.log_static_outputs,
         "log_static_inputs": publisher.log_static_inputs,
@@ -61,9 +69,9 @@ def _stub_media_publisher(
         "media_publisher_class": publisher_class,
     }
     monkeypatch.setattr(
-        callback, "load_target_uncertainties", mocks["load_target_uncertainties"]
+        callback, "load_target_uncertainties", stubs["load_target_uncertainties"]
     )
-    return mocks
+    return callback, stubs
 
 
 @pytest.fixture
@@ -81,8 +89,19 @@ def dataset_with_uncertainty() -> tuple[MagicMock, MagicMock]:
     )
     target.subset.return_value = uncertainty_ds
     dataset.target = target
-    dataset.inputs = []
     return dataset, uncertainty_ds
+
+
+def _fake_input(name: str, *, missing: bool = False) -> MagicMock:
+    """An input group double whose get_tchw returns [T, 1, 2, 2] ones, or raises."""
+    input_ds = MagicMock()
+    input_ds.name = name
+    input_ds.variable_names = [f"{name}_var"]
+    if missing:
+        input_ds.get_tchw.side_effect = IndexError("Date 2020-01-02 not found")
+    else:
+        input_ds.get_tchw.side_effect = lambda dates: np.ones((len(dates), 1, 2, 2))
+    return input_ds
 
 
 class TestLoadTargetUncertainties:
@@ -105,22 +124,6 @@ class TestLoadTargetUncertainties:
         dataset.target.subset.assert_called_once_with(
             variables=["total_standard_uncertainty"], normalise=False
         )
-
-    def test_loads_uncertainty_not_selected_as_input(
-        self, dataset_with_uncertainty: tuple[MagicMock, MagicMock]
-    ) -> None:
-        """Load uncertainty from disk even when it is not a selected input variable."""
-        dataset, _ = dataset_with_uncertainty
-        source = MagicMock()
-        source.name = "target"
-        source.variable_names = ["ice_conc"]
-        dataset.inputs = [source]
-
-        result = MediaLoggingCallback().load_target_uncertainties(
-            dataset, [datetime(2026, 8, 21, tzinfo=UTC)]
-        )
-
-        assert set(result) == {0}
 
     def test_warns_when_uncertainty_not_on_disk(
         self,
@@ -443,10 +446,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """During training/validation, show the (1-indexed) count of completed epochs."""
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         trainer.current_epoch = 7
 
@@ -470,10 +470,7 @@ class TestMakePlots:
         A fresh evaluate-only trainer's current_epoch is always 0, so this must come
         from the model instead (set by ModelService.from_checkpoint).
         """
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         trainer.current_epoch = 0
         trainer.testing = True
@@ -494,10 +491,7 @@ class TestMakePlots:
         This happens when evaluating a model that was never loaded from a checkpoint
         (checkpoint_epoch defaults to None on BaseModel).
         """
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         trainer.testing = True
         pl_module.checkpoint_epoch = None
@@ -513,10 +507,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Source the footer's "Trained:" metadata from the datamodule's training split, not the active dataset."""
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         training_dataset = MagicMock(spec=CombinedDataset)
         training_dataset.inputs = []
@@ -543,10 +534,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Use the model's own training metadata rather than rebuilding the dataset."""
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         trainer.datamodule = MagicMock(mask_directory=None)
         type(trainer.datamodule).training_dataset = PropertyMock(
@@ -568,10 +556,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Fall back to the active split's dataset when no datamodule is available."""
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
 
         callback.make_plots(trainer, pl_module, dataset, 1)
@@ -588,10 +573,8 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Index into dataset.dates using batch_size * cached_batch_idx_, not just 0."""
-        callback = MediaLoggingCallback()
-        _stub_media_publisher(callback, monkeypatch)
+        callback, _ = _callback_with_cache(monkeypatch)
         callback.cached_batch_idx_ = 2
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
         trainer, pl_module, dataset = make_plots_args
         dataset.dates = [
             np.datetime64(f"2020-01-{day:02d}T12:00:00") for day in range(1, 10)
@@ -608,10 +591,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Build a LandMask once per mask directory and reuse it on repeat calls."""
-        callback = MediaLoggingCallback()
-        _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, _ = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         trainer.datamodule = MagicMock(mask_directory=tmp_path)
 
@@ -630,10 +610,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Pass the cached LandMask to MediaPublisher at construction."""
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
         trainer.datamodule = MagicMock(mask_directory=tmp_path)
 
@@ -652,10 +629,9 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Do not call any image logger output methods when both toggles are disabled."""
-        callback = MediaLoggingCallback(make_static_plots=False, make_video_plots=False)
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(
+            monkeypatch, make_static_plots=False, make_video_plots=False
+        )
         trainer, pl_module, dataset = make_plots_args
 
         callback.make_plots(trainer, pl_module, dataset, 1)
@@ -663,22 +639,59 @@ class TestMakePlots:
         stubs["log_static_outputs"].assert_not_called()
         stubs["log_video_outputs"].assert_not_called()
 
-    def test_makes_input_plots_when_enabled(
+    def test_passes_input_data_to_input_plots(
         self,
         make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Also log static and video input plots when make_input_plots is enabled."""
-        callback = MediaLoggingCallback(make_input_plots=True)
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        """Read each input once on the forecast dates and pass it to both input plots."""
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
         trainer, pl_module, dataset = make_plots_args
+        era5 = _fake_input("era5")
+        dataset.inputs = [era5]
 
         callback.make_plots(trainer, pl_module, dataset, 1)
 
-        stubs["log_static_inputs"].assert_called_once()
-        stubs["log_video_inputs"].assert_called_once()
+        era5.get_tchw.assert_called_once_with(dataset.get_forecast_steps.return_value)
+        static_inputs = stubs["log_static_inputs"].call_args.args[0]
+        video_inputs = stubs["log_video_inputs"].call_args.args[0]
+        assert static_inputs is video_inputs
+        assert list(static_inputs) == ["era5"]
+        channel_names, data = static_inputs["era5"]
+        assert channel_names == ["era5_var"]
+        assert data.shape == (1, 1, 2, 2)
+
+    def test_skips_input_plots_for_a_group_missing_a_date(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Leave out a group with no data on a forecast date, but keep the others."""
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
+        trainer, pl_module, dataset = make_plots_args
+        dataset.inputs = [_fake_input("argo", missing=True), _fake_input("era5")]
+
+        with caplog.at_level(logging.WARNING):
+            callback.make_plots(trainer, pl_module, dataset, 1)
+
+        assert list(stubs["log_static_inputs"].call_args.args[0]) == ["era5"]
+        assert "Skipping input plots for argo" in caplog.text
+
+    def test_does_not_read_inputs_when_input_plots_disabled(
+        self,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Skip reading the inputs when no input plot will be logged."""
+        callback, _ = _callback_with_cache(monkeypatch, make_input_plots=False)
+        trainer, pl_module, dataset = make_plots_args
+        era5 = _fake_input("era5")
+        dataset.inputs = [era5]
+
+        callback.make_plots(trainer, pl_module, dataset, 1)
+
+        era5.get_tchw.assert_not_called()
 
     def test_only_logs_input_plots_once_per_dataloader_and_date(
         self,
@@ -686,10 +699,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Do not repeat static/video input plots for a dataloader/date already logged."""
-        callback = MediaLoggingCallback(make_input_plots=True)
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
         trainer, pl_module, dataset = make_plots_args
 
         callback.make_plots(trainer, pl_module, dataset, 1)
@@ -704,10 +714,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Log input plots again when the same date recurs on a different dataloader."""
-        callback = MediaLoggingCallback(make_input_plots=True)
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
         trainer, pl_module, dataset = make_plots_args
 
         callback.cached_dataloader_idx_ = 0
@@ -724,10 +731,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Pass compare_truth_climatology=True only on the first call for a date."""
-        callback = MediaLoggingCallback(make_input_plots=True)
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
         trainer, pl_module, dataset = make_plots_args
 
         callback.make_plots(trainer, pl_module, dataset, 1)
@@ -750,10 +754,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Never pass compare_truth_climatology=True when make_input_plots is off."""
-        callback = MediaLoggingCallback(make_input_plots=False)
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=False)
         trainer, pl_module, dataset = make_plots_args
 
         callback.make_plots(trainer, pl_module, dataset, 1)
@@ -769,10 +770,7 @@ class TestMakePlots:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Only pass loggers with log_image/log_video to the respective plot calls."""
-        callback = MediaLoggingCallback()
-        stubs = _stub_media_publisher(callback, monkeypatch)
-        callback.cached_batch_idx_ = 0
-        callback.cached_outputs_ = MagicMock(spec=ModelStepOutput)
+        callback, stubs = _callback_with_cache(monkeypatch)
         trainer, pl_module, dataset = make_plots_args
 
         class ImageLogger:
