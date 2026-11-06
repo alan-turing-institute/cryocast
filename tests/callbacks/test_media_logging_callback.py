@@ -693,6 +693,79 @@ class TestMakePlots:
 
         era5.get_tchw.assert_not_called()
 
+    def test_does_not_read_inputs_when_static_and_video_plots_disabled(
+        self,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Skip reading the inputs when neither static nor video plots are enabled."""
+        callback, _ = _callback_with_cache(
+            monkeypatch,
+            make_input_plots=True,
+            make_static_plots=False,
+            make_video_plots=False,
+        )
+        trainer, pl_module, dataset = make_plots_args
+        era5 = _fake_input("era5")
+        dataset.inputs = [era5]
+
+        callback.make_plots(trainer, pl_module, dataset, 1)
+
+        era5.get_tchw.assert_not_called()
+
+    def test_does_not_reread_inputs_for_a_logged_dataloader_and_date(
+        self,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Read the inputs only on the first call for a dataloader/date."""
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
+        trainer, pl_module, dataset = make_plots_args
+        era5 = _fake_input("era5")
+        dataset.inputs = [era5]
+
+        callback.make_plots(trainer, pl_module, dataset, 1)
+        callback.make_plots(trainer, pl_module, dataset, 1)
+
+        era5.get_tchw.assert_called_once()
+        assert list(stubs["log_static_inputs"].call_args.args[0]) == ["era5"]
+        assert list(stubs["log_video_inputs"].call_args.args[0]) == ["era5"]
+
+    @pytest.mark.parametrize(
+        ("make_static_plots", "make_video_plots"),
+        [(True, False), (False, True)],
+        ids=["static-only", "video-only"],
+    )
+    def test_reads_inputs_when_only_one_plot_kind_enabled(
+        self,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        make_static_plots: bool,
+        make_video_plots: bool,
+    ) -> None:
+        """Pass input data to the enabled input plot and skip the disabled one."""
+        callback, stubs = _callback_with_cache(
+            monkeypatch,
+            make_input_plots=True,
+            make_static_plots=make_static_plots,
+            make_video_plots=make_video_plots,
+        )
+        trainer, pl_module, dataset = make_plots_args
+        era5 = _fake_input("era5")
+        dataset.inputs = [era5]
+
+        callback.make_plots(trainer, pl_module, dataset, 1)
+
+        era5.get_tchw.assert_called_once()
+        enabled, disabled = (
+            ("log_static_inputs", "log_video_inputs")
+            if make_static_plots
+            else ("log_video_inputs", "log_static_inputs")
+        )
+        assert list(stubs[enabled].call_args.args[0]) == ["era5"]
+        stubs[disabled].assert_not_called()
+
     def test_only_logs_input_plots_once_per_dataloader_and_date(
         self,
         make_plots_args: tuple[MagicMock, MagicMock, MagicMock],

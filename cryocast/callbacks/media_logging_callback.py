@@ -283,8 +283,20 @@ class MediaLoggingCallback(Callback):
 
         # Map input groups to their channel names and data on the forecast dates. If an
         # input group has no data on one of the dates then it is left out.
+        # Decide once whether each input plot still needs logging, since is_logged
+        # records the plot as logged.
+        make_static_input_plots = (
+            self.make_input_plots
+            and self.make_static_plots
+            and not self.is_logged("static", forecast_dates)
+        )
+        make_video_input_plots = (
+            self.make_input_plots
+            and self.make_video_plots
+            and not self.is_logged("video", forecast_dates)
+        )
         grouped_input_data: dict[str, tuple[list[str], ArrayTCHW]] = {}
-        if self.make_input_plots:
+        if make_static_input_plots or make_video_input_plots:
             np_forecast_dates = list(map(npdatetime_from_datetime, forecast_dates))
             for input_ds in dataset.inputs:
                 try:
@@ -310,7 +322,7 @@ class MediaLoggingCallback(Callback):
                 prefix=self.prefix,
                 uncertainties=uncertainties,
             )
-            if self.make_input_plots and not self.is_logged("static", forecast_dates):
+            if make_static_input_plots:
                 publisher.log_static_inputs(
                     grouped_input_data,
                     forecast_dates,
@@ -333,7 +345,7 @@ class MediaLoggingCallback(Callback):
                 prefix=self.prefix,
                 uncertainties=uncertainties,
             )
-            if self.make_input_plots and not self.is_logged("video", forecast_dates):
+            if make_video_input_plots:
                 publisher.log_video_inputs(
                     grouped_input_data,
                     forecast_dates,
