@@ -292,7 +292,7 @@ class MediaLoggingCallback(Callback):
                         list(input_ds.variable_names),
                         input_ds.get_tchw(np_forecast_dates),
                     )
-                except IndexError as exc:
+                except (IndexError, ValueError, MemoryError, OSError) as exc:
                     log.warning("Skipping input plots for %s: %s", input_ds.name, exc)
 
         if self.make_static_plots:
