@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import replace
 from datetime import datetime
@@ -9,7 +9,6 @@ from typing import TypeVar
 import numpy as np
 from PIL.ImageFile import ImageFile
 
-from cryocast.data import SingleDataset
 from cryocast.exceptions import InvalidArrayError, VideoRenderError
 from cryocast.types import (
     ArrayHW,
@@ -22,7 +21,7 @@ from cryocast.types import (
     SupportsVideoLogging,
     Timespan,
 )
-from cryocast.utils import iso_from_date, npdatetime_from_datetime
+from cryocast.utils import iso_from_date
 
 from .land_mask import LandMask
 from .panel_renderer import PanelRenderer
@@ -198,17 +197,18 @@ class MediaPublisher:
 
     def log_static_inputs(
         self,
-        inputs: list[SingleDataset],
+        inputs: Mapping[str, tuple[list[str], ArrayTCHW]],
         dates: list[datetime],
         image_loggers: list[SupportsImageLogging],
         *,
         prefix: str | None = None,
     ) -> None:
-        """Extract and log static raw input plots.
+        """Log a static plot of each input variable on the selected date.
 
         Args:
-            inputs: List of SingleDataset instances containing the input data.
-            dates: List of datetime objects corresponding to the timesteps in the datasets.
+            inputs: Map from input group name to its channel names and its [T, C, H, W]
+                data on ``dates``.
+            dates: List of datetime objects corresponding to the T axis of each input.
             image_loggers: List of image loggers to send the rendered images to.
             prefix: Optional prefix for the log path to namespace the logged images.
 
@@ -218,14 +218,13 @@ class MediaPublisher:
             log_path = self._log_path(prefix, "input_static")
             date_key = iso_from_date(when)
             images: dict[str, list[ImageFile]] = {}
-            for input_ds in inputs:
-                # Get data for all variables at the selected timestep
-                for idx_channel, v_name in enumerate(input_ds.variable_names):
-                    variable_name = f"{input_ds.name}:{v_name}"
+            for group_name, (channel_names, data) in inputs.items():
+                for idx_channel, v_name in enumerate(channel_names):
+                    variable_name = f"{group_name}:{v_name}"
                     # Render a single-panel static image for this variable
                     images[f"{date_key}-{variable_name}"] = [
                         self.panel_renderer.static_singlet(
-                            input_ds[self.idx_date][idx_channel, :],
+                            data[self.idx_date, idx_channel],
                             when=when,
                             variable_name=variable_name,
                         )
@@ -317,33 +316,32 @@ class MediaPublisher:
 
     def log_video_inputs(
         self,
-        inputs: list[SingleDataset],
+        inputs: Mapping[str, tuple[list[str], ArrayTCHW]],
         dates: list[datetime],
         video_loggers: list[SupportsVideoLogging],
         *,
         prefix: str | None = None,
     ) -> None:
-        """Extract and log raw input videos.
+        """Log a video of each input variable over the given dates.
 
         Args:
-            inputs: List of SingleDataset instances containing the input data.
-            dates: List of datetime objects corresponding to the timesteps in the datasets.
+            inputs: Map from input group name to its channel names and its [T, C, H, W]
+                data on ``dates``.
+            dates: List of datetime objects corresponding to the T axis of each input.
             video_loggers: List of video loggers to send the rendered videos to.
             prefix: Optional prefix for the log path to namespace the logged videos.
 
         """
         try:
             log_path = self._log_path(prefix, "input_video")
-            np_dates = [npdatetime_from_datetime(date) for date in dates]
             date_key = iso_from_date(dates[0])
             videos: dict[str, BytesIO] = {}
-            for input_ds in inputs:
-                # Get data for all variables over the full date range
-                for channel, unqualified_name in enumerate(input_ds.variable_names):
-                    variable_name = f"{input_ds.name}:{unqualified_name}"
+            for group_name, (channel_names, data) in inputs.items():
+                for channel, unqualified_name in enumerate(channel_names):
+                    variable_name = f"{group_name}:{unqualified_name}"
                     videos[f"{date_key}-{variable_name}"] = (
                         self.panel_renderer.video_singlet(
-                            input_ds.get_tchw(np_dates)[:, channel, :],
+                            data[:, channel],
                             dates=Timespan(dates),
                             variable_name=variable_name,
                         )
