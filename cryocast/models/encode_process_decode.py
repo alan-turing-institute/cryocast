@@ -105,10 +105,10 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg)
 
-        # Add an additional encoder that encodes the target dataset into latent space
-        # This will be used by any processors that need to compute latent space losses.
+        # Add an additional encoder that encodes the target dataset into latent space.
+        # This is currently unused.
         try:
-            self.target_encoder: BaseEncoder = (
+            self.target_encoder: BaseEncoder | None = (
                 hydra.utils.instantiate(
                     encoders[self.output_space.name],
                     data_space_in=DataSpace(
@@ -121,12 +121,8 @@ class EncodeProcessDecode(BaseModel):
                     longitudes_fn=self.longitudes_fn,
                 )
                 if isinstance(encoders, Mapping)
-                else encoders.pop(
-                    next(
-                        idx
-                        for idx, encoder in enumerate(encoders)
-                        if encoder.name == "target"
-                    )
+                else next(
+                    (encoder for encoder in encoders if encoder.name == "target"), None
                 )
             )
         except KeyError as exc:
@@ -138,8 +134,10 @@ class EncodeProcessDecode(BaseModel):
             raise ValueError(msg) from exc
 
         # Verify the output channels for each encoder
-        for encoder in (*self.encoders, self.target_encoder):
+        for encoder in self.encoders:
             encoder.verify_output_channels(self.device)
+        if self.target_encoder is not None:
+            self.target_encoder.verify_output_channels(self.device)
 
         # Add a processor
         combined_latent_space = DataSpace(
@@ -394,7 +392,8 @@ class EncodeProcessDecode(BaseModel):
         if self.processor.computes_loss_in_latent_space:
             self.decoder.freeze()
         # The target encoder is currently unused
-        self.target_encoder.freeze()
+        if self.target_encoder is not None:
+            self.target_encoder.freeze()
 
     def _validate_rollout_options(
         self, rollout_space: RolloutSpace | str

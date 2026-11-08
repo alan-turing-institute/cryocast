@@ -569,7 +569,6 @@ class ModelService:
             train_cfg=self._merged_config("encoders"),
             checkpoint_dir=checkpoint_dir,
         )
-        target_encoder = trained_encoders.pop()  # the decoder must not use this
 
         log.info("Preparing to train the decoder...")
         trained_decoder = self.train_stage_decoder(
@@ -583,7 +582,6 @@ class ModelService:
             trained_decoder,
             train_cfg=self._merged_config("processor"),
             checkpoint_dir=checkpoint_dir,
-            target_encoder=target_encoder,
         )
 
         log.info("Preparing to finetune...")
@@ -655,17 +653,8 @@ class ModelService:
             )
             raise TypeError(msg)
         encoder_models = []
-        for encoder in [*self.model.encoders, self.model.target_encoder]:
-            # The target encoder is named "target" but needs to load data from the real
-            # corresponding underlying dataset. However, we need to construct a custom
-            # DataSpace since we only want to consider the selected target variables,
-            # not the full dataset.
-            if encoder is self.model.target_encoder:
-                dataset_name = self.data_module.target_group_name
-                channel_names = self.data_module.target_variables
-            else:
-                dataset_name = encoder.name
-                channel_names = self.data_module.datasets[dataset_name].variable_names
+        for encoder in self.model.encoders:
+            channel_names = self.data_module.datasets[encoder.name].variable_names
 
             if checkpoint_dir is not None and (
                 matches := sorted(
@@ -696,7 +685,7 @@ class ModelService:
                 data_space_in=encoder.data_space_in,
                 dataset=encoder.name,
                 decoder=self.config["model"]["decoder"],
-                encoder=self.config["model"]["encoders"][dataset_name],
+                encoder=self.config["model"]["encoders"][encoder.name],
                 template=self.model,
             )
             log.info(
@@ -737,10 +726,6 @@ class ModelService:
         for encoder in model.encoders:
             encoder.load_state_dict(pretrained_encoders[encoder.name].state_dict())
             log.info("Loaded pretrained weights for encoder '%s'.", encoder.name)
-        model.target_encoder.load_state_dict(
-            processor_model.target_encoder.state_dict()
-        )
-        log.info("Loaded pretrained weights for target encoder.")
         model.processor.load_state_dict(processor_model.processor.state_dict())
         log.info("Loaded pretrained weights for processor.")
         model.decoder.load_state_dict(processor_model.decoder.state_dict())
@@ -752,7 +737,6 @@ class ModelService:
     def train_stage_processor(
         self,
         decoder_model: DecoderStage,
-        target_encoder: EncoderStage,
         *,
         train_cfg: DictConfig,
         checkpoint_dir: Path | None = None,
@@ -774,14 +758,12 @@ class ModelService:
                     mask_dir=str(self.data_module.mask_directory),
                     metrics=self.config["reporting"]["metrics"],
                     processor=self.config["model"]["processor"],
-                    target_encoder=target_encoder,
                     weights_only=True,
                 )
 
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,
-            target_encoder=target_encoder,
             mask_dir=str(self.data_module.mask_directory),
             rollout_space=cast("EncodeProcessDecode", self.model).rollout_space,
         )

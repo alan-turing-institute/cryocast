@@ -24,49 +24,9 @@ class _CaptureLatentLossProcessor(BaseProcessor):
 
 class TestProcessorStage:
     @pytest.fixture
-    def target_encoder_stage(
-        self,
-        *,
-        cfg_encoders: DictConfig,
-        cfg_output_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
-        cfg_decoder: DictConfig,
-    ) -> EncoderStage:
-        # The target encoder encodes the forecast target itself, not a raw input
-        # dataset, so its data_space_in is built directly from the output space.
-        target_space = DataSpace(
-            channels=cfg_output_space["channels"],
-            name="target",
-            shape=cfg_output_space["shape"],
-        )
-        return EncoderStage(
-            channel_names=["target-channel"],
-            data_space_in=target_space,
-            encoder=cfg_encoders["target"],
-            decoder=cfg_decoder,
-            latent_space=cfg_encoders["latent_space"],
-            hemisphere="north",
-            input_spaces=[target_space.to_dict()],
-            n_forecast_steps=1,
-            n_history_steps=1,
-            name="target_encoder",
-            optimizer=cfg_optimizer,
-            output_space=target_space.to_dict(),
-            scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-        )
-
-    @pytest.fixture
     def processor_stage(
         self,
         decoder_stage: DecoderStage,
-        target_encoder_stage: EncoderStage,
         *,
         cfg_processor: DictConfig,
         cfg_input_space: DictConfig,
@@ -80,7 +40,6 @@ class TestProcessorStage:
         return ProcessorStage(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            target_encoder=target_encoder_stage,
             hemisphere="north",
             input_spaces=[cfg_input_space],
             n_forecast_steps=1,
@@ -183,7 +142,6 @@ class TestProcessorStage:
     def test_latent_target_encodes_forecast_step_inputs(
         self,
         encoder_stage: EncoderStage,
-        target_encoder_stage: EncoderStage,
         *,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
@@ -202,7 +160,6 @@ class TestProcessorStage:
                 {"_target_": f"{__name__}.{_CaptureLatentLossProcessor.__name__}"}
             ),
             decoder_model=decoder_stage,
-            target_encoder=target_encoder_stage,
         )
 
         name = cfg_input_space["name"]
@@ -229,7 +186,6 @@ class TestProcessorStage:
     def test_from_template_forwards_rollout_space(
         self,
         encoder_stage: EncoderStage,
-        target_encoder_stage: EncoderStage,
         *,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
@@ -249,7 +205,6 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            target_encoder=target_encoder_stage,
             rollout_space=rollout_space,
         )
 
@@ -259,7 +214,6 @@ class TestProcessorStage:
     def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
         self,
         encoder_stage: EncoderStage,
-        target_encoder_stage: EncoderStage,
         *,
         cfg_processor: DictConfig,
         cfg_output_space: DictConfig,
@@ -279,7 +233,6 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            target_encoder=target_encoder_stage,
         )
         target = torch.rand(
             2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]
@@ -295,7 +248,6 @@ class TestProcessorStage:
     ) -> None:
         frozen_modules = (
             *processor_stage.encoders,
-            processor_stage.target_encoder,
             processor_stage.decoder,
         )
         assert all(
@@ -310,26 +262,22 @@ class TestProcessorStage:
         processor_stage.eval()
         for encoder in processor_stage.encoders:
             encoder.train()
-        processor_stage.target_encoder.train()
         processor_stage.decoder.train()
 
         processor_stage.train()
 
         assert processor_stage.training
         assert all(not encoder.training for encoder in processor_stage.encoders)
-        assert not processor_stage.target_encoder.training
         assert not processor_stage.decoder.training
 
     def test_from_template_builds_processor_stage_from_decoder_stage(
         self,
         decoder_stage: DecoderStage,
-        target_encoder_stage: EncoderStage,
         cfg_processor: DictConfig,
     ) -> None:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            target_encoder=target_encoder_stage,
         )
 
         assert processor_stage.hemisphere == decoder_stage.hemisphere
@@ -339,4 +287,4 @@ class TestProcessorStage:
             f"processor_{decoder_stage.n_history_steps}_to_"
             f"{decoder_stage.n_forecast_steps}"
         )
-        assert processor_stage.target_encoder is target_encoder_stage.encoder
+        assert processor_stage.target_encoder is None

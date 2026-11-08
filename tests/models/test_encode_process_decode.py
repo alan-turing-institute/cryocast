@@ -479,6 +479,7 @@ class TestEncodeProcessDecode:
         assert not processor.target.requires_grad
 
         # The unused target encoder must be frozen (e.g. so that DDP does not fail)
+        assert model.target_encoder is not None
         assert not any(p.requires_grad for p in model.target_encoder.parameters())
 
     def test_checkpoint_loads_with_weights_only(
