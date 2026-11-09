@@ -64,10 +64,11 @@ class CommonDataModule(LightningDataModule):
         self.n_forecast_steps = int(config["window"].get("n_forecast_steps", 1))
         self.n_history_steps = int(config["window"].get("n_history_steps", 1))
 
-        # Whether training and validation batches should load input variables on the
-        # forecast steps as well as the history steps. Each model sets this, depending
-        # on whether it needs the forecast-step inputs to compute a loss against them.
-        # Test and predict batches never include forecast-step inputs.
+        # Whether training batches should load input variables on the forecast steps
+        # as well as the history steps. Each model sets this, depending on whether it
+        # needs the forecast-step inputs to compute a loss against them. Validation,
+        # test and predict batches never include forecast-step inputs, since those
+        # stages compute their loss and metrics in physical space.
         self.include_forecast_step_inputs = False
 
         # Set common arguments for the dataloader
@@ -274,7 +275,7 @@ class CommonDataModule(LightningDataModule):
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
             include_forecast_step_inputs=self.include_forecast_step_inputs
-            and stage in {"training", "validation"},
+            and stage == "training",
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":

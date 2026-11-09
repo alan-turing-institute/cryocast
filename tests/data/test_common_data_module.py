@@ -655,15 +655,16 @@ class TestDataLoaders:
 
     @pytest.mark.parametrize(
         ("split", "expected"),
-        [("train", True), ("val", True), ("test", False), ("predict", False)],
+        [("train", True), ("val", False), ("test", False), ("predict", False)],
     )
-    def test_forecast_step_inputs_only_in_train_and_val(
+    def test_forecast_step_inputs_only_in_train(
         self, mock_dataset: Path, split: str, *, expected: bool
     ) -> None:
-        """Test and predict batches never hold forecast-step inputs.
+        """Validation, test and predict batches never hold forecast-step inputs.
 
-        Turning the flag on also restricts the valid dates, so applying it to test and
-        predict would evaluate some models on fewer dates than others.
+        Those stages compute their loss in physical space, so never read them. Turning
+        the flag on also restricts the valid dates, so applying it elsewhere would
+        validate or evaluate some models on fewer dates than others.
         """
         cfg = _single_group_config(
             mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
