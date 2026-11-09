@@ -262,8 +262,28 @@ class SingleDataset(Dataset):
             msg = f"Index {idx} out of range for dataset of length {len(self)}."
             raise IndexError(msg) from exc
 
-    def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
-        """Return normalised data for an arbitrary sequence of timesteps in [T, C, H, W] format."""
+    def get_tchw(
+        self, dates: Sequence[np.datetime64], *, fill_value: float | None = None
+    ) -> ArrayTCHW:
+        """Return normalised data for an arbitrary sequence of timesteps in [T, C, H, W] format.
+
+        A date with no data raises an IndexError, unless `fill_value` is given. Then
+        that date holds `fill_value` (in normalised units) instead.
+        """
+        if fill_value is not None:
+            has_data = np.array(
+                [self.normalise_date(date) in self._date2idx for date in dates]
+            )
+            data = np.full(
+                (len(dates), *self.space.chw),
+                fill_value,
+                dtype=np.dtype(self.dataslices[0].dtype),
+            )
+            if has_data.any():
+                data[has_data] = self.get_tchw(
+                    [date for date, ok in zip(dates, has_data, strict=True) if ok]
+                )
+            return data
         return self.normalise(
             np.stack(
                 [self._chw_raw(self.to_index(target_date)) for target_date in dates],
@@ -335,19 +355,6 @@ class SingleDataset(Dataset):
                 .astype(data.dtype)
             )
         return cast("ArrayType", (data - self._norm_offset) * self._norm_scale)
-
-    def normalised_mean(self) -> np.ndarray:
-        """Return the per-channel mean on the same scale as the data, shape [C, 1, 1].
-
-        The mean is min-max normalised in the same way as the data. If this dataset was
-        created with `normalise=False`, the raw mean is returned instead.
-        """
-        mean = self.statistics["mean"].reshape(-1, 1, 1)
-        if not self._normalise:
-            return mean
-        minimum = self.statistics["minimum"].reshape(-1, 1, 1)
-        maximum = self.statistics["maximum"].reshape(-1, 1, 1)
-        return (mean - minimum) / (maximum - minimum)
 
     def subset(
         self,

@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from functools import cached_property
 
 import numpy as np
@@ -8,9 +8,6 @@ from cryocast.types import ArrayTCHW
 
 from .calendar_day_climatology import CalendarDayClimatology
 from .single_dataset import SingleDataset
-
-# Name of the channel added to each optional input group: 1 on filled days, 0 otherwise
-FILL_FLAG_VARIABLE = "flag_filled"
 
 
 class CombinedDataset(Dataset):
@@ -24,8 +21,7 @@ class CombinedDataset(Dataset):
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
         optional_groups: Sequence[str] = (),
-        optional_fill: str | float = "mean",
-        optional_climatology: Mapping[str, ArrayTCHW] | None = None,
+        optional_fill: float = -1.0,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -46,18 +42,11 @@ class CombinedDataset(Dataset):
                 unchanged.
             optional_groups: Input groups that can have missing days, e.g.
                 ``["float-argo"]``. A window is kept even if one of these groups is
-                missing a day: that day is filled with ``optional_fill``, and a
-                ``flag_filled`` channel is added (1 for filled, 0 for real data), so the
-                group has C + 1 channels. For example, if Argo is missing the middle
-                day of a 3-day history, its ``flag_filled`` channel is [0, 1, 0]. The
+                missing a day, and that day is filled with ``optional_fill``. The
                 target cannot be optional. Empty by default.
-            optional_fill: What to fill missing days with: ``"mean"`` for each
-                channel's mean, ``"climatology"`` for the mean field of that calendar
-                day, or a number such as ``0.0``. All are in normalised units, like
-                the data.
-            optional_climatology: [366, C, H, W] calendar-day mean of each optional
-                group, indexed like ``climatology``. Needed when ``optional_fill`` is
-                ``"climatology"``.
+            optional_fill: The value for missing days of optional inputs, in
+                normalised units. Real data lies in [0, 1], so the default of -1 can
+                never be mistaken for it.
 
         """
         super().__init__()
@@ -93,24 +82,13 @@ class CombinedDataset(Dataset):
         if target_group_name in optional_groups:
             msg = f"The target dataset {target_group_name!r} cannot be optional."
             raise ValueError(msg)
-        if not (
-            optional_fill in {"mean", "climatology"}
-            or isinstance(optional_fill, (int, float))
+        if isinstance(optional_fill, bool) or not isinstance(
+            optional_fill, (int, float)
         ):
-            msg = (
-                "optional_fill must be 'mean', 'climatology' or a number, "
-                f"not {optional_fill!r}."
-            )
-            raise ValueError(msg)
-        optional_climatology = dict(optional_climatology or {})
-        if optional_fill == "climatology" and (
-            missing := sorted(set(optional_groups) - optional_climatology.keys())
-        ):
-            msg = f"optional_fill is 'climatology' but {missing} have no climatology."
-            raise ValueError(msg)
+            msg = f"optional_fill must be a number, not {optional_fill!r}."
+            raise TypeError(msg)
         self.optional_groups = set(optional_groups)
-        self.optional_fill = optional_fill
-        self.optional_climatology = optional_climatology
+        self.optional_fill = float(optional_fill)
 
     @cached_property
     def dates(self) -> list[np.datetime64]:
@@ -165,14 +143,13 @@ class CombinedDataset(Dataset):
         Note that because we have already checked which starting dates are valid in the
         `dates` property, we know that the requested dates will be consecutive in each
         required data input, so we can use `get_tchw_slice` rather than `get_tchw`.
-        Optional inputs may be missing on some of those dates, so they are read day by
-        day (see `get_optional_history`).
+        Optional inputs may be missing on some of those dates, so they are read with
+        `get_input_tchw`.
 
         Returns:
             A dictionary with dataset names as keys and a numpy array as the value.
             The shape of each array is:
             - input datasets: [n_history_steps, C_input_k, H_input_k, W_input_k]
-            - optional input datasets: [n_history_steps, C_input_k + 1, H, W]
             - target dataset: [n_forecast_steps, C_target, H_target, W_target]
 
             If a climatology table was provided, the dictionary also contains a
@@ -182,9 +159,10 @@ class CombinedDataset(Dataset):
 
         """
         start_date = self.dates[idx]
+        history_steps = self.get_history_steps(start_date)
         batch: dict[str, ArrayTCHW] = {
             ds.name: (
-                self.get_optional_history(ds, start_date)
+                self.get_input_tchw(ds, history_steps)
                 if ds.name in self.optional_groups
                 else ds.get_tchw_slice(start_date, self.n_history_steps, check=False)
             )
@@ -222,66 +200,17 @@ class CombinedDataset(Dataset):
         ]
         return self.climatology[day_indices]
 
-    @cached_property
-    def _optional_date_sets(self) -> dict[str, set[np.datetime64]]:
-        """Map each optional input to the set of dates on which it is present."""
-        return {
-            ds.name: set(ds.dates)
-            for ds in self.inputs
-            if ds.name in self.optional_groups
-        }
-
-    def get_optional_history(
-        self, dataset: SingleDataset, start_date: np.datetime64
-    ) -> ArrayTCHW:
-        """Return the history of an optional input with a ``flag_filled`` channel added.
-
-        A day has data if it is in the dataset's `dates`. Days with data hold the
-        normalised data, missing days hold the fill value, and the last channel is 1 on
-        filled days and 0 otherwise.
-
-        The zarr still has a row for each missing day, holding a placeholder (99 for
-        Argo), so a slice is only used when every day in the window has data.
-
-        Returns:
-            An array of shape [n_history_steps, C + 1, H, W].
-
-        """
-        history_steps = self.get_history_steps(start_date)
-        date_set = self._optional_date_sets[dataset.name]
-        has_data = np.array([date in date_set for date in history_steps])
-        if has_data.all():
-            data = dataset.get_tchw_slice(start_date, self.n_history_steps, check=False)
-        else:
-            dtype = np.dtype(dataset.dataslices[0].dtype)
-            data = self.optional_fill_for(dataset, history_steps).astype(dtype)
-            if has_data.any():
-                data[has_data] = dataset.get_tchw(
-                    [
-                        date
-                        for date, ok in zip(history_steps, has_data, strict=True)
-                        if ok
-                    ]
-                )
-        flag = np.broadcast_to(
-            (~has_data).astype(data.dtype).reshape(-1, 1, 1, 1),
-            (self.n_history_steps, 1, *dataset.space.shape),
-        )
-        return np.concatenate([data, flag], axis=1)
-
-    def optional_fill_for(
+    def get_input_tchw(
         self, dataset: SingleDataset, dates: Sequence[np.datetime64]
     ) -> ArrayTCHW:
-        """Return the fill for an optional input on the given dates, [T, C, H, W]."""
-        if self.optional_fill == "climatology":
-            table = self.optional_climatology[dataset.name]
-            return table[[CalendarDayClimatology.day_index(date) for date in dates]]
-        fill = (
-            dataset.normalised_mean()
-            if self.optional_fill == "mean"
-            else np.full((dataset.space.channels, 1, 1), self.optional_fill)
-        )
-        return np.broadcast_to(fill, (len(dates), *dataset.space.chw))
+        """Return the normalised data of an input on the given dates, [T, C, H, W].
+
+        Optional inputs hold ``optional_fill`` on dates they have no data for. Other
+        inputs must have data on every date.
+        """
+        if dataset.name in self.optional_groups:
+            return dataset.get_tchw(dates, fill_value=self.optional_fill)
+        return dataset.get_tchw(dates)
 
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive forecast dates for a given start date."""
@@ -295,12 +224,6 @@ class CombinedDataset(Dataset):
         return [
             start_date + idx * self.frequency for idx in range(self.n_history_steps)
         ]
-
-    def input_variable_names(self, dataset: SingleDataset) -> list[str]:
-        """Return the channel names of an input, including any ``flag_filled`` channel."""
-        if dataset.name in self.optional_groups:
-            return [*dataset.variable_names, FILL_FLAG_VARIABLE]
-        return list(dataset.variable_names)
 
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.
@@ -319,7 +242,7 @@ class CombinedDataset(Dataset):
         variable_ids = [
             f"{ds.name}/{variable_name}"
             for ds in self.inputs
-            for variable_name in self.input_variable_names(ds)
+            for variable_name in ds.variable_names
         ]
         return [
             f"Combined dataset has {len(variable_ids)} input variables:",

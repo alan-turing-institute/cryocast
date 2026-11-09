@@ -5,8 +5,8 @@ defaults:
   - split: demo_dataset
   - _self_
 
-# Input groups (group_as names) that may be missing on some days: their missing days
-# are filled with optional_fill ("mean", "climatology" or a number, in normalised units)
-# and a flag_filled channel is added (1 on filled days). With [] nothing changes.
+# Input groups (group_as names) that may be missing on some days. Their missing days
+# hold optional_fill, in normalised units: real data lies in [0, 1], so -1 marks a
+# missing day. With [] nothing changes.
 optional_groups: []
-optional_fill: mean
+optional_fill: -1.0
