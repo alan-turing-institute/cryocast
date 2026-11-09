@@ -104,11 +104,6 @@ class ModelService:
             _convert_="object",
             _recursive_=False,
         )
-        # Configure whether the data module should load forecast-step inputs
-        builder.data_module.include_forecast_step_inputs = (
-            builder.model.needs_forecast_step_inputs
-        )
-
         return builder
 
     @classmethod
@@ -163,11 +158,6 @@ class ModelService:
             **non_checkpoint_kwargs,
         )
         builder.model_.checkpoint_epoch = checkpoint.get("epoch")
-        # Configure whether the data module should load forecast-step inputs
-        builder.data_module.include_forecast_step_inputs = (
-            builder.model.needs_forecast_step_inputs
-        )
-
         builder._verify_model_matches_data()
         return builder
 
@@ -258,6 +248,11 @@ class ModelService:
         current_model.lr_scheduler_cfg = config["lr_scheduler"]
         if "loss" in config:
             current_model.loss_cfg = config["loss"]
+        # Load forecast-step inputs only for models that need them. In multistage
+        # training, this changes between stages (e.g. encoders do not need them).
+        self.data_module.configure_forecast_step_inputs(
+            include=current_model.needs_forecast_step_inputs
+        )
         trainer = self.build_trainer(
             config=config, job_stage=job_stage, project="train"
         )

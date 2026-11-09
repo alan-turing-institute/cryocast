@@ -670,13 +670,37 @@ class TestDataLoaders:
             mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
         )
         dm = CommonDataModule(cfg)
-        dm.include_forecast_step_inputs = True
+        dm.configure_forecast_step_inputs(include=True)
 
         batch = next(iter(getattr(dm, f"{split}_dataloader")()))
         assert ("future_group1" in batch) is expected
         if expected:
             # NTCHW: one forecast step, matching the target
             assert batch["future_group1"].shape == batch["target"].shape
+
+    def test_changing_forecast_step_inputs_rebuilds_training_dataset(
+        self, mock_dataset: Path
+    ) -> None:
+        """Multistage training uses one data module for all of its stages.
+
+        The training dataset is cached, so it is rebuilt only when the flag changes.
+        """
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+        without_future = dm.training_dataset
+
+        # An unchanged value keeps the cached dataset
+        dm.configure_forecast_step_inputs(include=False)
+        assert dm.training_dataset is without_future
+
+        dm.configure_forecast_step_inputs(include=True)
+        assert dm.training_dataset is not without_future
+        assert "future_group1" in next(iter(dm.train_dataloader()))
+
+        dm.configure_forecast_step_inputs(include=False)
+        assert "future_group1" not in next(iter(dm.train_dataloader()))
 
 
 class TestTargetMaskDir:

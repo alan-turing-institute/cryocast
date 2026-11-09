@@ -115,6 +115,7 @@ You do not set a configuration key for these steps.
 
 !!! note
     The data module reads more data for each sample when it loads the forecast steps.
+    It loads them only for the processor and finetune stages, because the encoder and decoder stages do not use them.
     A sample is valid only if all the input groups have data for all the forecast steps.
     Thus, the dataset can contain fewer samples. For example, the Argo data has some missing dates.
 

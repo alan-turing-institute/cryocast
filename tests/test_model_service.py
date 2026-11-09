@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 import torch
@@ -45,7 +45,6 @@ class FakeModel:
     input_spaces: ClassVar[list[DataSpace]] = [DataSpace(5, "input", (20, 20))]
     n_forecast_steps = 2
     n_history_steps = 3
-    needs_forecast_step_inputs = True
     output_space = DataSpace(1, "output", (10, 10))
 
     @classmethod
@@ -73,8 +72,10 @@ class FakeModel:
         return model
 
 
-def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
-    """Build a real full model and a pretrained ProcessorStage to hand over from.
+def _build_stages(
+    mask_dir: Path,
+) -> tuple[EncodeProcessDecode, EncoderStage, DecoderStage, ProcessorStage]:
+    """Build a real latent-diffusion model and each of its multistage stages.
 
     The CNNEncoder carries BatchNorm buffers, so the input encoder is stateful.
     """
@@ -132,10 +133,16 @@ def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, Processor
         target_dataset_name="sic",
         target_variable_indices=[0],
     )
-    pretrained = ProcessorStage.from_template(
+    processor_stage = ProcessorStage.from_template(
         processor=processor,
         decoder_model=decoder_stage,
     )
+    return model, input_stage, decoder_stage, processor_stage
+
+
+def _build_pretrained_processor(mask_dir: Path) -> tuple[ModelService, ProcessorStage]:
+    """Build a real full model and a pretrained ProcessorStage to hand over from."""
+    model, _, _, pretrained = _build_stages(mask_dir)
     # Stand in for checkpoint contents without running an optimisation step
     with torch.no_grad():
         for parameter in pretrained.encoders[0].parameters():
@@ -190,7 +197,6 @@ class TestModelService:
             )
             service = ModelService.from_config(cfg_model_service)
             assert isinstance(service.model, FakeModel)
-            assert service.data_module.include_forecast_step_inputs is True
 
         args, kwargs = mock_instantiate.call_args
         assert args[0] is cfg_model_service["model"]
@@ -236,7 +242,6 @@ class TestModelService:
             assert isinstance(service.model, FakeModel)
             assert service.config == cfg_model_service
             assert service.model.checkpoint_epoch == 3
-            assert service.data_module.include_forecast_step_inputs is True
 
     def test_from_checkpoint_sets_checkpoint_epoch_to_none_when_absent(
         self, cfg_model_service: DictConfig, tmp_path: Path
@@ -788,6 +793,48 @@ class TestModelService:
         mock_cuda_empty.assert_called_once_with()
         mock_mps_empty.assert_called_once_with()
         mock_xpu_empty.assert_called_once_with()
+
+    @pytest.mark.parametrize(
+        ("stage", "expected"),
+        [("encoder", False), ("decoder", False), ("processor", True), ("full", True)],
+    )
+    def test_fit_loads_forecast_step_inputs_only_for_stages_that_need_them(
+        self, tmp_path: Path, stage: str, *, expected: bool
+    ) -> None:
+        """Only latent-loss stages make the data module read forecast-step inputs.
+
+        The encoder and decoder stages share the data module with the processor, but
+        never read the `future_<input>` keys, so loading them would waste I/O.
+        """
+        model, encoder_stage, decoder_stage, processor_stage = _build_stages(tmp_path)
+        stage_model = {
+            "encoder": encoder_stage,
+            "decoder": decoder_stage,
+            "processor": processor_stage,
+            "full": model,
+        }[stage]
+        service = ModelService.__new__(ModelService)
+        service.model_ = model
+        data_module = MagicMock()
+        service.data_module_ = data_module
+        config = DictConfig({"optimizer": "o", "scheduler": "s", "lr_scheduler": "l"})
+        trainer = MagicMock(max_epochs=1, num_devices=1)
+        # Record the calls made before training starts
+        calls_before_fit: list[Any] = []
+        trainer.fit.side_effect = lambda **_: calls_before_fit.extend(
+            data_module.configure_forecast_step_inputs.call_args_list
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(service, "build_trainer", MagicMock(return_value=trainer))
+            for backend in ("cuda", "mps", "xpu"):
+                mp.setattr(
+                    f"cryocast.model_service.model_service.torch.{backend}.is_available",
+                    lambda: False,
+                )
+            service._fit(model=stage_model, config=config, job_stage=stage)
+
+        assert calls_before_fit == [call(include=expected)]
 
     def test_train_standard_mode_rejects_model_requiring_multistage(self) -> None:
         service = ModelService.__new__(ModelService)
