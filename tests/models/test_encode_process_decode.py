@@ -51,7 +51,7 @@ class _InverseDecoder(BaseDecoder):
 
 
 class _OracleProcessor(BaseProcessor):
-    """Processor that forecasts the target latent it is given, i.e. a perfect forecast."""
+    """Processor that forecasts the future latent it is given, i.e. a perfect forecast."""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
@@ -390,14 +390,14 @@ class TestEncodeProcessDecode:
         future = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
 
         expected = model._encode_inputs({name: future})
-        actual = model._encode_target_latent(
+        actual = model._encode_future_inputs(
             {name: history, f"future_{name}": future, "target": future[:, :, 2:3]}
         )
 
         torch.testing.assert_close(actual, expected)
         assert actual.shape[2] == model.processor.data_space.channels
 
-        # The latent loss must not train the shared encoder through the target latent
+        # The latent loss must not train the shared encoder through the future latent
         assert all(p.requires_grad for p in model.encoders[0].parameters())
         assert not actual.requires_grad
 
@@ -471,7 +471,7 @@ class TestEncodeProcessDecode:
         mae = (result.prediction - result.target).abs().mean()
         assert mae.item() == pytest.approx(0.0, abs=1e-6)
 
-        # The latent loss must not train the shared encoder through the target latent
+        # The latent loss must not train the shared encoder through the future latent
         processor = model.processor
         assert isinstance(processor, _OracleProcessor)
         assert processor.target is not None

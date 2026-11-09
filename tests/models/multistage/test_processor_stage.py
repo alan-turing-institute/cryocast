@@ -166,7 +166,7 @@ class TestProcessorStage:
         input_encoder = processor_stage.encoders[0]
         history = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
         future = torch.rand(2, 1, cfg_input_space["channels"], 16, 16)
-        expected_target_latent = input_encoder.rollout(future)
+        expected_future_latent = input_encoder.rollout(future)
 
         processor_stage.training_step(
             {name: history, f"future_{name}": future, "target": future[:, :, 2:3]}, 0
@@ -175,7 +175,7 @@ class TestProcessorStage:
         capture = processor_stage.processor
         assert isinstance(capture, _CaptureLatentLossProcessor)
         assert capture.target is not None
-        torch.testing.assert_close(capture.target, expected_target_latent)
+        torch.testing.assert_close(capture.target, expected_future_latent)
         assert capture.target.shape[2] == processor_stage.processor.data_space.channels
 
     @pytest.mark.parametrize(

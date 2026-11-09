@@ -226,7 +226,7 @@ class DiffusionProcessor(BaseProcessor):
     def _rollout_training(self, x: TensorNTCHW, y: TensorNTCHW) -> ProcessorOutput:
         """One training rollout using DDPM v-prediction loss.
 
-        During training, the clean target latent is corrupted using the forward
+        During training, the clean future latent is corrupted using the forward
         diffusion process by adding noise at a randomly sampled timestep. The
         model is trained to predict the corresponding v-target.
 

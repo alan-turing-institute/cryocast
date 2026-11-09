@@ -197,7 +197,7 @@ class EncodeProcessDecode(BaseModel):
         return self.processor.computes_loss_in_latent_space
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
-        """Encode all input datasets and concatenate along the channel dimension.
+        """Encode all inputs into latent space, concatenating on the channel dimension.
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -212,7 +212,7 @@ class EncodeProcessDecode(BaseModel):
         ]
         return torch.cat(latent_inputs, dim=2)
 
-    def _encode_target_latent(self, batch: dict[str, TensorNTCHW]) -> TensorNTCHW:
+    def _encode_future_inputs(self, batch: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode every input over the forecast steps into the combined latent space.
 
         This is the ground truth for processors that compute their loss in latent space.
@@ -449,13 +449,11 @@ class EncodeProcessDecode(BaseModel):
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
             # Encode history and future inputs into the combined latent space.
-            latent_input_combined = self._encode_inputs(batch)
-            target_latent = self._encode_target_latent(batch)
+            history_latent = self._encode_inputs(batch)
+            future_latent = self._encode_future_inputs(batch)
 
             # Process in latent space
-            processor_output = self.processor.rollout(
-                latent_input_combined, target_latent
-            )
+            processor_output = self.processor.rollout(history_latent, future_latent)
 
             # Get the loss from the processor output
             loss = processor_output.loss

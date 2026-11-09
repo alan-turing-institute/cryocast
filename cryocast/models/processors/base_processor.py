@@ -67,10 +67,11 @@ class BaseProcessor(nn.Module):
         it directly and skip its own loss computation.
 
         Args:
-            x: Encoded input TensorNTCHW with (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-            y: during training: Encoded future inputs TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width),
-                i.e. in the same space as `x`;
-                otherwise: None
+            x: Encoded input TensorNTCHW with (batch_size, n_history_steps,
+                n_latent_channels_total, latent_height, latent_width)
+            y: Encoded future inputs TensorNTCHW with (batch_size, n_forecast_steps,
+                n_latent_channels_total, latent_height, latent_width). Note that this is
+                `None` except during training.
 
         Returns:
             ProcessorOutput with:
