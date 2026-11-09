@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "cryocast"
-version = "2026-07"
+version = "2026.10"
 description = "CryoCast multimodal pipeline for predicting sea ice."
 readme = "README.md"
 authors = [

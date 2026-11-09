@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.models.processors import BaseProcessor
-from cryocast.types import DataSpace, ProcessorOutput, TensorNTCHW
+from cryocast.types import DataSpace, ProcessorOutput, RolloutSpace, TensorNTCHW
 
 
 class _CaptureLatentLossProcessor(BaseProcessor):
@@ -256,6 +256,41 @@ class TestProcessorStage:
         assert capture.target is not None
         torch.testing.assert_close(capture.target, expected_target_latent)
         assert capture.target.shape[2] == target_input_encoder.data_space_out.channels
+
+    @pytest.mark.parametrize(
+        "rollout_space",
+        [RolloutSpace.LATENT, RolloutSpace.PHYSICAL],
+        ids=["latent", "physical"],
+    )
+    def test_from_template_forwards_rollout_space(
+        self,
+        encoder_stage: EncoderStage,
+        target_encoder_stage: EncoderStage,
+        *,
+        cfg_decoder: DictConfig,
+        cfg_input_space: DictConfig,
+        cfg_processor: DictConfig,
+        rollout_space: RolloutSpace,
+    ) -> None:
+        # Physical rollout requires the target dataset to also be a model input
+        decoder_stage = DecoderStage.from_template(
+            decoder=cfg_decoder,
+            encoders=[encoder_stage],
+            output_space=DataSpace(
+                channels=1, name=cfg_input_space["name"], shape=cfg_input_space["shape"]
+            ),
+            target_dataset_name=cfg_input_space["name"],
+            target_variable_indices=[2],
+        )
+        processor_stage = ProcessorStage.from_template(
+            processor=cfg_processor,
+            decoder_model=decoder_stage,
+            target_encoder=target_encoder_stage,
+            rollout_space=rollout_space,
+        )
+
+        assert processor_stage.rollout_space is rollout_space
+        assert processor_stage.hparams["rollout_space"] == rollout_space
 
     def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
         self,

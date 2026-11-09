@@ -1,4 +1,4 @@
 # PyTorch Lightning scheduler settings
 _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-eta_min: 1e-6
+eta_min: 1.0e-6
 T_max: ${..trainer.max_epochs}

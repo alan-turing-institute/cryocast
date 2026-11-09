@@ -76,12 +76,14 @@ def fake_combined_dataset(
     return cast("CombinedDataset", FakeCombinedDataset())
 
 
-def make_model_step_output(channels: int = N_CHANNELS) -> ModelStepOutput:
+def make_model_step_output(
+    channels: int = N_CHANNELS, dtype: torch.dtype = torch.float32
+) -> ModelStepOutput:
     """Build a ModelStepOutput with real tensors shaped [N, T, C, H, W]."""
     shape = (1, N_TIMESTEPS, channels, HEIGHT, WIDTH)
     return ModelStepOutput(
-        prediction=torch.zeros(shape),
-        target=torch.ones(shape),
+        prediction=torch.zeros(shape, dtype=dtype),
+        target=torch.ones(shape, dtype=dtype),
         loss=torch.tensor(0.0),
     )
 
@@ -305,6 +307,28 @@ class TestLogStaticOutputs:
             "output_static/2020-01-01-sic-truth-vs-prediction",
             "output_static/2020-01-01-channel_1-truth-vs-prediction",
         ]
+
+    def test_accepts_bfloat16_outputs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Outputs from bf16 mixed-precision training are plotted as float32 arrays."""
+        fake_render = MagicMock(return_value=object())
+        monkeypatch.setattr(MatplotlibRenderer, "panels_static", fake_render)
+        image_logger = MagicMock()
+
+        media_publisher = MediaPublisher(
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
+            land_mask=LandMask(None),
+            plot_spec=PlotSpec(),
+        )
+        media_publisher.log_static_outputs(
+            make_model_step_output(dtype=torch.bfloat16),
+            [image_logger],
+            forecast_dates=FORECAST_DATES,
+            history_dates=HISTORY_DATES,
+        )
+
+        assert image_logger.log_image.call_count == N_CHANNELS
+        arrays = fake_render.call_args.args[0]
+        assert {np.asarray(array).dtype for array in arrays} == {np.dtype(np.float32)}
 
     def test_climatology_panel_is_labelled_climatology(
         self, monkeypatch: pytest.MonkeyPatch
@@ -734,6 +758,28 @@ class TestLogVideoOutputs:
             "output_video/2020-01-01-sic-truth-vs-prediction",
             "output_video/2020-01-01-channel_1-truth-vs-prediction",
         ]
+
+    def test_accepts_bfloat16_outputs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Outputs from bf16 mixed-precision training are plotted as float32 arrays."""
+        fake_render = MagicMock(return_value=MagicMock())
+        monkeypatch.setattr(MatplotlibRenderer, "panels_video", fake_render)
+        video_logger = MagicMock()
+
+        media_publisher = MediaPublisher(
+            training_metadata=Metadata.from_dataset(fake_combined_dataset()),
+            land_mask=LandMask(None),
+            plot_spec=PlotSpec(),
+        )
+        media_publisher.log_video_outputs(
+            make_model_step_output(dtype=torch.bfloat16),
+            [video_logger],
+            forecast_dates=FORECAST_DATES,
+            history_dates=HISTORY_DATES,
+        )
+
+        assert video_logger.log_video.call_count == N_CHANNELS
+        arrays = fake_render.call_args.args[0]
+        assert {np.asarray(array).dtype for array in arrays} == {np.dtype(np.float32)}
 
     def test_climatology_panel_is_labelled_climatology(
         self, monkeypatch: pytest.MonkeyPatch

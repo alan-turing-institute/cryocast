@@ -6,6 +6,36 @@ defaults:
 
 # Custom learning rate and weight decay
 train:
+  # Fits in two multistage 24h JASMIN A100 jobs with forecast-14-history-3, batch_size 1, bf16
+  # First job: encoders (48 min/epoch), decoder (20 min/epoch)
+  # Second job: processor (43 min/epoch), finetune (61 min/epoch)
+  multistage:
+    encoders:
+      scheduler:
+        T_max: 18
+      trainer:
+        max_epochs: 18
+    decoder:
+      scheduler:
+        T_max: 18
+      trainer:
+        max_epochs: 18
+    processor:
+      scheduler:
+        T_max: 15
+      trainer:
+        max_epochs: 15
+    finetune:
+      optimizer:
+        lr: 5.0e-6  # 0.1 * learning rate used elsewhere
+      scheduler:
+        T_max: 10
+      trainer:
+        max_epochs: 10
   optimizer:
-    lr: 5e-05
-    weight_decay: 1e-04
+    lr: 5.0e-5
+    weight_decay: 1.0e-4
+  # Fits a single-stage 24h JASMIN A100 job with forecast-14-history-3, batch_size 1, bf16 (60 min/epoch)
+  trainer:
+    max_epochs: 21
+    precision: bf16-mixed
