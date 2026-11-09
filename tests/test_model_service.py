@@ -798,10 +798,10 @@ class TestModelService:
         ("stage", "expected"),
         [("encoder", False), ("decoder", False), ("processor", True), ("full", True)],
     )
-    def test_fit_loads_forecast_step_inputs_only_for_stages_that_need_them(
+    def test_fit_loads_future_inputs_only_for_stages_that_need_them(
         self, tmp_path: Path, stage: str, *, expected: bool
     ) -> None:
-        """Only latent-loss stages make the data module read forecast-step inputs.
+        """Only latent-loss stages make the data module read future inputs.
 
         The encoder and decoder stages share the data module with the processor, but
         never read the `future_<input>` keys, so loading them would waste I/O.
@@ -822,7 +822,7 @@ class TestModelService:
         # Record the calls made before training starts
         calls_before_fit: list[Any] = []
         trainer.fit.side_effect = lambda **_: calls_before_fit.extend(
-            data_module.configure_forecast_step_inputs.call_args_list
+            data_module.configure_future_inputs.call_args_list
         )
 
         with pytest.MonkeyPatch.context() as mp:

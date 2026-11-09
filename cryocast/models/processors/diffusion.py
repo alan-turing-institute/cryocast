@@ -233,7 +233,7 @@ class DiffusionProcessor(BaseProcessor):
         Args:
             x (TensorNTCHW): Encoded history tensor of shape
                 (B, n_history_steps, n_latent_channels_total, H, W).
-            y (TensorNTCHW): Encoded forecast-step inputs of shape
+            y (TensorNTCHW): Encoded future inputs of shape
                 (B, n_forecast_steps, n_latent_channels_total, H, W).
 
         Returns:
@@ -485,7 +485,7 @@ class DiffusionProcessor(BaseProcessor):
         Dispatches between two execution paths:
 
         1. Training path (``y`` provided):
-        - Adds noise to the encoded forecast-step inputs at a random diffusion timestep.
+        - Adds noise to the encoded future inputs at a random diffusion timestep.
         - Predicts v conditioned on the encoded history.
         - Returns a v-prediction loss inside ``ProcessorOutput``, computed
           by ``self.loss_fn`` (the configured loss).

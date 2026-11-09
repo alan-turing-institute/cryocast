@@ -20,7 +20,7 @@ class CombinedDataset(Dataset):
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
-        include_forecast_step_inputs: bool = False,
+        include_future_inputs: bool = False,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -39,7 +39,7 @@ class CombinedDataset(Dataset):
                 batch also contains a ``climatology`` key holding the calendar-day
                 mean field for each forecast step. When ``None`` the batches are
                 unchanged.
-            include_forecast_step_inputs: Whether each batch should also contain every
+            include_future_inputs: Whether each batch should also contain every
                 input dataset over the forecast steps (the same dates as ``target``),
                 under ``future_<input>`` keys. If ``True``, only start dates where every
                 input covers the forecast steps are valid. If ``False``, the batches are
@@ -56,9 +56,9 @@ class CombinedDataset(Dataset):
         self.climatology = climatology
 
         # Whether to also include the inputs over the forecast steps
-        self.include_forecast_step_inputs = include_forecast_step_inputs
+        self.include_future_inputs = include_future_inputs
         self.n_input_steps = n_history_steps + (
-            n_forecast_steps if include_forecast_step_inputs else 0
+            n_forecast_steps if include_future_inputs else 0
         )
 
         # Create a new dataset for the target with only the selected variables
@@ -133,7 +133,7 @@ class CombinedDataset(Dataset):
             calendar-day mean field:
             - climatology: [n_forecast_steps, C_target, H_target, W_target]
 
-            If ``include_forecast_step_inputs`` is set, the dictionary also contains the
+            If ``include_future_inputs`` is set, the dictionary also contains the
             input data for the forecast steps:
             - `future_<input>`: [n_forecast_steps, C_input_k, H_input_k, W_input_k]
 
@@ -144,7 +144,7 @@ class CombinedDataset(Dataset):
         for ds in self.inputs:
             window = ds.get_tchw_slice(start_date, self.n_input_steps, check=False)
             batch[ds.name] = window[: self.n_history_steps]
-            if self.include_forecast_step_inputs:
+            if self.include_future_inputs:
                 batch[f"future_{ds.name}"] = window[self.n_history_steps :]
         batch["target"] = self.target.get_tchw_slice(
             start_date + self.n_history_steps * self.frequency,
@@ -195,7 +195,7 @@ class CombinedDataset(Dataset):
         """Return list of consecutive dates read from each input for a given start date.
 
         These are the history steps, followed by the forecast steps if
-        ``include_forecast_step_inputs`` is set.
+        ``include_future_inputs`` is set.
         """
         return [start_date + idx * self.frequency for idx in range(self.n_input_steps)]
 

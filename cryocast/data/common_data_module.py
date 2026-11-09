@@ -66,7 +66,7 @@ class CommonDataModule(LightningDataModule):
 
         # Whether training batches should load input variables on the forecast steps
         # as well as the history steps.
-        self._include_forecast_step_inputs = False
+        self._include_future_inputs = False
 
         # Set common arguments for the dataloader
         self._common_dataloader_kwargs = DataloaderArgs(
@@ -262,14 +262,14 @@ class CommonDataModule(LightningDataModule):
         periods: list[dict[str, str | None]],
         *,
         stage: str,
-        include_forecast_step_inputs: bool = False,
+        include_future_inputs: bool = False,
     ) -> CombinedDataset:
         """Construct a dataset covering the given periods.
 
         Args:
             periods: The date ranges that the dataset covers.
             stage: The name of the stage, used in log messages.
-            include_forecast_step_inputs: Whether each sample also holds every input
+            include_future_inputs: Whether each sample also holds every input
                 over the forecast steps. Only the training dataset sets this.
 
         """
@@ -280,7 +280,7 @@ class CommonDataModule(LightningDataModule):
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
-            include_forecast_step_inputs=include_forecast_step_inputs,
+            include_future_inputs=include_future_inputs,
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":
@@ -329,20 +329,21 @@ class CommonDataModule(LightningDataModule):
         self._common_dataloader_kwargs["persistent_workers"] = n_workers > 0
         self._common_dataloader_kwargs["prefetch_factor"] = 1 if n_workers > 0 else None
 
-    def configure_forecast_step_inputs(self, *, include: bool) -> None:
+    def configure_future_inputs(self, *, include: bool) -> None:
         """Set whether training batches also hold every input over the forecast steps.
 
         The model that is being trained needs these inputs only if it computes a loss
-        against them. Validation, test and predict batches never hold them, since
+        against them. They are loss targets only and the model never receives them as
+        inputs. Validation, test and predict batches never hold them, since
         those stages compute their loss and metrics in physical space.
 
         Args:
-            include: Whether training batches hold the forecast-step inputs. If this
+            include: Whether training batches hold the future inputs. If this
                 changes the value, the cached training dataset is discarded.
 
         """
-        if include != self._include_forecast_step_inputs:
-            self._include_forecast_step_inputs = include
+        if include != self._include_future_inputs:
+            self._include_future_inputs = include
             # Discard any cached training dataset built with the old value
             self.__dict__.pop("training_dataset", None)
 
@@ -362,7 +363,7 @@ class CommonDataModule(LightningDataModule):
         return self._build_dataset(
             self.train_periods,
             stage="training",
-            include_forecast_step_inputs=self._include_forecast_step_inputs,
+            include_future_inputs=self._include_future_inputs,
         )
 
     def train_dataloader(

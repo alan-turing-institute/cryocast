@@ -139,7 +139,7 @@ class TestProcessorStage:
             *cfg_output_space["shape"],
         )
 
-    def test_latent_target_encodes_forecast_step_inputs(
+    def test_latent_target_encodes_future_inputs(
         self,
         encoder_stage: EncoderStage,
         *,

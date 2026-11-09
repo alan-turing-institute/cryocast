@@ -378,7 +378,7 @@ class TestNoFutureLeak:
         [("latent", None), ("physical", ADDITIVE_SKIP_DECODER)],
         ids=["latent", "physical"],
     )
-    def test_forecast_step_inputs_are_not_read(
+    def test_future_inputs_are_not_read(
         self, rollout_space: str, decoder_extra: dict[str, Any] | None
     ) -> None:
         """The future_<input> keys are ground truth for latent losses, never forward().

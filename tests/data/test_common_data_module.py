@@ -642,8 +642,8 @@ class TestDataLoaders:
         assert batch["group1"].shape[2] == 2  # NTCHW: [batch, time, channels, H, W]
         assert batch["target"].shape[2] == 1
 
-    def test_forecast_step_inputs_omitted_by_default(self, mock_dataset: Path) -> None:
-        """Until a model asks for them, batches hold no forecast-step inputs."""
+    def test_future_inputs_omitted_by_default(self, mock_dataset: Path) -> None:
+        """Until a model asks for them, batches hold no future inputs."""
         cfg = _single_group_config(
             mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
         )
@@ -657,10 +657,10 @@ class TestDataLoaders:
         ("split", "expected"),
         [("train", True), ("val", False), ("test", False), ("predict", False)],
     )
-    def test_forecast_step_inputs_only_in_train(
+    def test_future_inputs_only_in_train(
         self, mock_dataset: Path, split: str, *, expected: bool
     ) -> None:
-        """Validation, test and predict batches never hold forecast-step inputs.
+        """Validation, test and predict batches never hold future inputs.
 
         Those stages compute their loss in physical space, so never read them. Turning
         the flag on also restricts the valid dates, so applying it elsewhere would
@@ -670,7 +670,7 @@ class TestDataLoaders:
             mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
         )
         dm = CommonDataModule(cfg)
-        dm.configure_forecast_step_inputs(include=True)
+        dm.configure_future_inputs(include=True)
 
         batch = next(iter(getattr(dm, f"{split}_dataloader")()))
         assert ("future_group1" in batch) is expected
@@ -678,7 +678,7 @@ class TestDataLoaders:
             # NTCHW: one forecast step, matching the target
             assert batch["future_group1"].shape == batch["target"].shape
 
-    def test_changing_forecast_step_inputs_rebuilds_training_dataset(
+    def test_changing_future_inputs_rebuilds_training_dataset(
         self, mock_dataset: Path
     ) -> None:
         """Multistage training uses one data module for all of its stages.
@@ -692,14 +692,14 @@ class TestDataLoaders:
         without_future = dm.training_dataset
 
         # An unchanged value keeps the cached dataset
-        dm.configure_forecast_step_inputs(include=False)
+        dm.configure_future_inputs(include=False)
         assert dm.training_dataset is without_future
 
-        dm.configure_forecast_step_inputs(include=True)
+        dm.configure_future_inputs(include=True)
         assert dm.training_dataset is not without_future
         assert "future_group1" in next(iter(dm.train_dataloader()))
 
-        dm.configure_forecast_step_inputs(include=False)
+        dm.configure_future_inputs(include=False)
         assert "future_group1" not in next(iter(dm.train_dataloader()))
 
 

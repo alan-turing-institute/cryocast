@@ -248,10 +248,10 @@ class ModelService:
         current_model.lr_scheduler_cfg = config["lr_scheduler"]
         if "loss" in config:
             current_model.loss_cfg = config["loss"]
-        # Load forecast-step inputs only for models that need them. In multistage
+        # Load future inputs only for models that need them. In multistage
         # training, this changes between stages (e.g. encoders do not need them).
-        self.data_module.configure_forecast_step_inputs(
-            include=current_model.needs_forecast_step_inputs
+        self.data_module.configure_future_inputs(
+            include=current_model.needs_future_inputs
         )
         trainer = self.build_trainer(
             config=config, job_stage=job_stage, project="train"

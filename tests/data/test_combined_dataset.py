@@ -257,9 +257,9 @@ class TestCombinedDataset:
 
 
 class TestCombinedDatasetForecastStepInputs:
-    """Tests for the CombinedDataset forecast-step input keys and dates filter."""
+    """Tests for the CombinedDataset future input keys and dates filter."""
 
-    def test_getitem_includes_forecast_step_inputs(
+    def test_getitem_includes_future_inputs(
         self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
     ) -> None:
         """Batches gain each input over the forecast steps, aligned with the target."""
@@ -271,7 +271,7 @@ class TestCombinedDatasetForecastStepInputs:
             target_variables=["ice_conc"],
             n_history_steps=2,
             n_forecast_steps=2,
-            include_forecast_step_inputs=True,
+            include_future_inputs=True,
         )
         # With start_date 2020-01-01, n_history_steps=2 and n_forecast_steps=2 we
         # expect the history steps to cover 2020-01-01 to 2020-01-02
@@ -298,7 +298,7 @@ class TestCombinedDatasetForecastStepInputs:
         )
 
     @pytest.mark.parametrize(
-        ("include_forecast_step_inputs", "n_valid_dates"),
+        ("include_future_inputs", "n_valid_dates"),
         [(False, 4), (True, 3)],
         ids=["without", "with"],
     )
@@ -308,7 +308,7 @@ class TestCombinedDatasetForecastStepInputs:
         dates_as_np: tuple[np.datetime64, ...],
         dates_as_str: tuple[str, ...],
         *,
-        include_forecast_step_inputs: bool,
+        include_future_inputs: bool,
         n_valid_dates: int,
     ) -> None:
         """Start dates are dropped when an input is missing one of the forecast steps."""
@@ -325,7 +325,7 @@ class TestCombinedDatasetForecastStepInputs:
             target_variables=["ice_conc"],
             n_history_steps=1,
             n_forecast_steps=1,
-            include_forecast_step_inputs=include_forecast_step_inputs,
+            include_future_inputs=include_future_inputs,
         )
         assert combined.dates == list(dates_as_np[:n_valid_dates])
 

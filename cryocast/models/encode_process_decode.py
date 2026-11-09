@@ -192,7 +192,7 @@ class EncodeProcessDecode(BaseModel):
 
     @property
     @override
-    def needs_forecast_step_inputs(self) -> bool:
+    def needs_future_inputs(self) -> bool:
         # Latent-space losses compare against encoded inputs over the forecast steps
         return self.processor.computes_loss_in_latent_space
 
@@ -226,14 +226,14 @@ class EncodeProcessDecode(BaseModel):
 
         """
         try:
-            forecast_step_inputs = {
+            future_inputs = {
                 input_space.name: batch[f"future_{input_space.name}"]
                 for input_space in self.input_spaces
             }
         except KeyError as exc:
             msg = (
                 f"Processor {type(self.processor).__name__} computes its loss in "
-                f"latent space, so the batch needs forecast-step inputs, but {exc} is "
+                f"latent space, so the batch needs future inputs, but {exc} is "
                 f"missing."
             )
             raise ValueError(msg) from exc
@@ -241,7 +241,7 @@ class EncodeProcessDecode(BaseModel):
         # Detach so that the latent loss cannot move its own target, e.g. by shrinking
         # the target latent. During finetune the shared encoders still receive
         # gradients through the conditioning path while the decoder is frozen.
-        return self._encode_inputs(forecast_step_inputs).detach()
+        return self._encode_inputs(future_inputs).detach()
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the last frame's target variables as the decoder skip-connection anchor.
@@ -447,7 +447,7 @@ class EncodeProcessDecode(BaseModel):
 
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
-            # Encode history and forecast-step inputs into the combined latent space.
+            # Encode history and future inputs into the combined latent space.
             latent_input_combined = self._encode_inputs(batch)
             target_latent = self._encode_target_latent(batch)
 

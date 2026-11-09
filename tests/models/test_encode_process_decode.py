@@ -149,7 +149,7 @@ class TestEncodeProcessDecode:
             target_variable_indices=[0],
         )
         assert model.multistage_only is expected_multistage_only
-        assert model.needs_forecast_step_inputs is expected_multistage_only
+        assert model.needs_future_inputs is expected_multistage_only
 
     def test_init_processor_builds_its_own_loss(
         self,
@@ -380,7 +380,7 @@ class TestEncodeProcessDecode:
         model.eval()
         return model
 
-    def test_latent_target_encodes_forecast_step_inputs(
+    def test_latent_target_encodes_future_inputs(
         self, latent_loss_model: EncodeProcessDecode, cfg_input_space: DictConfig
     ) -> None:
         """Latent supervision is the encoded inputs over the forecast steps."""
@@ -401,7 +401,7 @@ class TestEncodeProcessDecode:
         assert all(p.requires_grad for p in model.encoders[0].parameters())
         assert not actual.requires_grad
 
-    def test_latent_target_requires_forecast_step_inputs(
+    def test_latent_target_requires_future_inputs(
         self, latent_loss_model: EncodeProcessDecode, cfg_input_space: DictConfig
     ) -> None:
         name = cfg_input_space["name"]
@@ -410,7 +410,7 @@ class TestEncodeProcessDecode:
             "target": torch.rand(2, 2, 1, 16, 16),
         }
 
-        with pytest.raises(ValueError, match="needs forecast-step inputs"):
+        with pytest.raises(ValueError, match="needs future inputs"):
             latent_loss_model.training_step(batch, 0)
 
     def test_perfect_latent_forecast_decodes_to_target(
