@@ -238,10 +238,11 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg) from exc
 
-        # Detach so that the latent loss cannot move its own target, e.g. by shrinking
-        # the target latent. During finetune the shared encoders still receive
-        # gradients through the conditioning path while the decoder is frozen.
-        return self._encode_inputs(future_inputs).detach()
+        # Disable gradients for the ground truth. The encoders are trainable during
+        # finetune, so otherwise the optimiser can decrease the loss by changing the
+        # target, and not the prediction.
+        with torch.no_grad():
+            return self._encode_inputs(future_inputs)
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the last frame's target variables as the decoder skip-connection anchor.
