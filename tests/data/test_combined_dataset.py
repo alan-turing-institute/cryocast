@@ -343,7 +343,7 @@ class TestCombinedDatasetClimatology:
 
 
 class TestOptionalGroups:
-    """Optional inputs keep windows on days they are missing, with fill and flag.
+    """Optional inputs keep windows on days they are missing, filled with a value.
 
     The target comes from `mock_dataset` (all five days present). The optional input
     comes from `mock_dataset_missing_dates_fill_value`, which is present on days 0, 2
@@ -357,8 +357,7 @@ class TestOptionalGroups:
         *,
         optional_groups: tuple[str, ...] = ("optional",),
         optional_date_ranges: list[dict[str, str | None]] | None = None,
-        optional_fill: str | float = "mean",
-        optional_climatology: dict[str, np.ndarray] | None = None,
+        optional_fill: float = -1.0,
     ) -> CombinedDataset:
         target = SingleDataset(name="target_group", input_files=[target_path])
         optional = SingleDataset(
@@ -374,7 +373,6 @@ class TestOptionalGroups:
             n_forecast_steps=1,
             optional_groups=optional_groups,
             optional_fill=optional_fill,
-            optional_climatology=optional_climatology,
         )
 
     def test_default_drops_windows_with_missing_input(
@@ -388,16 +386,6 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
 
-    def test_default_batches_unchanged(self, mock_dataset: Path) -> None:
-        """With no optional groups, batches have no flag_filled channel."""
-        combined = self._combined(mock_dataset, mock_dataset, optional_groups=())
-        batch = combined[0]
-        assert batch["optional"].shape == (2, 3, 2, 2)
-        np.testing.assert_array_equal(
-            batch["optional"],
-            combined.inputs[1].get_tchw_slice(combined.dates[0], 2),
-        )
-
     def test_windows_with_missing_optional_days_are_kept(
         self,
         mock_dataset: Path,
@@ -410,21 +398,17 @@ class TestOptionalGroups:
     def test_present_and_missing_days(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
-        """Present days hold the data, missing days the channel mean, plus a flag."""
+        """Present days hold the data and missing days hold the fill value."""
         combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
         optional = combined.inputs[1]
         # History days 0 (present) and 1 (missing)
         history = combined[0]["optional"]
-        assert history.shape == (2, 2, 2, 2)
+        assert history.shape == (2, 1, 2, 2)
         assert history.dtype == np.float32
         np.testing.assert_allclose(
-            history[0, :1], optional.get_tchw([combined.dates[0]])[0]
+            history[0], optional.get_tchw([combined.dates[0]])[0]
         )
-        np.testing.assert_allclose(history[1, :1], optional.normalised_mean()[0, 0, 0])
-        np.testing.assert_array_equal(history[:, 1, 0, 0], [0.0, 1.0])
-        np.testing.assert_array_equal(
-            history[:, 1], history[:, 1, :1, :1].repeat(2, 1).repeat(2, 2)
-        )
+        np.testing.assert_array_equal(history[1], -1.0)
 
     def test_fill_value_rows_never_reach_a_batch(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
@@ -434,45 +418,14 @@ class TestOptionalGroups:
         for idx in range(len(combined)):
             assert combined[idx]["optional"].max() <= 1.0
 
-    def test_numeric_fill(
+    def test_custom_fill(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
         combined = self._combined(
-            mock_dataset, mock_dataset_missing_dates_fill_value, optional_fill=0.0
+            mock_dataset, mock_dataset_missing_dates_fill_value, optional_fill=0
         )
         # History days 1 (missing) and 2 (present)
-        history = combined[1]["optional"]
-        np.testing.assert_array_equal(history[0, 0], 0.0)
-        np.testing.assert_array_equal(history[:, 1, 0, 0], [1.0, 0.0])
-
-    def test_climatology_fill(
-        self,
-        mock_dataset: Path,
-        mock_dataset_missing_dates_fill_value: Path,
-        dates_as_np: tuple[np.datetime64, ...],
-    ) -> None:
-        """Missing days take the climatology of their own calendar day."""
-        # A different value on every calendar day
-        table = np.broadcast_to(
-            (np.arange(366, dtype=np.float32) / 1000).reshape(-1, 1, 1, 1),
-            (366, 1, 2, 2),
-        )
-        combined = self._combined(
-            mock_dataset,
-            mock_dataset_missing_dates_fill_value,
-            optional_fill="climatology",
-            optional_climatology={"optional": table},
-        )
-        # History days 1 (missing) and 2 (present)
-        history = combined[1]["optional"]
-        np.testing.assert_allclose(
-            history[0, 0], table[CalendarDayClimatology.day_index(dates_as_np[1]), 0]
-        )
-        np.testing.assert_array_equal(history[:, 1, 0, 0], [1.0, 0.0])
-
-    def test_climatology_fill_needs_a_table(self, mock_dataset: Path) -> None:
-        with pytest.raises(ValueError, match="have no climatology"):
-            self._combined(mock_dataset, mock_dataset, optional_fill="climatology")
+        np.testing.assert_array_equal(combined[1]["optional"][0], 0.0)
 
     def test_window_before_optional_input_starts(
         self,
@@ -487,12 +440,7 @@ class TestOptionalGroups:
             optional_date_ranges=[{"start": dates_as_str[3], "end": None}],
         )
         assert combined.dates[0] == dates_as_np[0]
-        history = combined[0]["optional"]
-        np.testing.assert_array_equal(history[:, -1], 1.0)
-        np.testing.assert_allclose(
-            history[:, :-1],
-            np.broadcast_to(combined.inputs[1].normalised_mean(), (2, 3, 2, 2)),
-        )
+        np.testing.assert_array_equal(combined[0]["optional"], -1.0)
 
     def test_missing_required_input_still_drops_window(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
@@ -502,14 +450,24 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
 
-    def test_variable_list_includes_fill_flag(
-        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    def test_get_input_tchw(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
     ) -> None:
+        """Optional inputs are filled on any dates, but other inputs must have data."""
         combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
-        assert combined.variable_list()[-2:] == [
-            "4) optional/ice_conc",
-            "5) optional/flag_filled",
-        ]
+        target, optional = combined.inputs
+        data = combined.get_input_tchw(optional, list(dates_as_np))
+        np.testing.assert_array_equal(data[[1, 3]], -1.0)
+        np.testing.assert_allclose(
+            data[[0, 2, 4]], optional.get_tchw(list(dates_as_np[::2]))
+        )
+        np.testing.assert_allclose(
+            combined.get_input_tchw(target, list(dates_as_np)),
+            target.get_tchw(list(dates_as_np)),
+        )
 
     def test_target_cannot_be_optional(self, mock_dataset: Path) -> None:
         with pytest.raises(ValueError, match="cannot be optional"):
@@ -521,6 +479,7 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="are not inputs of this dataset"):
             self._combined(mock_dataset, mock_dataset, optional_groups=("unknown",))
 
-    def test_invalid_fill_raises(self, mock_dataset: Path) -> None:
-        with pytest.raises(ValueError, match="optional_fill must be"):
-            self._combined(mock_dataset, mock_dataset, optional_fill="median")
+    @pytest.mark.parametrize("fill", ["mean", True])
+    def test_non_numeric_fill_raises(self, mock_dataset: Path, fill: object) -> None:
+        with pytest.raises(TypeError, match="optional_fill must be a number"):
+            self._combined(mock_dataset, mock_dataset, optional_fill=fill)  # type: ignore[arg-type]

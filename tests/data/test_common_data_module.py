@@ -880,14 +880,14 @@ class TestCommonDataModuleClimatology:
 
 
 class TestOptionalGroups:
-    """`data.optional_groups` adds a flag_filled channel to an input and keeps windows."""
+    """`data.optional_groups` keeps windows where an input is missing, filling it."""
 
     @staticmethod
     def _config(
         mock_dataset: Path,
         optional_path: Path,
         optional_groups: list[str],
-        optional_fill: str = "mean",
+        optional_fill: float = -1.0,
     ) -> DictConfig:
         cfg = _build_config(
             str(mock_dataset.parent.parent.parent),
@@ -903,57 +903,34 @@ class TestOptionalGroups:
         cfg.window.n_history_steps = 2
         return cfg
 
-    def test_default_input_spaces_unchanged(self, mock_dataset: Path) -> None:
-        dm = CommonDataModule(self._config(mock_dataset, mock_dataset, []))
-        assert [space.channels for space in dm.input_spaces] == [1, 1]
-        assert dm.input_variable_names("optional") == ["ice_conc"]
-
-    def test_optional_input_space_has_fill_flag(
+    def test_missing_days_are_filled(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
+        """Windows with a missing optional day are kept, and the day holds -1."""
         dm = CommonDataModule(
             self._config(
                 mock_dataset, mock_dataset_missing_dates_fill_value, ["optional"]
             )
         )
-        spaces = {space.name: space for space in dm.input_spaces}
-        assert spaces["group1"].channels == 1
-        assert spaces["optional"].channels == 2
-        assert dm.input_variable_names("optional") == ["ice_conc", "flag_filled"]
+        dataset = dm.training_dataset
+        # History days 0 (present) and 1 (missing)
+        history = dataset[0]["optional"]
+        assert history.shape == (2, 1, 2, 2)
+        assert history[0].min() >= 0.0
+        np.testing.assert_array_equal(history[1], -1.0)
 
-    def test_no_fill_climatology_by_default(
+    def test_fill_from_config(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
-        dm = CommonDataModule(
-            self._config(
-                mock_dataset, mock_dataset_missing_dates_fill_value, ["optional"]
-            )
-        )
-        assert dm.optional_climatology == {}
-
-    def test_climatology_fill(
-        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
-    ) -> None:
-        """Missing days take the optional group's calendar-day mean."""
         dm = CommonDataModule(
             self._config(
                 mock_dataset,
                 mock_dataset_missing_dates_fill_value,
                 ["optional"],
-                optional_fill="climatology",
+                optional_fill=-5.0,
             )
         )
-        table = dm.optional_climatology["optional"]
-        assert table.shape == (366, 1, 2, 2)
-        assert np.isfinite(table).all()
-        dataset = dm.training_dataset
-        # History days 0 (present) and 1 (missing)
-        history = dataset[0]["optional"]
-        missing_day = dataset.get_history_steps(dataset.dates[0])[1]
-        np.testing.assert_allclose(
-            history[1, :1], table[CalendarDayClimatology.day_index(missing_day)]
-        )
-        assert history.max() <= 1.0
+        np.testing.assert_array_equal(dm.training_dataset[0]["optional"][1], -5.0)
 
     def test_unknown_optional_group_raises(self, mock_dataset: Path) -> None:
         with pytest.raises(ValueError, match="are not dataset groups"):
@@ -980,7 +957,7 @@ class TestOptionalGroups:
     def test_model_builds_and_trains_one_step(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
-        """A model built from the input spaces accepts a batch with a flag_filled channel."""
+        """A model built from the input spaces accepts a batch with filled days."""
         dm = CommonDataModule(
             self._config(
                 mock_dataset, mock_dataset_missing_dates_fill_value, ["optional"]

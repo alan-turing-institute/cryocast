@@ -239,6 +239,22 @@ class TestSingleDataset:
         ):
             dataset.get_tchw([dates_as_np[1]])
 
+    def test_get_tchw_fill_value(
+        self,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """With a fill value, missing dates hold it instead of raising."""
+        dataset = SingleDataset(
+            name="test_missing", input_files=[mock_dataset_missing_dates_fill_value]
+        )
+        result = dataset.get_tchw(list(dates_as_np), fill_value=-1.0)
+        assert result.shape == (5, 1, 2, 2)
+        np.testing.assert_array_equal(result[[1, 3]], -1.0)
+        np.testing.assert_allclose(
+            result[[0, 2, 4]], dataset.get_tchw(list(dates_as_np[::2]))
+        )
+
     def test_len(self, mock_dataset: Path) -> None:
         dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
         assert len(dataset) == 5
