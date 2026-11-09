@@ -105,39 +105,9 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg)
 
-        # Add an additional encoder that encodes the target dataset into latent space.
-        # This is currently unused.
-        try:
-            self.target_encoder: BaseEncoder | None = (
-                hydra.utils.instantiate(
-                    encoders[self.output_space.name],
-                    data_space_in=DataSpace(
-                        name="target",
-                        channels=self.output_space.channels,
-                        shape=self.output_space.shape,
-                    ),
-                    latent_space=encoders["latent_space"],
-                    latitudes_fn=self.latitudes_fn,
-                    longitudes_fn=self.longitudes_fn,
-                )
-                if isinstance(encoders, Mapping)
-                else next(
-                    (encoder for encoder in encoders if encoder.name == "target"), None
-                )
-            )
-        except KeyError as exc:
-            msg = (
-                f"Error instantiating target encoder: {exc}. Please ensure that an "
-                f"encoder is specified for '{self.output_space.name}', even if it is "
-                f"not one of the input spaces: {self.input_spaces}."
-            )
-            raise ValueError(msg) from exc
-
         # Verify the output channels for each encoder
         for encoder in self.encoders:
             encoder.verify_output_channels(self.device)
-        if self.target_encoder is not None:
-            self.target_encoder.verify_output_channels(self.device)
 
         # Add a processor
         combined_latent_space = DataSpace(
@@ -200,14 +170,6 @@ class EncodeProcessDecode(BaseModel):
     def needs_forecast_step_inputs(self) -> bool:
         # Latent-space losses compare against encoded inputs over the forecast steps
         return self.processor.computes_loss_in_latent_space
-
-    @property
-    def target_input_encoder(self) -> BaseEncoder | None:
-        """Return the input encoder whose dataset contains the forecast target."""
-        for encoder, input_space in zip(self.encoders, self.input_spaces, strict=True):
-            if input_space.name == self.output_space.name:
-                return encoder
-        return None
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all input datasets and concatenate along the channel dimension.
@@ -386,14 +348,10 @@ class EncodeProcessDecode(BaseModel):
 
     def _freeze_unused_modules(self) -> None:
         """Freeze unused modules."""
-        # Processors that compute loss in latent space do not touch the decoder, and
-        # no processor touches the target_encoder.
-        # We therefore explicitly freeze the unused modules.
+        # Processors that compute loss in latent space do not touch the decoder, so we
+        # explicitly freeze it.
         if self.processor.computes_loss_in_latent_space:
             self.decoder.freeze()
-        # The target encoder is currently unused
-        if self.target_encoder is not None:
-            self.target_encoder.freeze()
 
     def _validate_rollout_options(
         self, rollout_space: RolloutSpace | str

@@ -287,4 +287,3 @@ class TestProcessorStage:
             f"processor_{decoder_stage.n_history_steps}_to_"
             f"{decoder_stage.n_forecast_steps}"
         )
-        assert processor_stage.target_encoder is None
