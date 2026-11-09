@@ -32,6 +32,8 @@ Each model instance is typically trained to predict a single output, although th
 
 A processor model sits inside an encode-process-decode pipeline.
 You define a latent space `(H_latent, W_latent)` and the framework automatically creates one encoder per input and one decoder per output.
+You must specify an encoder in the model configuration for each input group.
+If the target group is not an input, it does not need an encoder.
 
 1. Each dataset-specific **encoder** maps input `(N, T_history, C_k, H_k, W_k)` to `(N, T_history, C_k_latent, H_latent, W_latent)`.
 2. The `k` encoded tensors are concatenated to `(N, T_history, C_latent, H_latent, W_latent)`.

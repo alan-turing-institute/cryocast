@@ -42,16 +42,29 @@ This model can be trained in either single-stage or multistage mode.
 
 ## Training vs. inference: override `rollout`
 
-Some architectures fundamentally differ between training and inference.
-The canonical example is a diffusion model: during training you corrupt the target and predict noise; during inference you run the full reverse diffusion chain from pure noise.
+Some processors do different operations during training and during inference.
+A diffusion model is an example of this type of processor.
+During training, it adds noise to the ground truth and predicts that noise.
+During inference, it starts from random noise and removes the noise step by step.
 
-If you use the multistage training flow - encode and decode components can be pretrained independently before the processor is trained on their fixed latent space.
-This then allows the use of different training and inference behaviour in the `rollout` method.
+These processors must be trained in multiple stages.
+In multistage training, CryoCast trains the encoders and the decoder before the processor.
+CryoCast then trains the processor on a fixed latent space.
 
-The `rollout` signature allows the processor to handle both training and inference without direct knowledge of which step is being run:
+The `rollout` method gets two tensors:
 
-- if `y`, the latent-space-encoded target, is provided, this is **training**
-- if `y` is `None` then this is **inference**
+- `x` contains the encoded inputs for the history steps. Its shape is `(N, T_history, C, H, W)`.
+- `y` contains the encoded inputs for the forecast steps. Its shape is `(N, T_forecast, C, H, W)`.
+
+`x` and `y` are in the same latent space.
+They have the same channels `C`, in the same sequence.
+`y` contains all the input groups, not only the target group.
+Thus, the processor does not have to find the target channels in the latent space.
+
+The value of `y` tells the processor which step is in progress:
+
+- If `y` is a tensor, the step is **training**.
+- If `y` is `None`, the step is **inference**.
 
 ```python
 from cryocast.models.processors import BaseProcessor
@@ -60,21 +73,54 @@ from cryocast.types import ProcessorOutput, TensorNTCHW
 
 class MyDiffusionProcessor(BaseProcessor):
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
-        # x: (N, T_history, C, H, W) - encoded inputs
-        # y: (N, T_forecast, C, H, W) - encoded targets
+        # x: (N, T_history, C, H, W) - encoded inputs for the history steps
+        # y: (N, T_forecast, C, H, W) - encoded inputs for the forecast steps
         if y is not None:
-            # Training path: compute a custom loss and return it alongside the prediction.
+            # Training: calculate a custom loss and return it with the prediction.
             prediction, loss = self._training(x, y)
             return ProcessorOutput(prediction=prediction, loss=loss)
-        else:
-            # Inference path: no loss needed.
-            return ProcessorOutput(prediction=self._inference(x))
+        # Inference: no loss is necessary.
+        return ProcessorOutput(prediction=self._inference(x))
 ```
 
-Setting `loss` on the returned `ProcessorOutput` tells `ProcessorStage` to skip its own loss computation and use yours instead.
-When `loss` is `None` (the default), `ProcessorStage` decodes the prediction normally and computes its own loss against the target.
-When `loss` is not `None`, the `ProcessorStage` uses that value directly for the backward pass, and decodes the prediction under `torch.no_grad()`.
-This allows the decoder to still produce output for metrics and callbacks without this contributing to gradient accumulation.
+### Custom loss
+
+To use your own loss, set `loss` on the `ProcessorOutput` that `rollout` returns.
+`ProcessorStage` then uses this loss for the backward pass.
+It does not calculate its own loss.
+It decodes the prediction under `torch.no_grad()`.
+Thus, the decoder makes output for the metrics and the callbacks, but this output does not change the gradients.
+
+If `loss` is `None` (the default), `ProcessorStage` decodes the prediction.
+It then calculates its own loss against the target.
+
+### Loss in latent space
+
+If your processor calculates its loss in latent space, give `computes_loss_in_latent_space=True` to `BaseProcessor.__init__`.
+CryoCast then does these steps automatically:
+
+1. The data module loads each input group for the forecast steps.
+   Each batch gets one `future_<input>` key for each input group.
+2. The model encodes these inputs and gives the result to `rollout` as `y`.
+   The model detaches `y` from the computation graph. Thus, the loss cannot change its own target.
+3. The model freezes the decoder.
+
+You do not set a configuration key for these steps.
+
+!!! warning
+    The `future_<input>` keys contain ground-truth data for the forecast steps.
+    The model uses them only to calculate the training loss.
+    The model does not give them to `forward`.
+    Do not use them in a different part of the model.
+
+!!! note
+    The data module reads more data for each sample when it loads the forecast steps.
+    A sample is valid only if all the input groups have data for all the forecast steps.
+    Thus, the dataset can contain fewer samples. For example, the Argo data has some missing dates.
+
+!!! note
+    The loss is calculated on all the channels of the latent space, with the same weight for each channel.
+    Most of these channels come from input groups that are not the target, for example ERA5.
 
 ## Register the processor in config
 
