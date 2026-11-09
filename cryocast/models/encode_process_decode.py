@@ -1,5 +1,6 @@
+import logging
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import hydra
 import torch
@@ -18,6 +19,11 @@ from cryocast.types import (
 )
 
 from .base_model import BaseModel
+
+if TYPE_CHECKING:
+    from torch.nn.modules.module import _IncompatibleKeys
+
+log = logging.getLogger(__name__)
 
 
 class EncodeProcessDecode(BaseModel):
@@ -159,6 +165,25 @@ class EncodeProcessDecode(BaseModel):
 
         # Freeze unused modules
         self._freeze_unused_modules()
+
+    @override
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], *args: Any, **kwargs: Any
+    ) -> "_IncompatibleKeys":
+        """Load a state dict, ignoring weights for the removed target encoder.
+
+        Checkpoints saved before the target encoder was removed contain
+        ``target_encoder.*`` weights. Nothing uses them now, so they are dropped and
+        these checkpoints still load strictly.
+
+        Note: this override will be removed in a future update.
+        """
+        if stale := [key for key in state_dict if key.startswith("target_encoder.")]:
+            log.warning(
+                "Ignoring %d unused target_encoder checkpoint weights.", len(stale)
+            )
+            state_dict = {k: v for k, v in state_dict.items() if k not in stale}
+        return super().load_state_dict(state_dict, *args, **kwargs)
 
     @property
     @override

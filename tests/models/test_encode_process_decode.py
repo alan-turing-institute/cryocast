@@ -542,3 +542,42 @@ class TestEncodeProcessDecode:
         )
         assert loaded.hemisphere is Hemisphere.NORTH
         assert loaded.rollout_space is RolloutSpace.LATENT
+
+    def test_load_state_dict_ignores_removed_target_encoder(
+        self,
+        cfg_decoder: DictConfig,
+        cfg_encoders: DictConfig,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        cfg_processor: DictConfig,
+    ) -> None:
+        """Checkpoints saved with the removed target encoder still load strictly."""
+        model = EncodeProcessDecode(
+            name="legacy-target-encoder",
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            hemisphere=Hemisphere.NORTH,
+            input_spaces=[cfg_input_space],
+            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+            metrics=[],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space=cfg_output_space,
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            target_variable_indices=[0],
+        )
+        state_dict = model.state_dict()
+        legacy_state_dict = {
+            **state_dict,
+            "target_encoder.model.0.weight": torch.zeros(1),
+            "target_encoder.model.0.bias": torch.zeros(1),
+        }
+
+        result = model.load_state_dict(legacy_state_dict, strict=True)
+
+        assert result.missing_keys == []
+        assert result.unexpected_keys == []
+        assert "target_encoder" not in dict(model.named_children())

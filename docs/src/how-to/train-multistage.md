@@ -52,6 +52,9 @@ uv run cryocast train --multistage --checkpoint-dir ${BASE_DIR}/training/wandb/r
     This applies to `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc`.
     Train these models again.
 
+    Checkpoints from other models still load.
+    Their stored `target_encoder` weights are no longer used, so CryoCast ignores them.
+
     Earlier multistage runs also saved an `encoder-target.*.ckpt` checkpoint.
     CryoCast does not use this checkpoint now.
     To continue one of these runs with `--checkpoint-dir`, remove the `processor.*.ckpt` files first.
