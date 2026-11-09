@@ -960,7 +960,9 @@ class TestOptionalGroups:
             CommonDataModule(self._config(mock_dataset, mock_dataset, ["unknown"]))
 
     def test_optional_target_group_raises(self, mock_dataset: Path) -> None:
-        with pytest.raises(ValueError, match="target group 'group1' cannot be optional"):
+        with pytest.raises(
+            ValueError, match="target group 'group1' cannot be optional"
+        ):
             CommonDataModule(self._config(mock_dataset, mock_dataset, ["group1"]))
 
     def test_batches_match_input_spaces(

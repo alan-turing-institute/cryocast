@@ -6,7 +6,7 @@ import re
 import reprlib
 import shutil
 from collections import OrderedDict
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,6 +199,13 @@ class CheckpointFile:
             )
             sections.remove("model")
 
+        self._warn_replaced(config, combined, sections)
+        return combined
+
+    def _warn_replaced(
+        self, config: DictConfig, combined: DictConfig, sections: Sequence[str]
+    ) -> None:
+        """Warn about each value in these config sections that the checkpoint replaces."""
         replaced: dict[str, tuple[Any, Any]] = {}
         for section in sections:
             used = self._flatten(
@@ -220,8 +227,6 @@ class CheckpointFile:
                     reprlib.repr(used),
                     reprlib.repr(configured),
                 )
-
-        return combined
 
     @contextmanager
     def suggest_upgrade_on_failure(self) -> Generator[None]:
