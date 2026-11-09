@@ -63,6 +63,9 @@ class CommonDataModule(LightningDataModule):
                 f"Available groups: {sorted(self.dataset_groups.keys())}."
             )
             raise ValueError(msg)
+        if self.target_group_name in self.optional_groups:
+            msg = f"The target group {self.target_group_name!r} cannot be optional."
+            raise ValueError(msg)
         self.optional_fill = config["data"].get("optional_fill", "mean")
 
         # Set periods for prediction, testing, training and validation
