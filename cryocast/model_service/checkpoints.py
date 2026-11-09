@@ -27,6 +27,9 @@ from cryocast.utils import to_plain_types
 
 log = logging.getLogger(__name__)
 
+# Keys under "data" that change the model's inputs, so must match training
+OPTIONAL_INPUT_KEYS = ("optional_groups", "optional_fill")
+
 
 @dataclass(frozen=True)
 class CheckpointFile:
@@ -139,10 +142,11 @@ class CheckpointFile:
         """Combine the current config with the config that the checkpoint was trained with.
 
         The current config takes precedence, except for the "model", "variables" and
-        "window" sections, which describe the trained model. The "model" and "window"
-        checkpoint configs are merged over the current ones, apart from
-        "window.batch_size", while the "variables" checkpoint config replaces the
-        current one entirely. If the current config names a different model, the
+        "window" sections and the "data.optional_groups" and "data.optional_fill"
+        keys, which describe the trained model. The "model" and "window" checkpoint
+        configs are merged over the current ones, apart from "window.batch_size",
+        while the "variables" checkpoint config and the optional input keys replace the
+        current ones entirely. If the current config names a different model, the
         "model" checkpoint config also replaces the current one entirely. A warning
         lists any current values that are replaced.
 
@@ -165,6 +169,11 @@ class CheckpointFile:
         # We must use the same variables that the checkpoint was trained with
         if "variables" in ckpt_config:
             combined["variables"] = ckpt_config["variables"]
+        # Optional inputs and their fill change what the model sees, so these must also
+        # match training
+        for key in OPTIONAL_INPUT_KEYS:
+            if (value := OmegaConf.select(ckpt_config, f"data.{key}")) is not None:
+                combined["data"][key] = value
         # Batch size does not affect the trained model, so this can be overridden
         if "batch_size" in config.get("window", {}):
             combined["window"]["batch_size"] = config["window"]["batch_size"]
@@ -172,7 +181,12 @@ class CheckpointFile:
         # A different model must not inherit any of the configured model's settings,
         # so use the checkpoint model config outright and summarise this in one line
         # rather than listing every difference
-        sections = ["model", "variables", "window"]
+        sections = [
+            "model",
+            "variables",
+            "window",
+            *(f"data.{key}" for key in OPTIONAL_INPUT_KEYS),
+        ]
         configured_model = OmegaConf.select(config, "model.name")
         checkpoint_model = OmegaConf.select(ckpt_config, "model.name")
         if configured_model and configured_model != checkpoint_model:
@@ -187,11 +201,13 @@ class CheckpointFile:
 
         replaced: dict[str, tuple[Any, Any]] = {}
         for section in sections:
-            used = self._flatten(combined.get(section, {}), section)
+            used = self._flatten(
+                OmegaConf.select(combined, section, default={}), section
+            )
             replaced |= {
                 key: (value, used.get(key, "unset"))
                 for key, value in self._flatten(
-                    config.get(section, {}), section
+                    OmegaConf.select(config, section, default={}), section
                 ).items()
                 if value != used.get(key, "unset")
             }
