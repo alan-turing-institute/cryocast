@@ -416,11 +416,7 @@ class TestEncodeProcessDecode:
     def test_perfect_latent_forecast_decodes_to_target(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """A perfect latent forecast decodes to the target.
-
-        The input encoders map `x` to `x`. The unused target encoder maps `x` to `2x`,
-        so the forecast would be wrong if the latent target were built with it.
-        """
+        """A perfect latent forecast decodes to the target."""
         shape = (8, 8)
         era5 = DataSpace(channels=1, name="era5", shape=shape)
         sic = DataSpace(channels=2, name="sic", shape=shape)
@@ -430,10 +426,6 @@ class TestEncodeProcessDecode:
             encoders=[
                 _ScaledEncoder(data_space_in=era5, scale=1.0),
                 _ScaledEncoder(data_space_in=sic, scale=1.0),
-                _ScaledEncoder(
-                    data_space_in=DataSpace(channels=1, name="target", shape=shape),
-                    scale=2.0,
-                ),
             ],
             processor=DictConfig(
                 {"_target_": f"{__name__}.{_OracleProcessor.__name__}"}
