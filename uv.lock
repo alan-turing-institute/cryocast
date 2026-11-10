@@ -48,6 +48,7 @@ resolution-markers = [
 constraints = [
     { name = "aiohttp", specifier = ">=3.14.4" },
     { name = "setuptools", specifier = ">=84.1.0" },
+    { name = "tornado", specifier = ">=6.6" },
     { name = "urllib3", specifier = ">=2.8.0" },
 ]
 
