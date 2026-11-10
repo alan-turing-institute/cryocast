@@ -31,7 +31,7 @@ dependencies = [
     "eccodeslib==2.47.3.21", # indirect: binary libeccodes needed for ERA5 GRIB downloads
     "filelock==4.2.4",
     "haversine==2.9.0",
-    "hydra-core==1.3.7",
+    "hydra-core==1.3.8",
     "imageio-ffmpeg==0.6.0",
     "jaxtyping==0.3.11",
     "lightning==2.6.6",
