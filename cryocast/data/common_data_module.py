@@ -286,13 +286,16 @@ class CommonDataModule(LightningDataModule):
         if stage != "validation":
             for line in dataset.variable_list():
                 log.info(line)
+        # Future inputs must cover the forecast steps, which may remove some start dates
         log.info(
-            "Loaded %s dataset with %d dates between %s and %s.",
+            "Loaded %s dataset with %d samples between %s and %s.",
             stage,
             len(dataset),
             dataset.start_date.astype("datetime64[m]"),
             dataset.end_date.astype("datetime64[m]"),
         )
+        if include_future_inputs:
+            log.info("Training will use future inputs to compute latent space loss.")
         return dataset
 
     def _in_train_periods(self, day: np.datetime64) -> bool:

@@ -702,6 +702,27 @@ class TestDataLoaders:
         dm.configure_future_inputs(include=False)
         assert "future_group1" not in next(iter(dm.train_dataloader()))
 
+    def test_training_sample_count_logged_with_future_inputs(
+        self, mock_dataset: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The training log reports the sample count and whether future inputs are on.
+
+        Future inputs must cover the forecast steps, so the count can be smaller.
+        """
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+        dm.configure_future_inputs(include=True)
+
+        with caplog.at_level(logging.INFO):
+            n_samples = len(dm.training_dataset)
+
+        assert (
+            f"Loaded training dataset with {n_samples} samples between" in caplog.text
+        )
+        assert "Training will use future inputs" in caplog.text
+
 
 class TestTargetMaskDir:
     """Mask directory resolution for the target group, including multi-dataset groups."""
