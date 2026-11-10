@@ -31,7 +31,7 @@ dependencies = [
     "eccodeslib==2.47.3.21", # indirect: binary libeccodes needed for ERA5 GRIB downloads
     "filelock==4.2.4",
     "haversine==2.9.0",
-    "hydra-core==1.3.7",
+    "hydra-core==1.3.8",
     "imageio-ffmpeg==0.6.0",
     "jaxtyping==0.3.11",
     "lightning==2.6.6",
@@ -168,6 +168,8 @@ constraint-dependencies = [
     "tornado>=6.6", # Fixed GitHub advisories: GHSA-pw9p-v7r6-gx4p, GHSA-pcg2-g6cj-q92c, GHSA-r4j5-9xpp-3985
     "urllib3>=2.8.0", # Fixes GitHub advisories: GHSA-vxq7-64xx-v4gw, GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g\
 ]
+# Workaround until cp314 wheels are available for numcodecs>=0.16.5
+extra-build-variables = { numcodecs = { CFLAGS = "-std=gnu17" } }
 
 [tool.uv.build-backend]
 module-root = ""
