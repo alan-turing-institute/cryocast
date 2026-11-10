@@ -167,6 +167,8 @@ constraint-dependencies = [
     "setuptools>=84.1.0", # Fixes GitHub advisory: GHSA-xmj3-9gf7-h52w
     "urllib3>=2.8.0", # Fixes GitHub advisories: GHSA-vxq7-64xx-v4gw, GHSA-8988-9cw3-xx77, GHSA-gh4c-6fx4-qh6g
 ]
+# Workaround until cp314 wheels are available for numcodecs>=0.16.5
+extra-build-variables = { numcodecs = { CFLAGS = "-std=gnu17" } }
 
 [tool.uv.build-backend]
 module-root = ""
