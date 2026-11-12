@@ -128,7 +128,9 @@ def _build_model(
         # prediction target. output_space is single-channel throughout these tests,
         # so [0] satisfies the channel-count check; the feedback-channel tests pass
         # their own index so the two stay consistent.
-        target_variable_indices=target_variable_indices or [0],
+        target_variable_indices=[0]
+        if target_variable_indices is None
+        else target_variable_indices,
     )
 
 

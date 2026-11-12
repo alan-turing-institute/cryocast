@@ -57,8 +57,8 @@ class BaseModel(LightningModule, ABC):
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         loss: DictConfig,
-        mask_dir: str | Path | None = None,
         lr_scheduler: DictConfig,
+        mask_dir: str | Path | None = None,
         metrics: Sequence[Mapping[str, Any]],
         n_forecast_steps: int,
         n_history_steps: int,
@@ -66,24 +66,40 @@ class BaseModel(LightningModule, ABC):
         optimizer: DictConfig,
         output_space: DictConfig,
         scheduler: DictConfig,
+        target_variable_indices: Sequence[int] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise a BaseModel.
 
-        Input spaces and the desired output space must be specified, as must the number
-        of forecast and history steps.
+        Args:
+            channel_names: Optional list of names for each channel in the input data.
+            hemisphere: Hemisphere of the data, either "north" or "south".
+            input_spaces: List of input data spaces, one for each input dataset.
+            latitudes_fn: Optional function that returns a dict of latitudes for each
+                input dataset.
+            longitudes_fn: Optional function that returns a dict of longitudes for each
+                input dataset.
+            loss: Hydra configuration for the loss function.
+            lr_scheduler: Hydra configuration for the learning rate scheduler.
+            mask_dir: Optional directory containing a land mask for visualisation and
+                metrics.
+            metrics: List of metrics computed during training, validation, and testing.
+            n_forecast_steps: Number of forecast steps to predict.
+            n_history_steps: Number of history steps to use as input.
+            name: Name of the model.
+            optimizer: Hydra configuration for the optimizer.
+            output_space: Output data space.
+            scheduler: Hydra configuration for the learning rate scheduler.
+            target_variable_indices: Optional list of indices of the target variables
+                within the input dataset that matches the output space.
+            kwargs: Additional keyword arguments passed to the LightningModule
+                constructor.
 
-        Optimizer configuration is also set here.
+        Raises:
+            ValueError: If the number of forecast or history steps is less than or equal
+                to 0, or if the number of target variable indices does not match the
+                number of channels in the output space.
 
-        ``mask_dir``, if given, is a directory holding `land_mask.npy` (generated for
-        SSMIS datasets by `datasets create`). When present, the ``"diiee"``/``"fss_*"``
-        metrics use it to exclude land/ice boundaries from ice-edge detection, so only
-        ocean ice/no-ice transitions count as the sea-ice edge.
-
-        ``metrics`` is the list of metrics to compute during training, validation, and
-        testing. A TypeError is raised if an entry is not a mapping with string
-        ``name`` and ``_target_`` keys, and a ValueError if a name is used more than
-        once.
         """
         super().__init__(**kwargs)
 
@@ -113,6 +129,21 @@ class BaseModel(LightningModule, ABC):
         # Construct the input and output spaces
         self.input_spaces = [DataSpace.from_dict(space) for space in input_spaces]
         self.output_space = DataSpace.from_dict(output_space)
+
+        # Check that the number of target variable indices matches the number of
+        # channels in the output space. Models without a forecast target (e.g.
+        # EncoderStage) leave this unset.
+        self.target_variable_indices = list(target_variable_indices or [])
+        if (
+            target_variable_indices is not None
+            and len(self.target_variable_indices) != self.output_space.channels
+        ):
+            msg = (
+                f"output_space has {self.output_space.channels} channel(s) but "
+                f"target_variable_indices selects {len(self.target_variable_indices)}; "
+                f"check that variables.target is set correctly."
+            )
+            raise ValueError(msg)
 
         # Store the optimizer, scheduler and loss configs
         self.optimizer_cfg = optimizer

@@ -55,18 +55,11 @@ class EncodeProcessDecode(BaseModel):
             **kwargs: forwarded to ``BaseModel`` (spaces, masks, range, skip).
 
         """
-        super().__init__(mask_dir=mask_dir, **kwargs)
-
-        # Check that the number of variable indices provided matches the number of
-        # channels in the output space.
-        if self.output_space.channels != len(target_variable_indices):
-            msg = (
-                f"output_space has {self.output_space.channels} channel(s) but "
-                f"target_variable_indices selects {len(target_variable_indices)}; "
-                f"check that variables.target is set correctly."
-            )
-            raise ValueError(msg)
-        self.target_variable_indices = target_variable_indices
+        super().__init__(
+            mask_dir=mask_dir,
+            target_variable_indices=target_variable_indices,
+            **kwargs,
+        )
 
         # Add one encoder per dataset
         try:
@@ -160,6 +153,8 @@ class EncodeProcessDecode(BaseModel):
             if isinstance(processor, BaseProcessor)
             else hydra.utils.instantiate(
                 processor,
+                # Nested configs (e.g. a `loss`) are built by the processor itself
+                _recursive_=False,
                 data_space=combined_latent_space,
                 data_space_target=(
                     self.target_encoder

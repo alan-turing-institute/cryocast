@@ -16,10 +16,9 @@ class Persistence(BaseModel):
         **kwargs: Any,
     ) -> None:
         """Initialise a Persistence model."""
-        super().__init__(**kwargs)
+        super().__init__(target_variable_indices=target_variable_indices, **kwargs)
         self.automatic_optimization = False
         self.model = nn.Identity()
-        self.variable_indices = target_variable_indices
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         """Persistence model does not need an optimizer."""
@@ -33,5 +32,7 @@ class Persistence(BaseModel):
         - select the channels corresponding to the target variables
         - take the last time step and repeat it n_forecast_steps times
         """
-        target_nchw = inputs[self.output_space.name][:, -1, self.variable_indices, :, :]
+        target_nchw = inputs[self.output_space.name][
+            :, -1, self.target_variable_indices, :, :
+        ]
         return torch.stack([target_nchw for _ in range(self.n_forecast_steps)], dim=1)

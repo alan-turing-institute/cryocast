@@ -24,15 +24,17 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
+  kernel_size: 5
   norm_type: batchnorm
-  start_out_channels: 64
+  start_out_channels: 128
 
 decoder:
   _target_: cryocast.models.decoders.PiecewiseDecoder
+  use_hann_window: false
   conv_subblocks_initial: 1
   conv_subblocks_final: 1
   mask_type: active
-  restrict_range: clamp
+  restrict_range: sigmoid
   use_final_normalisation: false
   skip_connection:
-    method: none
+    method: additive

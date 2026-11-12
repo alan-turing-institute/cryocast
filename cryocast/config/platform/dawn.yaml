@@ -1,6 +1,0 @@
-# @package _global_
-defaults:
-  - override /train/trainer: xpu  # needed to apply XPU defaults
-  - _self_
-
-base_path: /rds/project/rds-Ywd6zSg8gcc/base/

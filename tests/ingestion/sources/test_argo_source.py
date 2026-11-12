@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
+import aiohttp
+import numpy as np
 import pandas as pd
 import pytest
 import requests
@@ -13,6 +15,47 @@ from anemoi.utils.registry import Registry
 
 from cryocast.ingestion.sources import ArgoSource, register_sources
 from cryocast.ingestion.sources.argo import _fetch_argo_dataframe_with_retry
+
+
+def _connection_errors() -> list[Exception]:
+    """Network failures seen when the ERDDAP server is unreachable (issue #628)."""
+    os_error = OSError(113, "Connect call failed ('134.246.232.86', 443)")
+    connection_key = MagicMock(host="erddap.ifremer.fr", port=443, ssl=True)
+    return [
+        os_error,
+        aiohttp.ClientConnectorError(connection_key, os_error),
+        FileNotFoundError("https://erddap.ifremer.fr/erddap/tabledap/ArgoFloats.nc"),
+    ]
+
+
+CONNECTION_ERROR_IDS = ["OSError", "ClientConnectorError", "FileNotFoundError"]
+
+
+class _NoDataError(Exception):
+    """Stand-in for argopy.errors.NoData so argopy is never imported."""
+
+
+class _FlakyFetcher:
+    """Fake argopy DataFetcher that fails for requests starting at given times."""
+
+    def __init__(self, failing_starts: set[datetime], error: Exception) -> None:
+        self.error = error
+        self.failing_starts = failing_starts
+        self.region_args: list[Any] = []
+
+    def __call__(self) -> "_FlakyFetcher":
+        return self
+
+    def region(self, region_args: list[Any]) -> "_FlakyFetcher":
+        self.region_args.append(region_args)
+        return self
+
+    def to_dataframe(self) -> pd.DataFrame:
+        if self.region_args[-1][-2] in self.failing_starts:
+            raise self.error
+        return pd.DataFrame(
+            {"LATITUDE": [10.0, 11.0], "LONGITUDE": [21.0, 22.0], "TEMP": [1.0, 2.0]}
+        )
 
 
 class TestArgoSource:
@@ -237,3 +280,115 @@ class TestArgoSource:
             assert field.metadata("valid_datetime") == date.isoformat()
             assert field.to_numpy().shape == (2, 2)
         context.trace.assert_called_once()
+
+    @pytest.mark.parametrize("error", _connection_errors(), ids=CONNECTION_ERROR_IDS)
+    def test_fetch_argo_dataframe_with_retry_retries_connection_errors(
+        self, monkeypatch: pytest.MonkeyPatch, error: Exception
+    ) -> None:
+        """Transient connection failures are retried rather than propagated."""
+        start_time = self.dates.dates[0] - timedelta(hours=2)
+        fetcher = _FlakyFetcher(failing_starts={start_time}, error=error)
+        n_attempts = 0
+
+        def _recover_after_two_attempts(_: float) -> None:
+            nonlocal n_attempts
+            n_attempts += 1
+            if n_attempts == 2:
+                fetcher.failing_starts.clear()
+
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
+            fetcher,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.lazy_argopy.NoData",
+            _NoDataError,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.argo.time.sleep", _recover_after_two_attempts
+        )
+
+        df = _fetch_argo_dataframe_with_retry(
+            region=[-180.0, 180.0, 0.0, 90.0, 0, 50],
+            time_window=[start_time, start_time + timedelta(hours=4)],
+            max_attempts=10,
+            initial_backoff_s=0.0,
+        )
+
+        assert not df.empty
+        assert len(fetcher.region_args) == 3
+
+    @pytest.mark.parametrize("error", _connection_errors(), ids=CONNECTION_ERROR_IDS)
+    def test_fetch_argo_dataframe_with_retry_connection_errors_raise_lookup_error(
+        self, monkeypatch: pytest.MonkeyPatch, error: Exception
+    ) -> None:
+        """Persistent connection failures surface as LookupError after max attempts."""
+        start_time = self.dates.dates[0] - timedelta(hours=2)
+        fetcher = _FlakyFetcher(failing_starts={start_time}, error=error)
+        max_attempts = 4
+
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
+            fetcher,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.lazy_argopy.NoData",
+            _NoDataError,
+            raising=False,
+        )
+        monkeypatch.setattr("cryocast.ingestion.sources.argo.time.sleep", MagicMock())
+
+        with pytest.raises(
+            LookupError, match=r"^Argo float data for .* is unavailable\.$"
+        ):
+            _fetch_argo_dataframe_with_retry(
+                region=[-180.0, 180.0, -90.0, 0.0, 0, 50],
+                time_window=[start_time, start_time + timedelta(hours=4)],
+                max_attempts=max_attempts,
+                initial_backoff_s=0.0,
+            )
+
+        assert len(fetcher.region_args) == max_attempts
+
+    @pytest.mark.parametrize("error", _connection_errors(), ids=CONNECTION_ERROR_IDS)
+    def test_argo_source_execute_continues_past_unreachable_date(
+        self, monkeypatch: pytest.MonkeyPatch, error: Exception
+    ) -> None:
+        """A date whose download never succeeds is recorded as missing, not fatal."""
+        failing_date = self.dates.dates[1]
+        fetcher = _FlakyFetcher(
+            failing_starts={failing_date - timedelta(hours=2)}, error=error
+        )
+
+        monkeypatch.setattr(ArgoSource, "missing_dates", set())
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.lazy_argopy.DataFetcher",
+            fetcher,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "cryocast.ingestion.sources.lazy_argopy.NoData",
+            _NoDataError,
+            raising=False,
+        )
+        monkeypatch.setattr("cryocast.ingestion.sources.argo.time.sleep", MagicMock())
+
+        source = ArgoSource(
+            context=MagicMock(),
+            area="90/-180/0/180",
+            crs="EPSG:6931",
+            ignore_missing_dates=True,
+            param=["TEMP"],
+            resolution="500km",
+            shape=(2, 2),
+        )
+        result = source.execute(argument=self.dates)
+
+        assert ArgoSource.missing_dates == {failing_date}
+        assert len(result) == len(self.dates.dates)
+        for field, date in zip(iter(result), sorted(self.dates.dates), strict=True):
+            values = field.to_numpy()
+            assert np.isnan(values).all() == (date == failing_date)

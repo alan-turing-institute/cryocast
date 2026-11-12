@@ -276,11 +276,16 @@ class MediaPublisher:
             # Use all channels from the first batch -> [H,W]
             for idx_channel in range(outputs.target.shape[2]):
                 ground_truth: ArrayHW = (
-                    outputs.target[0, self.idx_date, idx_channel].detach().cpu().numpy()
+                    outputs.target[0, self.idx_date, idx_channel]
+                    .detach()
+                    .float()
+                    .cpu()
+                    .numpy()
                 )
                 prediction: ArrayHW = (
                     outputs.prediction[0, self.idx_date, idx_channel]
                     .detach()
+                    .float()
                     .cpu()
                     .numpy()
                 )
@@ -392,10 +397,10 @@ class MediaPublisher:
             # Use all channels from the first batch -> [H,W]
             for idx_channel in range(outputs.target.shape[2]):
                 ground_truth: ArrayTHW = (
-                    outputs.target[0, :, idx_channel].detach().cpu().numpy()
+                    outputs.target[0, :, idx_channel].detach().float().cpu().numpy()
                 )
                 prediction: ArrayTHW = (
-                    outputs.prediction[0, :, idx_channel].detach().cpu().numpy()
+                    outputs.prediction[0, :, idx_channel].detach().float().cpu().numpy()
                 )
                 variable_name = self._channel_name(channel_names or [], idx_channel)
                 videos.update(

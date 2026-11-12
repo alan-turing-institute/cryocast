@@ -20,10 +20,10 @@ wandb login
 
 ### Using pre-downloaded data (HPC)
 
-If you are working on Baskerville, DAWN, Isambard-AI, or JASMIN, the datasets are already available on shared storage. Add the matching `platform` override and skip ahead to [step 2](#2-create-a-local-config):
+If you are working on Baskerville, Isambard-AI, or JASMIN, the datasets are already available on shared storage. Add the matching `platform` override and skip ahead to [step 2](#2-create-a-local-config):
 
 ```bash
-uv run cryocast train --config-name <your-name>.local platform=isambardai  # or baskerville, dawn, or jasmin
+uv run cryocast train --config-name <your-name>.local platform=isambardai  # or azure/baskerville/jasmin/spark
 ```
 
 ### Downloading data locally
@@ -34,7 +34,7 @@ See the [`datasets create` command reference](../user-guide/commands.md#datasets
 
 Create a file at `cryocast/config/<your-name>.local.yaml`. The base config you inherit from depends on where you are running.
 
-### On Isambard-AI, Baskerville, DAWN, or JASMIN
+### On a supported platform
 
 Inherit from `base` as usual, and add the `platform` override at the command line ([step 3](#3-run-training)) rather than baking it into your local config — it already points to the shared data storage for that system:
 
@@ -44,7 +44,7 @@ defaults:
   - _self_
 ```
 
-Use `platform=isambardai`, `platform=baskerville`, `platform=dawn`, or `platform=jasmin` depending on which system you are on.
+Use `platform=azure`, `platform=baskerville`, `platform=isambardai`, `platform=jasmin` or `platform=spark` depending on which system you are on.
 
 ### On a local machine
 
@@ -71,7 +71,7 @@ The downloaded config is fully resolved, so update its `base_path` key to point 
 uv run cryocast train --config-name <your-name>.local
 ```
 
-Add `platform=isambardai` (or `baskerville`/`dawn`/`jasmin`) if you are on one of those shared HPC systems.
+Add `platform=isambardai` (or `baskerville`/`jasmin`) if you are on one of those shared HPC systems.
 
 ## Configuring training
 

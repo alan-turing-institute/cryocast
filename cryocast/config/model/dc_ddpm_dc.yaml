@@ -1,0 +1,70 @@
+_target_: cryocast.models.EncodeProcessDecode
+
+name: dc-ddpm-dc
+
+encoders:
+  latent_space: [144, 144]
+  era5:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    attention_heads: {1: 6}
+    hid_channels: [96, 192]
+    hid_blocks: [3, 3]
+    latent_channels: 96
+    pixel_shuffle: true
+    stride: 3
+  float-argo:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [16, 32]
+    hid_blocks: [1, 1]
+    latent_channels: 8
+    pixel_shuffle: true
+    stride: 3
+  sic-icenet:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [16, 32]
+    hid_blocks: [1, 1]
+    latent_channels: 2
+    pixel_shuffle: true
+    stride: 3
+  sic-osisaf:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 4
+    pixel_shuffle: true
+    stride: 3
+  sic-ssmis:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 16
+    pixel_shuffle: true
+    stride: 3
+
+processor:
+  _target_: cryocast.models.processors.DiffusionProcessor
+  timesteps: 250     # best in the sweep; 100 or 150 also did well and validate faster
+                     # (validation runs DDPM over all timesteps), so lower it if training time is limited
+  ddim_steps: null   # null = all 250 timesteps -> DDPM sampling
+  eta: 1.0           # with ddim_steps=null, gives standard DDPM
+  # For evaluation, DDIM with ddim_steps: 100, eta: 1.0 is recommended: as good as full DDPM
+  # (within noise) with 2.5x fewer steps. To evaluate a trained run with DDIM, see the
+  # DiffusionProcessor docstring (cryocast/models/processors/diffusion.py).
+  beta_schedule: cosine
+  start_out_channels: 32
+  time_embed_dim: 256
+  dropout_rate: 0.05
+  use_autoregressive: true
+  loss: ${loss}
+
+decoder:
+  _target_: cryocast.models.decoders.DeepCompressionDecoder
+  attention_heads: {1: 4}
+  hid_channels: [64, 128]
+  hid_blocks: [2, 2]
+  mask_type: active
+  pixel_shuffle: true
+  restrict_range: sigmoid
+  stride: 3
+  skip_connection:
+    method: additive

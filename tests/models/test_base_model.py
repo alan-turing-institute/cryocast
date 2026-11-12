@@ -109,6 +109,50 @@ class TestBaseModel:
             )
 
     @pytest.mark.parametrize(
+        ("target_variable_indices", "expected"),
+        [(None, []), ([3, 1], [3, 1])],
+        ids=["unset", "two-channels"],
+    )
+    def test_init_target_variable_indices(
+        self, target_variable_indices: list[int] | None, expected: list[int]
+    ) -> None:
+        model = FakeDataModel(
+            name="fake data",
+            input_spaces=[{"channels": 4, "name": "input", "shape": (2, 2)}],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            output_space={"channels": 2, "name": "target", "shape": (2, 2)},
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            target_variable_indices=target_variable_indices,
+        )
+        assert model.target_variable_indices == expected
+
+    @pytest.mark.parametrize(
+        "target_variable_indices", [[], [0], [0, 1, 2]], ids=["empty", "one", "three"]
+    )
+    def test_init_mismatched_target_variable_indices(
+        self, target_variable_indices: list[int]
+    ) -> None:
+        with pytest.raises(
+            ValueError,
+            match=rf"output_space has 2 channel\(s\) but target_variable_indices "
+            rf"selects {len(target_variable_indices)}",
+        ):
+            FakeDataModel(
+                name="fake data",
+                input_spaces=[{"channels": 4, "name": "input", "shape": (2, 2)}],
+                n_forecast_steps=1,
+                n_history_steps=1,
+                output_space={"channels": 2, "name": "target", "shape": (2, 2)},
+                optimizer=DictConfig({}),
+                scheduler=DictConfig({}),
+                lr_scheduler=DictConfig({}),
+                target_variable_indices=target_variable_indices,
+            )
+
+    @pytest.mark.parametrize(
         "test_input_chw",
         [(4, 512, 512), (1, 10, 20)],
         ids=lambda chw: "input-{}x{}x{}".format(*chw),

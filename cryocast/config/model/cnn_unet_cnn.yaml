@@ -27,8 +27,9 @@ encoders:
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
-  norm_type: batchnorm
-  start_out_channels: 128
+  norm_type: groupnorm
+  start_out_channels: 64
+  kernel_size: 3
 
 decoder:
   _target_: cryocast.models.decoders.CNNDecoder
@@ -39,4 +40,4 @@ decoder:
   restrict_range: sigmoid
   scale_factor: 3
   skip_connection:
-    method: none
+    method: additive

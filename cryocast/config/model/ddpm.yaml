@@ -6,4 +6,4 @@ dropout_rate: 0.05
 mask_type: active
 restrict_range: clamp
 start_out_channels: 64
-timesteps: 150
+timesteps: 150  # validation is faster with fewer timesteps, but training is less stable

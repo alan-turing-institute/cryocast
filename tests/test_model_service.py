@@ -17,7 +17,7 @@ from cryocast.model_service import ModelService
 from cryocast.model_service.checkpoints import CheckpointFile
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from cryocast.types import DataSpace
+from cryocast.types import DataSpace, RolloutSpace
 
 MAE_METRIC_CFG = {"name": "mae", "_target_": "cryocast.metrics.MAEPerForecastDay"}
 
@@ -1094,6 +1094,9 @@ class TestModelService:
         target_checkpoint_file = CheckpointFile(target_path)
 
         trained_encoder_model = MagicMock()
+        trained_encoder_model.parameters.return_value = [
+            torch.nn.Parameter(torch.ones(1))
+        ]
         loaded_target_model = MagicMock()
         trainer = MagicMock()
         era5_path = tmp_path / "encoder-era5.ckpt"
@@ -1139,6 +1142,48 @@ class TestModelService:
         assert load_kwargs["weights_only"] is True
         assert load_kwargs["latitudes_fn"]() == service.data_module_.latitudes
         assert load_kwargs["longitudes_fn"]() == service.data_module_.longitudes
+
+    def test_train_stage_encoders_skips_fit_without_trainable_parameters(self) -> None:
+        """Parameter-free encoders are returned untrained rather than fitted."""
+        service = ModelService.__new__(ModelService)
+        encoder_era5 = SimpleNamespace(
+            name="era5", data_space_in=DataSpace(3, "era5", (10, 10))
+        )
+        target_encoder = SimpleNamespace(
+            name="target", data_space_in=DataSpace(1, "target", (10, 10))
+        )
+        service.model_ = MagicMock(spec=EncodeProcessDecode)
+        service.model_.encoders = [encoder_era5]
+        service.model_.target_encoder = target_encoder
+        service.config_ = DictConfig(
+            {
+                "model": {
+                    "decoder": {"foo": "bar"},
+                    "encoders": {"era5": {}, "target": {}},
+                },
+            }
+        )
+        service.data_module_ = MagicMock()
+        service.data_module_.target_group_name = "target"
+        service.data_module_.target_variables = ["sic"]
+        service.data_module_.datasets = {
+            "era5": SimpleNamespace(variable_names=["t2m"])
+        }
+        frozen = torch.nn.Parameter(torch.ones(1), requires_grad=False)
+        encoder_models = [MagicMock(), MagicMock()]
+        for encoder_model in encoder_models:
+            encoder_model.parameters.return_value = [frozen]
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                EncoderStage, "from_template", MagicMock(side_effect=encoder_models)
+            )
+            mock_fit = MagicMock()
+            mp.setattr(service, "_fit", mock_fit)
+            result = service.train_stage_encoders(train_cfg=DictConfig({}))
+
+        assert result == encoder_models
+        mock_fit.assert_not_called()
 
     def test_train_stage_finetune_loads_pretrained_weights_and_fits(self) -> None:
         service = ModelService.__new__(ModelService)
@@ -1284,6 +1329,7 @@ class TestModelService:
         service.config_ = DictConfig({"model": {"processor": {"foo": "bar"}}})
         service.data_module_ = MagicMock()
         service.data_module_.mask_directory = tmp_path
+        service.model_ = MagicMock(rollout_space=RolloutSpace.PHYSICAL)
         decoder_model = MagicMock()
         target_encoder = MagicMock()
         processor_model = MagicMock()
@@ -1315,6 +1361,7 @@ class TestModelService:
             decoder_model=decoder_model,
             target_encoder=target_encoder,
             mask_dir=str(tmp_path),
+            rollout_space=RolloutSpace.PHYSICAL,
         )
         processor_model.load_state_dict.assert_called_once_with("processor_state")
         assert result is processor_model

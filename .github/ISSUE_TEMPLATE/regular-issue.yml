@@ -6,7 +6,8 @@ body:
     attributes:
       value: |
         Before you submit:
-        - Set priority label ('P1', 'P2' or 'P3')
+        - Set the Type, Priority and Effort fields
+        - Add any relevant `area:` labels
         - Link a milestone (if applicable)
         - Assign yourself if you're picking this up
   - type: textarea
