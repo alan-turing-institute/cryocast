@@ -642,6 +642,87 @@ class TestDataLoaders:
         assert batch["group1"].shape[2] == 2  # NTCHW: [batch, time, channels, H, W]
         assert batch["target"].shape[2] == 1
 
+    def test_future_inputs_omitted_by_default(self, mock_dataset: Path) -> None:
+        """Until a model asks for them, batches hold no future inputs."""
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+
+        for name in ("train", "val", "test", "predict"):
+            batch = next(iter(getattr(dm, f"{name}_dataloader")()))
+            assert "future_group1" not in batch
+
+    @pytest.mark.parametrize(
+        ("split", "expected"),
+        [("train", True), ("val", False), ("test", False), ("predict", False)],
+    )
+    def test_future_inputs_only_in_train(
+        self, mock_dataset: Path, split: str, *, expected: bool
+    ) -> None:
+        """Validation, test and predict batches never hold future inputs.
+
+        Those stages compute their loss in physical space, so never read them. Turning
+        the flag on also restricts the valid dates, so applying it elsewhere would
+        validate or evaluate some models on fewer dates than others.
+        """
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+        dm.configure_future_inputs(include=True)
+
+        batch = next(iter(getattr(dm, f"{split}_dataloader")()))
+        assert ("future_group1" in batch) is expected
+        if expected:
+            # NTCHW: one forecast step, matching the target
+            assert batch["future_group1"].shape == batch["target"].shape
+
+    def test_changing_future_inputs_rebuilds_training_dataset(
+        self, mock_dataset: Path
+    ) -> None:
+        """Multistage training uses one data module for all of its stages.
+
+        The training dataset is cached, so it is rebuilt only when the flag changes.
+        """
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+        without_future = dm.training_dataset
+
+        # An unchanged value keeps the cached dataset
+        dm.configure_future_inputs(include=False)
+        assert dm.training_dataset is without_future
+
+        dm.configure_future_inputs(include=True)
+        assert dm.training_dataset is not without_future
+        assert "future_group1" in next(iter(dm.train_dataloader()))
+
+        dm.configure_future_inputs(include=False)
+        assert "future_group1" not in next(iter(dm.train_dataloader()))
+
+    def test_training_sample_count_logged_with_future_inputs(
+        self, mock_dataset: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The training log reports the sample count and whether future inputs are on.
+
+        Future inputs must cover the forecast steps, so the count can be smaller.
+        """
+        cfg = _single_group_config(
+            mock_dataset, input_variables=["ice_conc"], target_variables=["ice_conc"]
+        )
+        dm = CommonDataModule(cfg)
+        dm.configure_future_inputs(include=True)
+
+        with caplog.at_level(logging.INFO):
+            n_samples = len(dm.training_dataset)
+
+        assert (
+            f"Loaded training dataset with {n_samples} samples between" in caplog.text
+        )
+        assert "Training will use future inputs" in caplog.text
+
 
 class TestTargetMaskDir:
     """Mask directory resolution for the target group, including multi-dataset groups."""

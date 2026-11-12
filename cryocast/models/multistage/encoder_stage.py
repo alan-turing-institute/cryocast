@@ -40,11 +40,7 @@ class EncoderStage(BaseModel):
                 type(self).__name__,
             )
 
-        # Encode from a single input space to a latent space. For most datasets this
-        # space is one of the model's raw input spaces, found by name. The target
-        # dataset is a special case (a subset of variables from a dataset that may
-        # also be a raw input in its own right, read from the batch's "target" key
-        # rather than a dataset-named key), so its DataSpace is passed in directly.
+        # Encode from a single raw input space to a latent space.
         self.encoder: BaseEncoder = hydra.utils.instantiate(
             encoder,
             data_space_in=data_space_in,

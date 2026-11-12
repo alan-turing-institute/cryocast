@@ -11,7 +11,7 @@ from .single_dataset import SingleDataset
 
 
 class CombinedDataset(Dataset):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         datasets: Sequence[SingleDataset],
         target_group_name: str,
@@ -20,6 +20,7 @@ class CombinedDataset(Dataset):
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
+        include_future_inputs: bool = False,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -38,6 +39,11 @@ class CombinedDataset(Dataset):
                 batch also contains a ``climatology`` key holding the calendar-day
                 mean field for each forecast step. When ``None`` the batches are
                 unchanged.
+            include_future_inputs: Whether each batch should also contain every
+                input dataset over the forecast steps (the same dates as ``target``),
+                under ``future_<input>`` keys. If ``True``, only start dates where every
+                input covers the forecast steps are valid. If ``False``, the batches are
+                unchanged.
 
         """
         super().__init__()
@@ -48,6 +54,12 @@ class CombinedDataset(Dataset):
 
         # Optional climatology table (calendar-day means of the target variables)
         self.climatology = climatology
+
+        # Whether to also include the inputs over the forecast steps
+        self.include_future_inputs = include_future_inputs
+        self.n_input_steps = n_history_steps + (
+            n_forecast_steps if include_future_inputs else 0
+        )
 
         # Create a new dataset for the target with only the selected variables
         self.target = next(
@@ -71,10 +83,9 @@ class CombinedDataset(Dataset):
         available_dates = sorted(
             available_date
             for available_date in input_date_set
-            # ... if all inputs have n_history_steps starting on start_date
+            # ... if all inputs have n_input_steps starting on start_date
             if all(
-                date in input_date_set
-                for date in self.get_history_steps(available_date)
+                date in input_date_set for date in self.get_input_steps(available_date)
             )
             # ... and if the target has n_forecast_steps starting after the history dates
             and all(
@@ -115,20 +126,26 @@ class CombinedDataset(Dataset):
         Returns:
             A dictionary with dataset names as keys and a numpy array as the value.
             The shape of each array is:
-            - input datasets: [n_history_steps, C_input_k, H_input_k, W_input_k]
-            - target dataset: [n_forecast_steps, C_target, H_target, W_target]
+            - input: [n_history_steps, C_input_k, H_input_k, W_input_k]
+            - target: [n_forecast_steps, C_target, H_target, W_target]
 
-            If a climatology table was provided, the dictionary also contains a
-            ``climatology`` key with shape
-            [n_forecast_steps, C_target, H_target, W_target] holding the calendar-day
-            mean field for each forecast step.
+            If a climatology table was provided, the dictionary also contains the
+            calendar-day mean field:
+            - climatology: [n_forecast_steps, C_target, H_target, W_target]
+
+            If ``include_future_inputs`` is set, the dictionary also contains the
+            input data for the forecast steps:
+            - `future_<input>`: [n_forecast_steps, C_input_k, H_input_k, W_input_k]
 
         """
         start_date = self.dates[idx]
-        batch: dict[str, ArrayTCHW] = {
-            ds.name: ds.get_tchw_slice(start_date, self.n_history_steps, check=False)
-            for ds in self.inputs
-        }
+        # Read history and (if requested) forecast steps as one contiguous window
+        batch: dict[str, ArrayTCHW] = {}
+        for ds in self.inputs:
+            window = ds.get_tchw_slice(start_date, self.n_input_steps, check=False)
+            batch[ds.name] = window[: self.n_history_steps]
+            if self.include_future_inputs:
+                batch[f"future_{ds.name}"] = window[self.n_history_steps :]
         batch["target"] = self.target.get_tchw_slice(
             start_date + self.n_history_steps * self.frequency,
             self.n_forecast_steps,
@@ -170,9 +187,15 @@ class CombinedDataset(Dataset):
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive history dates for a given start date."""
-        return [
-            start_date + idx * self.frequency for idx in range(self.n_history_steps)
-        ]
+        return self.get_input_steps(start_date)[: self.n_history_steps]
+
+    def get_input_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
+        """Return list of consecutive dates read from each input for a given start date.
+
+        These are the history steps, followed by the forecast steps if
+        ``include_future_inputs`` is set.
+        """
+        return [start_date + idx * self.frequency for idx in range(self.n_input_steps)]
 
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.

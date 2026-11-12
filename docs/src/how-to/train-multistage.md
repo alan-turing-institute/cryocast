@@ -10,6 +10,9 @@ This can be useful when the model is large, when encoder inputs have very differ
 
 Each encoder is trained independently as a standalone autoencoder (encoder + disposable decoder). One training run per encoder.
 
+CryoCast trains one encoder for each input group.
+It does not train an encoder for the target group, unless the target group is also an input.
+
 ![Stage 1 diagram](../assets/staged-training-stage1.png)
 
 **Stage 2 - Train decoder**
@@ -41,6 +44,21 @@ A checkpoint is saved at the end of each stage. To resume a partially completed 
 ```bash
 uv run cryocast train --multistage --checkpoint-dir ${BASE_DIR}/training/wandb/run-<date>-<id>/checkpoints
 ```
+
+!!! warning "Diffusion checkpoints from earlier versions"
+    The diffusion processor now predicts all the channels of the latent space, not only the target channels.
+    Thus, the output width of the processor has changed.
+    Checkpoints from earlier `DiffusionProcessor` runs do not load.
+    This applies to `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc`.
+    Train these models again.
+
+    Checkpoints from other models still load.
+    Their stored `target_encoder` weights are no longer used, so CryoCast ignores them.
+
+    Earlier multistage runs also saved an `encoder-target.*.ckpt` checkpoint.
+    CryoCast does not use this checkpoint now.
+    To continue one of these runs with `--checkpoint-dir`, remove the `processor.*.ckpt` files first.
+    CryoCast then uses the encoder and decoder checkpoints, and trains the processor again.
 
 ## Per-stage config overrides
 
