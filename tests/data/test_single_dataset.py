@@ -344,6 +344,20 @@ class TestSingleDataset:
         ):
             dataset.to_index(np.datetime64("1970-01-01"))
 
+    def test_has_date(
+        self,
+        mock_dataset_missing_dates: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """Present dates are found at any time of day; missing dates are not."""
+        dataset = SingleDataset(
+            name="test_missing", input_files=[mock_dataset_missing_dates]
+        )
+        assert dataset.has_date(dates_as_np[0])
+        assert dataset.has_date(dates_as_np[0] + np.timedelta64(3, "h"))
+        assert not dataset.has_date(dates_as_np[1])
+        assert not dataset.has_date(np.datetime64("1970-01-01"))
+
     def test_to_index_with_missing_dates(
         self,
         mock_dataset_missing_dates: Path,

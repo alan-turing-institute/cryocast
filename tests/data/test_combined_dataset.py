@@ -432,6 +432,7 @@ class TestOptionalGroups:
         optional_groups: tuple[str, ...] = ("optional",),
         optional_date_ranges: list[dict[str, str | None]] | None = None,
         optional_fill: float = -1.0,
+        include_future_inputs: bool = False,
     ) -> CombinedDataset:
         target = SingleDataset(name="target_group", input_files=[target_path])
         optional = SingleDataset(
@@ -447,6 +448,7 @@ class TestOptionalGroups:
             n_forecast_steps=1,
             optional_groups=optional_groups,
             optional_fill=optional_fill,
+            include_future_inputs=include_future_inputs,
         )
 
     def test_default_drops_windows_with_missing_input(
@@ -516,6 +518,37 @@ class TestOptionalGroups:
         assert combined.dates[0] == dates_as_np[0]
         np.testing.assert_array_equal(combined[0]["optional"], -1.0)
 
+    def test_future_inputs_present_and_missing_days(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """Future optional inputs cover the forecast steps and are filled when missing."""
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset_missing_dates_fill_value,
+            include_future_inputs=True,
+        )
+        optional = combined.inputs[1]
+        # Optional gaps do not restrict the dates, even over the forecast steps
+        assert combined.dates == list(dates_as_np[:3])
+        # Window 0: history days 0 (present) and 1 (missing), forecast day 2 (present)
+        batch = combined[0]
+        assert batch["optional"].shape == (2, 1, 2, 2)
+        assert batch["future_optional"].shape == (1, 1, 2, 2)
+        np.testing.assert_array_equal(batch["optional"][1], -1.0)
+        np.testing.assert_allclose(
+            batch["future_optional"], optional.get_tchw([dates_as_np[2]])
+        )
+        # Window 1: forecast day 3 is missing, so it holds the fill value
+        np.testing.assert_array_equal(combined[1]["future_optional"], -1.0)
+        # The required target input also gets its forecast steps
+        np.testing.assert_array_equal(
+            batch["future_target_group"],
+            combined.inputs[0].get_tchw([dates_as_np[2]]),
+        )
+
     def test_missing_required_input_still_drops_window(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
@@ -524,7 +557,7 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
 
-    def test_get_input_tchw(
+    def test_get_input_window(
         self,
         mock_dataset: Path,
         mock_dataset_missing_dates_fill_value: Path,
@@ -533,13 +566,14 @@ class TestOptionalGroups:
         """Optional inputs are filled on any dates, but other inputs must have data."""
         combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
         target, optional = combined.inputs
-        data = combined.get_input_tchw(optional, list(dates_as_np))
+        n_steps = len(dates_as_np)
+        data = combined.get_input_window(optional, dates_as_np[0], n_steps)
         np.testing.assert_array_equal(data[[1, 3]], -1.0)
         np.testing.assert_allclose(
             data[[0, 2, 4]], optional.get_tchw(list(dates_as_np[::2]))
         )
         np.testing.assert_allclose(
-            combined.get_input_tchw(target, list(dates_as_np)),
+            combined.get_input_window(target, dates_as_np[0], n_steps),
             target.get_tchw(list(dates_as_np)),
         )
 

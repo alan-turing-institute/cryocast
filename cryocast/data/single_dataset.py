@@ -271,9 +271,7 @@ class SingleDataset(Dataset):
         that date holds `fill_value` (in normalised units) instead.
         """
         if fill_value is not None:
-            has_data = np.array(
-                [self.normalise_date(date) in self._date2idx for date in dates]
-            )
+            has_data = np.array([self.has_date(date) for date in dates])
             data = np.full(
                 (len(dates), *self.space.chw),
                 fill_value,
@@ -336,6 +334,10 @@ class SingleDataset(Dataset):
                 f"{self.end_date}"
             )
             raise ValueError(msg) from exc
+
+    def has_date(self, date: np.datetime64) -> bool:
+        """Return whether the dataset has data on a given date."""
+        return self.normalise_date(date) in self._date2idx
 
     def normalise(self, data: ArrayType) -> ArrayType:
         """Normalise the data to [0, 1] for each channel if configured to do so.

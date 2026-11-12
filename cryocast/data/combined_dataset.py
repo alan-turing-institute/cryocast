@@ -153,9 +153,8 @@ class CombinedDataset(Dataset):
 
         Note that because we have already checked which starting dates are valid in the
         `dates` property, we know that the requested dates will be consecutive in each
-        required data input, so we can use `get_tchw_slice` rather than `get_tchw`.
-        Optional inputs may be missing on some of those dates, so they are read with
-        `get_input_tchw`.
+        required data input, so `get_input_window` can read them as a single slice.
+        Optional inputs hold `optional_fill` on any of those dates they are missing.
 
         Returns:
             A dictionary with dataset names as keys and a numpy array as the value.
@@ -176,11 +175,7 @@ class CombinedDataset(Dataset):
         # Read history and (if requested) forecast steps as one contiguous window
         batch: dict[str, ArrayTCHW] = {}
         for ds in self.inputs:
-            window = (
-                self.get_input_tchw(ds, self.get_history_steps(start_date))
-                if ds.name in self.optional_groups
-                else ds.get_tchw_slice(start_date, self.n_history_steps, check=False)
-            )
+            window = self.get_input_window(ds, start_date, self.n_input_steps)
             batch[ds.name] = window[: self.n_history_steps]
             if self.include_future_inputs:
                 batch[f"future_{ds.name}"] = window[self.n_history_steps :]
@@ -192,6 +187,12 @@ class CombinedDataset(Dataset):
         if (climatology := self.climatology_for(start_date)) is not None:
             batch["climatology"] = climatology
         return batch
+
+    def _consecutive_dates(
+        self, start_date: np.datetime64, n_steps: int
+    ) -> list[np.datetime64]:
+        """Return list of n_steps consecutive dates, starting on the given date."""
+        return [start_date + idx * self.frequency for idx in range(n_steps)]
 
     def climatology_for(self, start_date: np.datetime64) -> ArrayTCHW | None:
         """Return the climatology field for each forecast step following the start date.
@@ -216,36 +217,47 @@ class CombinedDataset(Dataset):
         ]
         return self.climatology[day_indices]
 
-    def get_input_tchw(
-        self, dataset: SingleDataset, dates: Sequence[np.datetime64]
-    ) -> ArrayTCHW:
-        """Return the normalised data of an input on the given dates, [T, C, H, W].
-
-        Optional inputs hold ``optional_fill`` on dates they have no data for. Other
-        inputs must have data on every date.
-        """
-        if dataset.name in self.optional_groups:
-            return dataset.get_tchw(dates, fill_value=self.optional_fill)
-        return dataset.get_tchw(dates)
-
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive forecast dates for a given start date."""
-        return [
-            start_date + (idx + self.n_history_steps) * self.frequency
-            for idx in range(self.n_forecast_steps)
-        ]
+        return self._consecutive_dates(
+            start_date + self.n_history_steps * self.frequency, self.n_forecast_steps
+        )
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive history dates for a given start date."""
-        return self.get_input_steps(start_date)[: self.n_history_steps]
+        return self._consecutive_dates(start_date, self.n_history_steps)
 
     def get_input_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
-        """Return list of consecutive dates read from each input for a given start date.
+        """Return list of consecutive input dates for a given start date.
 
         These are the history steps, followed by the forecast steps if
         ``include_future_inputs`` is set.
         """
-        return [start_date + idx * self.frequency for idx in range(self.n_input_steps)]
+        return self._consecutive_dates(start_date, self.n_input_steps)
+
+    def get_input_window(
+        self, dataset: SingleDataset, start_date: np.datetime64, n_steps: int
+    ) -> ArrayTCHW:
+        """Return normalised data of an input for consecutive timesteps, [T, C, H, W].
+
+        Inputs must either have data on every date, enabling them to be read as a
+        contiguous slice or have a fill value for any missing dates.
+
+        Args:
+            dataset: The input dataset to read from.
+            start_date: The date of the first timestep to return.
+            n_steps: The number of consecutive timesteps to return.
+
+        Returns:
+            The normalised data for the specified input and timesteps.
+
+        """
+        if dataset.name not in self.optional_groups:
+            return dataset.get_tchw_slice(start_date, n_steps)
+        return dataset.get_tchw(
+            self._consecutive_dates(start_date, n_steps),
+            fill_value=self.optional_fill,
+        )
 
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.
