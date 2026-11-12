@@ -127,7 +127,7 @@
 | cryocast/models/decoders/naive\_linear\_decoder.py                 |       15 |        0 |    100% |           |
 | cryocast/models/decoders/piecewise\_decoder.py                     |       27 |        0 |    100% |           |
 | cryocast/models/diffusion/\_\_init\_\_.py                          |        3 |        0 |    100% |           |
-| cryocast/models/diffusion/gaussian\_diffusion.py                   |       54 |        4 |     93% |42, 46-50, 200 |
+| cryocast/models/diffusion/gaussian\_diffusion.py                   |       52 |        2 |     96% |     46-50 |
 | cryocast/models/diffusion/unet\_diffusion.py                       |       78 |        1 |     99% |       269 |
 | cryocast/models/encode\_process\_decode.py                         |      135 |       14 |     90% |98-103, 115-119, 166-171, 358-363, 401-407, 471-475 |
 | cryocast/models/encoders/\_\_init\_\_.py                           |        7 |        0 |    100% |           |
@@ -174,7 +174,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      113 |        1 |     99% |       182 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6684** |  **342** | **95%** |           |
+| **TOTAL**                                                          | **6682** |  **340** | **95%** |           |
 
 
 ## Setup coverage badge
