@@ -256,6 +256,80 @@ class TestCombinedDataset:
         )
 
 
+class TestCombinedDatasetForecastStepInputs:
+    """Tests for the CombinedDataset future input keys and dates filter."""
+
+    def test_getitem_includes_future_inputs(
+        self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
+    ) -> None:
+        """Batches gain each input over the forecast steps, aligned with the target."""
+        dataset1 = SingleDataset(name="dataset1", input_files=[mock_dataset])
+        dataset2 = SingleDataset(name="dataset2", input_files=[mock_dataset])
+        combined = CombinedDataset(
+            datasets=[dataset1, dataset2],
+            target_group_name="dataset1",
+            target_variables=["ice_conc"],
+            n_history_steps=2,
+            n_forecast_steps=2,
+            include_future_inputs=True,
+        )
+        # With start_date 2020-01-01, n_history_steps=2 and n_forecast_steps=2 we
+        # expect the history steps to cover 2020-01-01 to 2020-01-02
+        # and the forecast steps to cover 2020-01-03 to 2020-01-04
+        batch = combined[0]
+        assert set(batch.keys()) == {
+            "dataset1",
+            "dataset2",
+            "target",
+            "future_dataset1",
+            "future_dataset2",
+        }
+        history_dates = [dates_as_np[0], dates_as_np[1]]
+        forecast_dates = [dates_as_np[2], dates_as_np[3]]
+        for ds in combined.inputs:
+            # the history inputs must not contain any forecast steps
+            np.testing.assert_array_equal(batch[ds.name], ds.get_tchw(history_dates))
+            future_input = batch[f"future_{ds.name}"]
+            # each input has shape [n_forecast_steps, C_input, H, W]
+            assert future_input.shape == (2, 3, 2, 2)
+            np.testing.assert_array_equal(future_input, ds.get_tchw(forecast_dates))
+        np.testing.assert_array_equal(
+            batch["target"], combined.target.get_tchw(forecast_dates)
+        )
+
+    @pytest.mark.parametrize(
+        ("include_future_inputs", "n_valid_dates"),
+        [(False, 4), (True, 3)],
+        ids=["without", "with"],
+    )
+    def test_dates_require_input_forecast_steps(
+        self,
+        mock_dataset: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+        dates_as_str: tuple[str, ...],
+        *,
+        include_future_inputs: bool,
+        n_valid_dates: int,
+    ) -> None:
+        """Start dates are dropped when an input is missing one of the forecast steps."""
+        target = SingleDataset(name="target", input_files=[mock_dataset])
+        # This input ends one day before the target
+        truncated = SingleDataset(
+            name="truncated",
+            input_files=[mock_dataset],
+            date_ranges=[{"start": dates_as_str[0], "end": dates_as_str[3]}],
+        )
+        combined = CombinedDataset(
+            datasets=[target, truncated],
+            target_group_name="target",
+            target_variables=["ice_conc"],
+            n_history_steps=1,
+            n_forecast_steps=1,
+            include_future_inputs=include_future_inputs,
+        )
+        assert combined.dates == list(dates_as_np[:n_valid_dates])
+
+
 class TestCombinedDatasetClimatology:
     """Tests for the CombinedDataset climatology key and accessor."""
 
@@ -358,6 +432,7 @@ class TestOptionalGroups:
         optional_groups: tuple[str, ...] = ("optional",),
         optional_date_ranges: list[dict[str, str | None]] | None = None,
         optional_fill: float = -1.0,
+        include_future_inputs: bool = False,
     ) -> CombinedDataset:
         target = SingleDataset(name="target_group", input_files=[target_path])
         optional = SingleDataset(
@@ -373,6 +448,7 @@ class TestOptionalGroups:
             n_forecast_steps=1,
             optional_groups=optional_groups,
             optional_fill=optional_fill,
+            include_future_inputs=include_future_inputs,
         )
 
     def test_default_drops_windows_with_missing_input(
@@ -442,6 +518,37 @@ class TestOptionalGroups:
         assert combined.dates[0] == dates_as_np[0]
         np.testing.assert_array_equal(combined[0]["optional"], -1.0)
 
+    def test_future_inputs_present_and_missing_days(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """Future optional inputs cover the forecast steps and are filled when missing."""
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset_missing_dates_fill_value,
+            include_future_inputs=True,
+        )
+        optional = combined.inputs[1]
+        # Optional gaps do not restrict the dates, even over the forecast steps
+        assert combined.dates == list(dates_as_np[:3])
+        # Window 0: history days 0 (present) and 1 (missing), forecast day 2 (present)
+        batch = combined[0]
+        assert batch["optional"].shape == (2, 1, 2, 2)
+        assert batch["future_optional"].shape == (1, 1, 2, 2)
+        np.testing.assert_array_equal(batch["optional"][1], -1.0)
+        np.testing.assert_allclose(
+            batch["future_optional"], optional.get_tchw([dates_as_np[2]])
+        )
+        # Window 1: forecast day 3 is missing, so it holds the fill value
+        np.testing.assert_array_equal(combined[1]["future_optional"], -1.0)
+        # The required target input also gets its forecast steps
+        np.testing.assert_array_equal(
+            batch["future_target_group"],
+            combined.inputs[0].get_tchw([dates_as_np[2]]),
+        )
+
     def test_missing_required_input_still_drops_window(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:
@@ -450,7 +557,7 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
 
-    def test_get_input_tchw(
+    def test_get_input_window(
         self,
         mock_dataset: Path,
         mock_dataset_missing_dates_fill_value: Path,
@@ -459,13 +566,14 @@ class TestOptionalGroups:
         """Optional inputs are filled on any dates, but other inputs must have data."""
         combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
         target, optional = combined.inputs
-        data = combined.get_input_tchw(optional, list(dates_as_np))
+        n_steps = len(dates_as_np)
+        data = combined.get_input_window(optional, dates_as_np[0], n_steps)
         np.testing.assert_array_equal(data[[1, 3]], -1.0)
         np.testing.assert_allclose(
             data[[0, 2, 4]], optional.get_tchw(list(dates_as_np[::2]))
         )
         np.testing.assert_allclose(
-            combined.get_input_tchw(target, list(dates_as_np)),
+            combined.get_input_window(target, dates_as_np[0], n_steps),
             target.get_tchw(list(dates_as_np)),
         )
 

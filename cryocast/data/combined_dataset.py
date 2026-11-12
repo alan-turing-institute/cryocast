@@ -20,6 +20,7 @@ class CombinedDataset(Dataset):
         n_forecast_steps: int = 1,
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
+        include_future_inputs: bool = False,
         optional_groups: Sequence[str] = (),
         optional_fill: float = -1.0,
     ) -> None:
@@ -40,6 +41,11 @@ class CombinedDataset(Dataset):
                 batch also contains a ``climatology`` key holding the calendar-day
                 mean field for each forecast step. When ``None`` the batches are
                 unchanged.
+            include_future_inputs: Whether each batch should also contain every
+                input dataset over the forecast steps (the same dates as ``target``),
+                under ``future_<input>`` keys. If ``True``, only start dates where every
+                input covers the forecast steps are valid. If ``False``, the batches are
+                unchanged.
             optional_groups: Input groups that can have missing days, e.g.
                 ``["float-argo"]``. A window is kept even if one of these groups is
                 missing a day, and that day is filled with ``optional_fill``. The
@@ -57,6 +63,12 @@ class CombinedDataset(Dataset):
 
         # Optional climatology table (calendar-day means of the target variables)
         self.climatology = climatology
+
+        # Whether to also include the inputs over the forecast steps
+        self.include_future_inputs = include_future_inputs
+        self.n_input_steps = n_history_steps + (
+            n_forecast_steps if include_future_inputs else 0
+        )
 
         # Create a new dataset for the target with only the selected variables
         self.target = next(
@@ -103,10 +115,9 @@ class CombinedDataset(Dataset):
         available_dates = sorted(
             available_date
             for available_date in input_date_set
-            # ... if all required inputs have n_history_steps starting on start_date
+            # ... if all inputs have n_input_steps starting on start_date
             if all(
-                date in input_date_set
-                for date in self.get_history_steps(available_date)
+                date in input_date_set for date in self.get_input_steps(available_date)
             )
             # ... and if the target has n_forecast_steps starting after the history dates
             and all(
@@ -142,32 +153,32 @@ class CombinedDataset(Dataset):
 
         Note that because we have already checked which starting dates are valid in the
         `dates` property, we know that the requested dates will be consecutive in each
-        required data input, so we can use `get_tchw_slice` rather than `get_tchw`.
-        Optional inputs may be missing on some of those dates, so they are read with
-        `get_input_tchw`.
+        required data input, so `get_input_window` can read them as a single slice.
+        Optional inputs hold `optional_fill` on any of those dates they are missing.
 
         Returns:
             A dictionary with dataset names as keys and a numpy array as the value.
             The shape of each array is:
-            - input datasets: [n_history_steps, C_input_k, H_input_k, W_input_k]
-            - target dataset: [n_forecast_steps, C_target, H_target, W_target]
+            - input: [n_history_steps, C_input_k, H_input_k, W_input_k]
+            - target: [n_forecast_steps, C_target, H_target, W_target]
 
-            If a climatology table was provided, the dictionary also contains a
-            ``climatology`` key with shape
-            [n_forecast_steps, C_target, H_target, W_target] holding the calendar-day
-            mean field for each forecast step.
+            If a climatology table was provided, the dictionary also contains the
+            calendar-day mean field:
+            - climatology: [n_forecast_steps, C_target, H_target, W_target]
+
+            If ``include_future_inputs`` is set, the dictionary also contains the
+            input data for the forecast steps:
+            - `future_<input>`: [n_forecast_steps, C_input_k, H_input_k, W_input_k]
 
         """
         start_date = self.dates[idx]
-        history_steps = self.get_history_steps(start_date)
-        batch: dict[str, ArrayTCHW] = {
-            ds.name: (
-                self.get_input_tchw(ds, history_steps)
-                if ds.name in self.optional_groups
-                else ds.get_tchw_slice(start_date, self.n_history_steps, check=False)
-            )
-            for ds in self.inputs
-        }
+        # Read history and (if requested) forecast steps as one contiguous window
+        batch: dict[str, ArrayTCHW] = {}
+        for ds in self.inputs:
+            window = self.get_input_window(ds, start_date, self.n_input_steps)
+            batch[ds.name] = window[: self.n_history_steps]
+            if self.include_future_inputs:
+                batch[f"future_{ds.name}"] = window[self.n_history_steps :]
         batch["target"] = self.target.get_tchw_slice(
             start_date + self.n_history_steps * self.frequency,
             self.n_forecast_steps,
@@ -176,6 +187,12 @@ class CombinedDataset(Dataset):
         if (climatology := self.climatology_for(start_date)) is not None:
             batch["climatology"] = climatology
         return batch
+
+    def _consecutive_dates(
+        self, start_date: np.datetime64, n_steps: int
+    ) -> list[np.datetime64]:
+        """Return list of n_steps consecutive dates, starting on the given date."""
+        return [start_date + idx * self.frequency for idx in range(n_steps)]
 
     def climatology_for(self, start_date: np.datetime64) -> ArrayTCHW | None:
         """Return the climatology field for each forecast step following the start date.
@@ -200,30 +217,47 @@ class CombinedDataset(Dataset):
         ]
         return self.climatology[day_indices]
 
-    def get_input_tchw(
-        self, dataset: SingleDataset, dates: Sequence[np.datetime64]
-    ) -> ArrayTCHW:
-        """Return the normalised data of an input on the given dates, [T, C, H, W].
-
-        Optional inputs hold ``optional_fill`` on dates they have no data for. Other
-        inputs must have data on every date.
-        """
-        if dataset.name in self.optional_groups:
-            return dataset.get_tchw(dates, fill_value=self.optional_fill)
-        return dataset.get_tchw(dates)
-
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive forecast dates for a given start date."""
-        return [
-            start_date + (idx + self.n_history_steps) * self.frequency
-            for idx in range(self.n_forecast_steps)
-        ]
+        return self._consecutive_dates(
+            start_date + self.n_history_steps * self.frequency, self.n_forecast_steps
+        )
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive history dates for a given start date."""
-        return [
-            start_date + idx * self.frequency for idx in range(self.n_history_steps)
-        ]
+        return self._consecutive_dates(start_date, self.n_history_steps)
+
+    def get_input_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
+        """Return list of consecutive input dates for a given start date.
+
+        These are the history steps, followed by the forecast steps if
+        ``include_future_inputs`` is set.
+        """
+        return self._consecutive_dates(start_date, self.n_input_steps)
+
+    def get_input_window(
+        self, dataset: SingleDataset, start_date: np.datetime64, n_steps: int
+    ) -> ArrayTCHW:
+        """Return normalised data of an input for consecutive timesteps, [T, C, H, W].
+
+        Inputs must either have data on every date, enabling them to be read as a
+        contiguous slice or have a fill value for any missing dates.
+
+        Args:
+            dataset: The input dataset to read from.
+            start_date: The date of the first timestep to return.
+            n_steps: The number of consecutive timesteps to return.
+
+        Returns:
+            The normalised data for the specified input and timesteps.
+
+        """
+        if dataset.name not in self.optional_groups:
+            return dataset.get_tchw_slice(start_date, n_steps)
+        return dataset.get_tchw(
+            self._consecutive_dates(start_date, n_steps),
+            fill_value=self.optional_fill,
+        )
 
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.

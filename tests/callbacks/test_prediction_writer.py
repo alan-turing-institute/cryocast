@@ -17,6 +17,7 @@ def _combined_dataset() -> CombinedDataset:
     dataset = cast("Any", object.__new__(CombinedDataset))
     dataset.n_forecast_steps = 2
     dataset.n_history_steps = 2
+    dataset.n_input_steps = 2
     dataset.frequency = np.timedelta64(1, "D")
     dataset.dates = [
         np.datetime64("2026-01-01T12:00:00"),

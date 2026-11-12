@@ -373,6 +373,44 @@ class TestNoFutureLeak:
         with torch.no_grad():
             assert torch.equal(model(inputs), model(with_truth))
 
+    @pytest.mark.parametrize(
+        ("rollout_space", "decoder_extra"),
+        [("latent", None), ("physical", ADDITIVE_SKIP_DECODER)],
+        ids=["latent", "physical"],
+    )
+    def test_future_inputs_are_not_read(
+        self, rollout_space: str, decoder_extra: dict[str, Any] | None
+    ) -> None:
+        """The future_<input> keys are ground truth for latent losses, never forward().
+
+        Every input group gets a forecast-step entry, filled with two different values
+        and none of them may change the forecast. Needs a processor that reads the whole
+        window.
+        """
+        extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
+        model = _build_model(
+            rollout_space=rollout_space,
+            decoder_extra=decoder_extra,
+            processor=VIT_PROCESSOR,
+            extra_inputs=[extra],
+        )
+        model.eval()
+        inputs = _inputs(model)
+
+        def with_future(fill: float) -> dict[str, torch.Tensor]:
+            future = {
+                f"future_{space.name}": torch.full(
+                    (2, model.n_forecast_steps, space.channels, *space.shape), fill
+                )
+                for space in model.input_spaces
+            }
+            return {**inputs, **future}
+
+        with torch.no_grad():
+            baseline = model(inputs)
+            assert torch.equal(model(with_future(0.0)), baseline)
+            assert torch.equal(model(with_future(1.0)), baseline)
+
 
 class TestConfigValidation:
     def test_bad_rollout_space(self) -> None:
