@@ -31,8 +31,8 @@
 | cryocast/config/\_\_init\_\_.py                                    |        0 |        0 |    100% |           |
 | cryocast/data/\_\_init\_\_.py                                      |        5 |        0 |    100% |           |
 | cryocast/data/calendar\_day\_climatology.py                        |       40 |        0 |    100% |           |
-| cryocast/data/combined\_dataset.py                                 |       65 |        0 |    100% |           |
-| cryocast/data/common\_data\_module.py                              |      153 |        5 |     97% |233-234, 252-258 |
+| cryocast/data/combined\_dataset.py                                 |       56 |        0 |    100% |           |
+| cryocast/data/common\_data\_module.py                              |      146 |        5 |     97% |229-230, 248-254 |
 | cryocast/data/single\_dataset.py                                   |      148 |        2 |     99% |   313-318 |
 | cryocast/data/variable\_selection.py                               |       50 |        0 |    100% |           |
 | cryocast/exceptions.py                                             |        8 |        0 |    100% |           |
@@ -87,9 +87,9 @@
 | cryocast/metrics/ssim.py                                           |       43 |        2 |     95% |     55-56 |
 | cryocast/model\_service/\_\_init\_\_.py                            |        3 |        0 |    100% |           |
 | cryocast/model\_service/checkpoints.py                             |      165 |        0 |    100% |           |
-| cryocast/model\_service/model\_service.py                          |      267 |        4 |     99% |59-60, 219-220 |
+| cryocast/model\_service/model\_service.py                          |      273 |        4 |     99% |59-60, 221-222 |
 | cryocast/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
-| cryocast/models/base\_model.py                                     |      157 |        3 |     98% |207, 211, 215 |
+| cryocast/models/base\_model.py                                     |      154 |        3 |     98% |207, 211, 215 |
 | cryocast/models/climatology.py                                     |       14 |        0 |    100% |           |
 | cryocast/models/common/\_\_init\_\_.py                             |       24 |        0 |    100% |           |
 | cryocast/models/common/activations.py                              |        2 |        0 |    100% |           |
@@ -129,7 +129,7 @@
 | cryocast/models/diffusion/\_\_init\_\_.py                          |        3 |        0 |    100% |           |
 | cryocast/models/diffusion/gaussian\_diffusion.py                   |       54 |        4 |     93% |42, 46-50, 200 |
 | cryocast/models/diffusion/unet\_diffusion.py                       |       78 |        1 |     99% |       269 |
-| cryocast/models/encode\_process\_decode.py                         |      135 |       14 |     90% |98-103, 115-119, 166-171, 358-363, 401-407, 471-475 |
+| cryocast/models/encode\_process\_decode.py                         |      145 |       17 |     88% |85-90, 102-106, 132-138, 192-197, 363-368, 411-417, 480-484 |
 | cryocast/models/encoders/\_\_init\_\_.py                           |        7 |        0 |    100% |           |
 | cryocast/models/encoders/base\_encoder.py                          |       36 |        2 |     94% |     59-60 |
 | cryocast/models/encoders/cnn\_encoder.py                           |       25 |        0 |    100% |           |
@@ -140,12 +140,12 @@
 | cryocast/models/multistage/\_\_init\_\_.py                         |        4 |        0 |    100% |           |
 | cryocast/models/multistage/decoder\_stage.py                       |       47 |        0 |    100% |           |
 | cryocast/models/multistage/encoder\_stage.py                       |       30 |        0 |    100% |           |
-| cryocast/models/multistage/processor\_stage.py                     |       25 |        0 |    100% |           |
+| cryocast/models/multistage/processor\_stage.py                     |       27 |        0 |    100% |           |
 | cryocast/models/persistence.py                                     |       16 |        0 |    100% |           |
 | cryocast/models/processors/\_\_init\_\_.py                         |        8 |        0 |    100% |           |
-| cryocast/models/processors/base\_processor.py                      |       25 |        0 |    100% |           |
+| cryocast/models/processors/base\_processor.py                      |       30 |        2 |     93% |     39-43 |
 | cryocast/models/processors/conv\_lstm.py                           |       52 |        0 |    100% |           |
-| cryocast/models/processors/diffusion.py                            |      121 |        0 |    100% |           |
+| cryocast/models/processors/diffusion.py                            |      143 |        0 |    100% |           |
 | cryocast/models/processors/gsta.py                                 |       22 |       12 |     45% |65-73, 99-110 |
 | cryocast/models/processors/null.py                                 |       10 |        0 |    100% |           |
 | cryocast/models/processors/unet.py                                 |       53 |        0 |    100% |           |
@@ -174,7 +174,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      113 |        1 |     99% |       182 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6684** |  **342** | **95%** |           |
+| **TOTAL**                                                          | **6710** |  **347** | **95%** |           |
 
 
 ## Setup coverage badge
