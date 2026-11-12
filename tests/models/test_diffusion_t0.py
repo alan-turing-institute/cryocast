@@ -256,3 +256,84 @@ def test_standalone_ddpm_training_uses_corrected_t0(
     assert grads
     assert all(torch.isfinite(grad).all() for grad in grads)
     assert any(grad.abs().sum() > 0 for grad in grads)
+
+
+@pytest.mark.parametrize("schedule", list(BetaSchedule))
+@pytest.mark.parametrize("steps", [4, 150, 1000])
+def test_forward_and_velocity_invert_at_every_timestep(
+    schedule: BetaSchedule, steps: int
+) -> None:
+    """Every training timestep, including zero, can recover both clean and noise."""
+    diffusion = GaussianDiffusion(timesteps=steps, beta_schedule=schedule)
+    generator = torch.Generator().manual_seed(585)
+    clean = torch.randn(steps, 1, 2, 2, generator=generator, dtype=torch.float64)
+    noise = torch.randn(clean.shape, generator=generator, dtype=torch.float64)
+    t = torch.arange(steps)
+    a = diffusion.sqrt_alphas_cumprod[t].view(-1, 1, 1, 1).double()
+    b = diffusion.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1, 1).double()
+
+    noisy = diffusion.q_sample(clean, t, noise)
+    velocity = diffusion.calculate_v(clean, noise, t)
+
+    torch.testing.assert_close(a * noisy - b * velocity, clean)
+    torch.testing.assert_close(b * noisy + a * velocity, noise)
+
+
+class _OracleVelocity(torch.nn.Module):
+    """Return the exact velocity for a known clean field, recording each input."""
+
+    def __init__(self, diffusion: GaussianDiffusion, clean: torch.Tensor) -> None:
+        super().__init__()
+        self.diffusion = diffusion
+        self.clean = clean
+        self.visited: list[tuple[int, torch.Tensor]] = []
+
+    def forward(
+        self, y: torch.Tensor, t: torch.Tensor, cond: torch.Tensor
+    ) -> torch.Tensor:
+        del cond
+        self.visited.append((int(t[0]), y.clone()))
+        a = self.diffusion.sqrt_alphas_cumprod[t].view(-1, 1, 1, 1)
+        b = self.diffusion.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1, 1)
+        noise = (y - a * self.clean) / b
+        return a * noise - b * self.clean
+
+
+@pytest.mark.parametrize("schedule", list(BetaSchedule))
+@pytest.mark.parametrize(("steps", "ddim_steps"), [(4, 4), (4, 2), (150, 10)])
+def test_deterministic_ddim_follows_the_forward_process(
+    schedule: BetaSchedule, steps: int, ddim_steps: int
+) -> None:
+    """With exact velocities, each DDIM step lands on q_sample, including t=0."""
+    processor = DiffusionProcessor(
+        data_space=DataSpace(name="combined", channels=2, shape=(8, 8)),
+        data_space_target=DataSpace(name="target", channels=1, shape=(8, 8)),
+        target_channel_offset=1,
+        n_history_steps=1,
+        n_forecast_steps=1,
+        timesteps=steps,
+        beta_schedule=schedule.value,
+        start_out_channels=4,
+        dropout_rate=0.0,
+        loss=torch.nn.MSELoss(),
+    )
+    processor.set_sampler(ddim_steps=ddim_steps, eta=0.0)
+    generator = torch.Generator().manual_seed(585)
+    clean = torch.rand(2, 1, 8, 8, generator=generator)
+    noise = torch.randn(clean.shape, generator=generator)
+    oracle = _OracleVelocity(processor.diffusion, clean)
+    processor.model = oracle
+    start = processor.diffusion.q_sample(
+        clean, torch.full((2,), steps - 1, dtype=torch.long), noise
+    )
+
+    with torch.no_grad():
+        output = processor._run_ddim_reverse_diffusion(start, torch.zeros(2, 2, 8, 8))
+
+    assert [t for t, _ in oracle.visited][-1] == 0
+    for t, y in oracle.visited:
+        expected = processor.diffusion.q_sample(
+            clean, torch.full((2,), t, dtype=torch.long), noise
+        )
+        torch.testing.assert_close(y, expected, rtol=1e-4, atol=1e-4)
+    torch.testing.assert_close(output, clean, rtol=1e-4, atol=1e-4)
