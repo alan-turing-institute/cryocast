@@ -235,7 +235,9 @@ class MediaLoggingCallback(Callback):
         epoch = pl_module.checkpoint_epoch if trainer.testing else trainer.current_epoch
 
         # If the model has saved training metadata then use that. If not, then load the
-        # metadata for the current training dataset.
+        # metadata for the current training dataset. Note that this will reflect
+        # different training dates if the dataset changes (for example in the processor
+        # stage of a multistage diffusion model).
         training_metadata = pl_module.training_metadata or Metadata.from_dataset(
             getattr(datamodule, "training_dataset", dataset)
         )

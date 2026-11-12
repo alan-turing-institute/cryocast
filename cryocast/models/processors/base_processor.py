@@ -21,26 +21,24 @@ class BaseProcessor(nn.Module):
         *,
         computes_loss_in_latent_space: bool = False,
         data_space: DataSpace,
-        data_space_target: DataSpace | None = None,
         n_forecast_steps: int,
         n_history_steps: int,
-        target_channel_offset: int | None = None,
     ) -> None:
-        """Initialise a BaseProcessor."""
+        """Initialise a BaseProcessor.
+
+        Args:
+            computes_loss_in_latent_space: Whether the processor returns its own loss,
+                calculated against the encoded future inputs, from `rollout()`.
+            data_space: The latent data space.
+            n_forecast_steps: The number of forecast steps.
+            n_history_steps: The number of history steps.
+
+        """
         super().__init__()
         self.computes_loss_in_latent_space = computes_loss_in_latent_space
         self.data_space = data_space
-        self.data_space_target = data_space_target or data_space
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
-        self.target_channel_offset = target_channel_offset
-        # The latent spatial dimensions (H, W) for the inputs and target must match
-        if self.data_space_target.shape != self.data_space.shape:
-            msg = (
-                f"Expected data_space_target.shape {self.data_space_target.shape} "
-                f"to match data_space.shape {self.data_space.shape}"
-            )
-            raise ValueError(msg)
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
         """Forward step: predict the next timestep from a window of history/forecast timesteps.
@@ -78,10 +76,11 @@ class BaseProcessor(nn.Module):
         it directly and skip its own loss computation.
 
         Args:
-            x: Encoded input TensorNTCHW with (batch_size, n_history_steps, n_latent_channels_total, latent_height, latent_width)
-            y: during training: Encoded target TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_target, latent_height, latent_width)
-                where n_latent_channels_target = self.data_space_target.channels (<= n_latent_channels_total);
-                otherwise: None
+            x: Encoded input TensorNTCHW with (batch_size, n_history_steps,
+                n_latent_channels_total, latent_height, latent_width)
+            y: Encoded future inputs TensorNTCHW with (batch_size, n_forecast_steps,
+                n_latent_channels_total, latent_height, latent_width). Note that this is
+                `None` except during training.
 
         Returns:
             ProcessorOutput with:
