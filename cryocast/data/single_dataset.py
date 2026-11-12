@@ -270,26 +270,28 @@ class SingleDataset(Dataset):
         A date with no data raises an IndexError, unless `fill_value` is given. Then
         that date holds `fill_value` (in normalised units) instead.
         """
-        if fill_value is not None:
-            has_data = np.array(
-                [self.normalise_date(date) in self._date2idx for date in dates]
+        if fill_value is None:
+            indices = [self.to_index(date) for date in dates]
+            return self.normalise(
+                np.stack([self._chw_raw(idx) for idx in indices], axis=0)
             )
-            data = np.full(
-                (len(dates), *self.space.chw),
-                fill_value,
-                dtype=np.dtype(self.dataslices[0].dtype),
-            )
-            if has_data.any():
-                data[has_data] = self.get_tchw(
-                    [date for date, ok in zip(dates, has_data, strict=True) if ok]
-                )
-            return data
-        return self.normalise(
-            np.stack(
-                [self._chw_raw(self.to_index(target_date)) for target_date in dates],
-                axis=0,
-            )
+
+        # Look each date up once, then read and normalise only the dates with data
+        present = [
+            (t, idx)
+            for t, date in enumerate(dates)
+            if (idx := self._date2idx.get(self.normalise_date(date))) is not None
+        ]
+        data = np.full(
+            (len(dates), *self.space.chw),
+            fill_value,
+            dtype=np.dtype(self.dataslices[0].dtype),
         )
+        if present:
+            data[[t for t, _ in present]] = self.normalise(
+                np.stack([self._chw_raw(idx) for _, idx in present], axis=0)
+            )
+        return data
 
     def get_tchw_slice(
         self, start_date: np.datetime64, n_steps: int, *, check: bool = True
