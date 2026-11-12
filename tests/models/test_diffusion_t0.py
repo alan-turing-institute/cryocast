@@ -302,7 +302,10 @@ class _OracleVelocity(torch.nn.Module):
 @pytest.mark.parametrize("schedule", list(BetaSchedule))
 @pytest.mark.parametrize(("steps", "ddim_steps"), [(4, 4), (4, 2), (150, 10)])
 def test_deterministic_ddim_follows_the_forward_process(
-    schedule: BetaSchedule, steps: int, ddim_steps: int
+    schedule: BetaSchedule,
+    steps: int,
+    ddim_steps: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With exact velocities, each DDIM step lands on q_sample, including t=0."""
     processor = DiffusionProcessor(
@@ -322,7 +325,7 @@ def test_deterministic_ddim_follows_the_forward_process(
     clean = torch.rand(2, 1, 8, 8, generator=generator)
     noise = torch.randn(clean.shape, generator=generator)
     oracle = _OracleVelocity(processor.diffusion, clean)
-    processor.model = oracle
+    monkeypatch.setattr(processor, "model", oracle)
     start = processor.diffusion.q_sample(
         clean, torch.full((2,), steps - 1, dtype=torch.long), noise
     )
