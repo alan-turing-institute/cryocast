@@ -50,6 +50,13 @@ class EncodeProcessDecode(BaseModel):
     ) -> None:
         """Initialise an EncodeProcessDecode model.
 
+        Note that we use BaseProcessor.computes_loss_in_latent_space to control:
+        - `multistage_only`: the decoder must be pretrained first.
+        - `needs_future_inputs`: training batches hold `future_<input>` keys.
+        - `_freeze_unused_modules`: freeze unused modules (e.g. the decoder)
+        - `rollout_space`: cannot be set to "physical"
+        - `training_step`: takes the latent-loss branch.
+
         Args:
             encoders: DictConfig or list of BaseEncoder, one per input dataset.
             processor: DictConfig or BaseProcessor, the latent-space processor.
@@ -188,12 +195,15 @@ class EncodeProcessDecode(BaseModel):
     @property
     @override
     def multistage_only(self) -> bool:
+        # Processors that compute loss in latent space require a pretrained decoder, so
+        # must be run in multistage mode.
         return self.processor.computes_loss_in_latent_space
 
     @property
     @override
     def needs_future_inputs(self) -> bool:
-        # Latent-space losses compare against encoded inputs over the forecast steps
+        # Latent-space losses compare forecasts against encoded inputs, so they need
+        # inputs over future steps.
         return self.processor.computes_loss_in_latent_space
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:

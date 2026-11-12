@@ -24,7 +24,16 @@ class BaseProcessor(nn.Module):
         n_forecast_steps: int,
         n_history_steps: int,
     ) -> None:
-        """Initialise a BaseProcessor."""
+        """Initialise a BaseProcessor.
+
+        Args:
+            computes_loss_in_latent_space: Whether the processor returns its own loss,
+                calculated against the encoded future inputs, from `rollout()`.
+            data_space: The latent data space.
+            n_forecast_steps: The number of forecast steps.
+            n_history_steps: The number of history steps.
+
+        """
         super().__init__()
         self.computes_loss_in_latent_space = computes_loss_in_latent_space
         self.data_space = data_space
