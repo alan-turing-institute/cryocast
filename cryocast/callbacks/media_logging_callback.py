@@ -206,7 +206,7 @@ class MediaLoggingCallback(Callback):
         else:
             return uncertainties
 
-    def make_plots(  # noqa: C901
+    def make_plots(
         self,
         trainer: Trainer,
         pl_module: LightningModule,
@@ -286,19 +286,10 @@ class MediaLoggingCallback(Callback):
             and self.mark_as_logged("video", forecast_dates)
         )
 
-        # Map input groups to their channel names and data on the forecast dates. If an
-        # input group has no data on one of the dates then it is left out.
+        # Map input groups to their channel names and data on the forecast dates
         grouped_input_data: dict[str, tuple[list[str], ArrayTCHW]] = {}
         if make_static_input_plots or make_video_input_plots:
-            np_forecast_dates = list(map(npdatetime_from_datetime, forecast_dates))
-            for input_ds in dataset.inputs:
-                try:
-                    grouped_input_data[input_ds.name] = (
-                        list(input_ds.variable_names),
-                        input_ds.get_tchw(np_forecast_dates),
-                    )
-                except (IndexError, ValueError, MemoryError, OSError) as exc:
-                    log.warning("Skipping input plots for %s: %s", input_ds.name, exc)
+            grouped_input_data = self.load_input_data(dataset, forecast_dates)
 
         if self.make_static_plots:
             publisher.log_static_outputs(
@@ -345,6 +336,25 @@ class MediaLoggingCallback(Callback):
                     video_loggers,
                     prefix=self.prefix,
                 )
+
+    def load_input_data(
+        self, dataset: CombinedDataset, forecast_dates: list[datetime]
+    ) -> dict[str, tuple[list[str], ArrayTCHW]]:
+        """Map each input group to its channel names and data on the forecast dates.
+
+        An input group with no data on one of the dates is left out.
+        """
+        np_forecast_dates = list(map(npdatetime_from_datetime, forecast_dates))
+        grouped_input_data: dict[str, tuple[list[str], ArrayTCHW]] = {}
+        for input_ds in dataset.inputs:
+            try:
+                grouped_input_data[input_ds.name] = (
+                    list(input_ds.variable_names),
+                    input_ds.get_tchw(np_forecast_dates),
+                )
+            except (IndexError, ValueError, MemoryError, OSError) as exc:
+                log.warning("Skipping input plots for %s: %s", input_ds.name, exc)
+        return grouped_input_data
 
     def mark_as_logged(self, kind: str, dates: list[datetime]) -> bool:
         """Mark (kind, dataloader, date) as logged, returning False if already marked."""
