@@ -80,6 +80,10 @@ class CommonDataModule(LightningDataModule):
         self.n_forecast_steps = int(config["window"].get("n_forecast_steps", 1))
         self.n_history_steps = int(config["window"].get("n_history_steps", 1))
 
+        # Whether training batches should load input variables on the forecast steps
+        # as well as the history steps.
+        self._include_future_inputs = False
+
         # Set common arguments for the dataloader
         self._common_dataloader_kwargs = DataloaderArgs(
             batch_sampler=None,
@@ -274,8 +278,17 @@ class CommonDataModule(LightningDataModule):
         periods: list[dict[str, str | None]],
         *,
         stage: str,
+        include_future_inputs: bool = False,
     ) -> CombinedDataset:
-        """Construct a dataset covering the given periods."""
+        """Construct a dataset covering the given periods.
+
+        Args:
+            periods: The date ranges that the dataset covers.
+            stage: The name of the stage, used in log messages.
+            include_future_inputs: Whether each sample also holds every input
+                over the forecast steps. Only the training dataset sets this.
+
+        """
         dataset = CombinedDataset(
             [ds.subset(date_ranges=periods) for ds in self.datasets.values()],
             n_forecast_steps=self.n_forecast_steps,
@@ -283,6 +296,7 @@ class CommonDataModule(LightningDataModule):
             target_group_name=self.target_group_name,
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
+            include_future_inputs=include_future_inputs,
             # Groups with no requested variables are not inputs, so leave them out
             optional_groups=[g for g in self.optional_groups if g in self.datasets],
             optional_fill=self.optional_fill,
@@ -291,13 +305,16 @@ class CommonDataModule(LightningDataModule):
         if stage != "validation":
             for line in dataset.variable_list():
                 log.info(line)
+        # Future inputs must cover the forecast steps, which may remove some start dates
         log.info(
-            "Loaded %s dataset with %d dates between %s and %s.",
+            "Loaded %s dataset with %d samples between %s and %s.",
             stage,
             len(dataset),
             dataset.start_date.astype("datetime64[m]"),
             dataset.end_date.astype("datetime64[m]"),
         )
+        if include_future_inputs:
+            log.info("Training will use future inputs to compute latent space loss.")
         return dataset
 
     def _in_train_periods(self, day: np.datetime64) -> bool:
@@ -334,6 +351,24 @@ class CommonDataModule(LightningDataModule):
         self._common_dataloader_kwargs["persistent_workers"] = n_workers > 0
         self._common_dataloader_kwargs["prefetch_factor"] = 1 if n_workers > 0 else None
 
+    def configure_future_inputs(self, *, include: bool) -> None:
+        """Set whether training batches also hold every input over the forecast steps.
+
+        The model that is being trained needs these inputs only if it computes a loss
+        against them. They are loss targets only and the model never receives them as
+        inputs. Validation, test and predict batches never hold them, since
+        those stages compute their loss and metrics in physical space.
+
+        Args:
+            include: Whether training batches hold the future inputs. If this
+                changes the value, the cached training dataset is discarded.
+
+        """
+        if include != self._include_future_inputs:
+            self._include_future_inputs = include
+            # Discard any cached training dataset built with the old value
+            self.__dict__.pop("training_dataset", None)
+
     def predict_dataloader(self) -> DataLoader[dict[str, ArrayTCHW]]:
         """Construct predict dataloader."""
         dataset = self._build_dataset(self.predict_periods, stage="predict")
@@ -347,7 +382,11 @@ class CommonDataModule(LightningDataModule):
     @cached_property
     def training_dataset(self) -> CombinedDataset:
         """Return the dataset used for training."""
-        return self._build_dataset(self.train_periods, stage="training")
+        return self._build_dataset(
+            self.train_periods,
+            stage="training",
+            include_future_inputs=self._include_future_inputs,
+        )
 
     def train_dataloader(
         self,

@@ -256,6 +256,80 @@ class TestCombinedDataset:
         )
 
 
+class TestCombinedDatasetForecastStepInputs:
+    """Tests for the CombinedDataset future input keys and dates filter."""
+
+    def test_getitem_includes_future_inputs(
+        self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
+    ) -> None:
+        """Batches gain each input over the forecast steps, aligned with the target."""
+        dataset1 = SingleDataset(name="dataset1", input_files=[mock_dataset])
+        dataset2 = SingleDataset(name="dataset2", input_files=[mock_dataset])
+        combined = CombinedDataset(
+            datasets=[dataset1, dataset2],
+            target_group_name="dataset1",
+            target_variables=["ice_conc"],
+            n_history_steps=2,
+            n_forecast_steps=2,
+            include_future_inputs=True,
+        )
+        # With start_date 2020-01-01, n_history_steps=2 and n_forecast_steps=2 we
+        # expect the history steps to cover 2020-01-01 to 2020-01-02
+        # and the forecast steps to cover 2020-01-03 to 2020-01-04
+        batch = combined[0]
+        assert set(batch.keys()) == {
+            "dataset1",
+            "dataset2",
+            "target",
+            "future_dataset1",
+            "future_dataset2",
+        }
+        history_dates = [dates_as_np[0], dates_as_np[1]]
+        forecast_dates = [dates_as_np[2], dates_as_np[3]]
+        for ds in combined.inputs:
+            # the history inputs must not contain any forecast steps
+            np.testing.assert_array_equal(batch[ds.name], ds.get_tchw(history_dates))
+            future_input = batch[f"future_{ds.name}"]
+            # each input has shape [n_forecast_steps, C_input, H, W]
+            assert future_input.shape == (2, 3, 2, 2)
+            np.testing.assert_array_equal(future_input, ds.get_tchw(forecast_dates))
+        np.testing.assert_array_equal(
+            batch["target"], combined.target.get_tchw(forecast_dates)
+        )
+
+    @pytest.mark.parametrize(
+        ("include_future_inputs", "n_valid_dates"),
+        [(False, 4), (True, 3)],
+        ids=["without", "with"],
+    )
+    def test_dates_require_input_forecast_steps(
+        self,
+        mock_dataset: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+        dates_as_str: tuple[str, ...],
+        *,
+        include_future_inputs: bool,
+        n_valid_dates: int,
+    ) -> None:
+        """Start dates are dropped when an input is missing one of the forecast steps."""
+        target = SingleDataset(name="target", input_files=[mock_dataset])
+        # This input ends one day before the target
+        truncated = SingleDataset(
+            name="truncated",
+            input_files=[mock_dataset],
+            date_ranges=[{"start": dates_as_str[0], "end": dates_as_str[3]}],
+        )
+        combined = CombinedDataset(
+            datasets=[target, truncated],
+            target_group_name="target",
+            target_variables=["ice_conc"],
+            n_history_steps=1,
+            n_forecast_steps=1,
+            include_future_inputs=include_future_inputs,
+        )
+        assert combined.dates == list(dates_as_np[:n_valid_dates])
+
+
 class TestCombinedDatasetClimatology:
     """Tests for the CombinedDataset climatology key and accessor."""
 

@@ -9,7 +9,6 @@ from cryocast.models import EncodeProcessDecode
 from cryocast.types import RolloutSpace
 
 from .decoder_stage import DecoderStage
-from .encoder_stage import EncoderStage
 
 logger = logging.getLogger(__name__)
 
@@ -18,21 +17,18 @@ class ProcessorStage(EncodeProcessDecode):
     # Parameters that should be excluded from hyperparameter logging
     ignored_hparams: ClassVar[frozenset[str]] = EncodeProcessDecode.ignored_hparams | {
         "decoder_model",
-        "target_encoder",
     }
 
     def __init__(
         self,
         processor: DictConfig,
         decoder_model: DecoderStage,
-        target_encoder: EncoderStage,
         mask_dir: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise a ProcessorStage with a trainable processor.
 
         - copy encoders from DecoderStage and freeze their parameters
-        - copy the target encoder and freeze its parameters
         - copy the decoder from DecoderStage and freeze its parameters
         - copy target_variable_indices from checkpoint or from DecoderStage
         """
@@ -42,8 +38,7 @@ class ProcessorStage(EncodeProcessDecode):
         super().__init__(
             encoders=[
                 copy.deepcopy(encoder).freeze() for encoder in decoder_model.encoders
-            ]
-            + [target_encoder.encoder.freeze()],
+            ],
             processor=processor,
             decoder=copy.deepcopy(decoder_model.decoder).freeze(),
             mask_dir=mask_dir,
@@ -56,7 +51,6 @@ class ProcessorStage(EncodeProcessDecode):
         *,
         processor: DictConfig,
         decoder_model: DecoderStage,
-        target_encoder: EncoderStage,
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
     ) -> "ProcessorStage":
@@ -80,7 +74,6 @@ class ProcessorStage(EncodeProcessDecode):
             processor=processor,
             rollout_space=rollout_space,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
-            target_encoder=target_encoder,
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )
 
@@ -91,6 +84,5 @@ class ProcessorStage(EncodeProcessDecode):
         if mode:
             for encoder in self.encoders:
                 encoder.eval()
-            self.target_encoder.eval()
             self.decoder.eval()
         return self
