@@ -187,9 +187,7 @@ class CombinedDataset(Dataset):
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive history dates for a given start date."""
-        return [
-            start_date + idx * self.frequency for idx in range(self.n_history_steps)
-        ]
+        return self.get_input_steps(start_date)[: self.n_history_steps]
 
     def get_input_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive dates read from each input for a given start date.
