@@ -238,6 +238,7 @@ def test_standalone_ddpm_training_uses_corrected_t0(
         dropout_rate=0.0,
         timesteps=steps,
         use_autoregressive=autoregressive,
+        target_variable_indices=[0],
     )
     calls = _observe_zero_corruption(model.diffusion, monkeypatch)
     result = model.training_step(
