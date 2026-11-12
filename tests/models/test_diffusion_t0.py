@@ -176,8 +176,6 @@ def test_processor_trains_at_t0_and_samples_both_samplers(
     """Exercise corrected training, real UNet gradients and DDPM/DDIM inference."""
     processor = DiffusionProcessor(
         data_space=DataSpace(name="combined", channels=2, shape=(16, 16)),
-        data_space_target=DataSpace(name="target", channels=1, shape=(16, 16)),
-        target_channel_offset=1,
         n_history_steps=1,
         n_forecast_steps=2,
         timesteps=steps,
@@ -189,7 +187,7 @@ def test_processor_trains_at_t0_and_samples_both_samplers(
     )
     calls = _observe_zero_corruption(processor.diffusion, monkeypatch)
     inputs = torch.randn(2, 1, 2, 16, 16)
-    targets = torch.randn(2, 2, 1, 16, 16)
+    targets = torch.randn(2, 2, 2, 16, 16)
     trained = processor.rollout(inputs, targets)
     assert len(calls) == 1
     assert trained.loss is not None
@@ -206,9 +204,6 @@ def test_processor_trains_at_t0_and_samples_both_samplers(
             output = processor.rollout(inputs).prediction
         assert output.shape == (2, 2, 2, 16, 16)
         assert torch.isfinite(output).all()
-        torch.testing.assert_close(
-            output[:, :, 0], inputs[:, -1:, 0].expand(-1, 2, -1, -1)
-        )
 
 
 @pytest.mark.parametrize("steps", [1, 4])
@@ -309,9 +304,7 @@ def test_deterministic_ddim_follows_the_forward_process(
 ) -> None:
     """With exact velocities, each DDIM step lands on q_sample, including t=0."""
     processor = DiffusionProcessor(
-        data_space=DataSpace(name="combined", channels=2, shape=(8, 8)),
-        data_space_target=DataSpace(name="target", channels=1, shape=(8, 8)),
-        target_channel_offset=1,
+        data_space=DataSpace(name="combined", channels=1, shape=(8, 8)),
         n_history_steps=1,
         n_forecast_steps=1,
         timesteps=steps,
@@ -331,7 +324,7 @@ def test_deterministic_ddim_follows_the_forward_process(
     )
 
     with torch.no_grad():
-        output = processor._run_ddim_reverse_diffusion(start, torch.zeros(2, 2, 8, 8))
+        output = processor._run_ddim_reverse_diffusion(start, torch.zeros(2, 1, 8, 8))
 
     assert [t for t, _ in oracle.visited][-1] == 0
     for t, y in oracle.visited:
