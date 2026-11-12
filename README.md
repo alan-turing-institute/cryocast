@@ -8,7 +8,7 @@
 | cryocast/callbacks/\_\_init\_\_.py                                 |        7 |        0 |    100% |           |
 | cryocast/callbacks/activation\_saver.py                            |       92 |        0 |    100% |           |
 | cryocast/callbacks/ema\_weight\_averaging\_callback.py             |       21 |        0 |    100% |           |
-| cryocast/callbacks/media\_logging\_callback.py                     |      152 |        0 |    100% |           |
+| cryocast/callbacks/media\_logging\_callback.py                     |      166 |        0 |    100% |           |
 | cryocast/callbacks/metric\_summary\_callback.py                    |      106 |        1 |     99% |        93 |
 | cryocast/callbacks/prediction\_writer.py                           |      203 |       19 |     91% |71-74, 79-80, 164-168, 282-283, 340-344, 346-350, 369, 392-393, 409-413 |
 | cryocast/callbacks/unconditional\_checkpoint.py                    |       26 |        0 |    100% |           |
@@ -171,10 +171,10 @@
 | cryocast/visualisations/land\_mask.py                              |       23 |        0 |    100% |           |
 | cryocast/visualisations/matplotlib\_renderer.py                    |      137 |        1 |     99% |       286 |
 | cryocast/visualisations/media\_annotator.py                        |       50 |        0 |    100% |           |
-| cryocast/visualisations/media\_publisher.py                        |      115 |        1 |     99% |       183 |
+| cryocast/visualisations/media\_publisher.py                        |      113 |        1 |     99% |       182 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6698** |  **347** | **95%** |           |
+| **TOTAL**                                                          | **6710** |  **347** | **95%** |           |
 
 
 ## Setup coverage badge
