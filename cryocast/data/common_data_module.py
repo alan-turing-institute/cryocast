@@ -54,9 +54,14 @@ class CommonDataModule(LightningDataModule):
         )
 
         # Dataset groups that may be missing on some days, and the value for those days
-        self.optional_groups = [
-            str(g) for g in config["data"].get("optional_groups", [])
-        ]
+        optional_groups = config["data"].get("optional_groups", [])
+        if isinstance(optional_groups, str):
+            msg = (
+                f"optional_groups must be a list of group names, got the string "
+                f"{optional_groups!r}. Use [{optional_groups}] instead."
+            )
+            raise TypeError(msg)
+        self.optional_groups = [str(g) for g in optional_groups]
         if unknown := sorted(set(self.optional_groups) - self.dataset_groups.keys()):
             msg = (
                 f"Optional groups {unknown} are not dataset groups. "

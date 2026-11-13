@@ -1017,6 +1017,12 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="are not dataset groups"):
             CommonDataModule(self._config(mock_dataset, mock_dataset, ["unknown"]))
 
+    def test_optional_groups_as_string_raises(self, mock_dataset: Path) -> None:
+        cfg = self._config(mock_dataset, mock_dataset, [])
+        cfg.data.optional_groups = "optional"
+        with pytest.raises(TypeError, match=r"Use \[optional\] instead"):
+            CommonDataModule(cfg)
+
     def test_optional_target_group_raises(self, mock_dataset: Path) -> None:
         with pytest.raises(
             ValueError, match="target group 'group1' cannot be optional"
