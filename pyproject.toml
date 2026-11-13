@@ -44,7 +44,6 @@ dependencies = [
     "pillow==13.0.0",
     "pydantic==2.14.1",
     "pyproj==3.7.2",
-    "pytorch-triton==3.5.1; sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')", # restricted to known machine types.
     "pyyaml==6.0.3",
     "scikit-learn==1.9.1",
     "torch==2.14.1",
@@ -186,15 +185,6 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
 [tool.uv.sources]
-pytorch-triton = [
-    # Baskerville
-    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
-    # DGX Spark
-    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' in platform_release" },
-    # IsambardAI
-    { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64' and 'nvidia' not in platform_release" },
-]
-pytorch-triton-xpu = { index = "pytorch-xpu" }
 torch = [
     # Baskerville
     { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
