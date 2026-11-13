@@ -42,8 +42,11 @@ class CombinedDataset(Dataset):
             include_future_inputs: Whether each batch should also contain every
                 input dataset over the forecast steps (the same dates as ``target``),
                 under ``future_<input>`` keys. If ``True``, only start dates where every
-                input covers the forecast steps are valid. If ``False``, the batches are
-                unchanged.
+                input covers the forecast steps are valid. If ``False``, the batches
+                are unchanged.
+
+        Inputs with a fill value (see `SingleDataset`) hold it on any date they have
+        no data, so they do not restrict the valid start dates.
 
         """
         super().__init__()
@@ -77,13 +80,16 @@ class CombinedDataset(Dataset):
     @cached_property
     def dates(self) -> list[np.datetime64]:
         """Get list of dates that are available in all datasets."""
-        # Identify dates that exist in all input datasets
-        input_date_set = set.intersection(*(set(ds.dates) for ds in self.inputs))
+        # Identify dates that exist in all input datasets. Inputs with a fill value
+        # hold it on any date they have no data, so they do not restrict the dates.
+        input_date_set = set.intersection(
+            *(set(ds.dates) for ds in self.inputs if ds.fill_value is None)
+        )
         target_date_set = set(self.target.dates)
         available_dates = sorted(
             available_date
             for available_date in input_date_set
-            # ... if all inputs have n_input_steps starting on start_date
+            # ... if all required inputs have n_input_steps starting on start_date
             if all(
                 date in input_date_set for date in self.get_input_steps(available_date)
             )
@@ -121,7 +127,7 @@ class CombinedDataset(Dataset):
 
         Note that because we have already checked which starting dates are valid in the
         `dates` property, we know that the requested dates will be consecutive in each
-        data input, so we can use `get_tchw_slice` rather than `get_tchw`.
+        input, so they can be read as a single slice.
 
         Returns:
             A dictionary with dataset names as keys and a numpy array as the value.
@@ -155,6 +161,12 @@ class CombinedDataset(Dataset):
             batch["climatology"] = climatology
         return batch
 
+    def _consecutive_dates(
+        self, start_date: np.datetime64, n_steps: int
+    ) -> list[np.datetime64]:
+        """Return list of n_steps consecutive dates, starting on the given date."""
+        return [start_date + idx * self.frequency for idx in range(n_steps)]
+
     def climatology_for(self, start_date: np.datetime64) -> ArrayTCHW | None:
         """Return the climatology field for each forecast step following the start date.
 
@@ -180,22 +192,21 @@ class CombinedDataset(Dataset):
 
     def get_forecast_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive forecast dates for a given start date."""
-        return [
-            start_date + (idx + self.n_history_steps) * self.frequency
-            for idx in range(self.n_forecast_steps)
-        ]
+        return self._consecutive_dates(
+            start_date + self.n_history_steps * self.frequency, self.n_forecast_steps
+        )
 
     def get_history_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
         """Return list of consecutive history dates for a given start date."""
-        return self.get_input_steps(start_date)[: self.n_history_steps]
+        return self._consecutive_dates(start_date, self.n_history_steps)
 
     def get_input_steps(self, start_date: np.datetime64) -> list[np.datetime64]:
-        """Return list of consecutive dates read from each input for a given start date.
+        """Return list of consecutive input dates for a given start date.
 
         These are the history steps, followed by the forecast steps if
         ``include_future_inputs`` is set.
         """
-        return [start_date + idx * self.frequency for idx in range(self.n_input_steps)]
+        return self._consecutive_dates(start_date, self.n_input_steps)
 
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.

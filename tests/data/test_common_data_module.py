@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+import torch
 import zarr
 from omegaconf import DictConfig
 from torch.utils.data import RandomSampler, SequentialSampler
@@ -12,6 +13,7 @@ from torch.utils.data import RandomSampler, SequentialSampler
 from cryocast.data.calendar_day_climatology import CalendarDayClimatology
 from cryocast.data.common_data_module import CommonDataModule
 from cryocast.data.single_dataset import SingleDataset
+from cryocast.models import EncodeProcessDecode
 from cryocast.utils import mask_dir
 from tests.conftest import (
     CLIMATOLOGY_END,
@@ -956,3 +958,123 @@ class TestCommonDataModuleClimatology:
             batch = next(iter(loader))
         assert "climatology" not in batch
         assert "Cannot build climatology" in caplog.text
+
+
+class TestOptionalGroups:
+    """`data.optional_groups` keeps windows where an input is missing, filling it."""
+
+    @staticmethod
+    def _config(
+        mock_dataset: Path,
+        optional_path: Path,
+        optional_groups: list[str],
+        optional_fill: float = -1.0,
+    ) -> DictConfig:
+        cfg = _build_config(
+            str(mock_dataset.parent.parent.parent),
+            {
+                "ds1": {"name": mock_dataset.stem, "group_as": "group1"},
+                "ds2": {"name": optional_path.stem, "group_as": "optional"},
+            },
+            input_variables={"group1": ["ice_conc"], "optional": ["ice_conc"]},
+            target_variables={"group1": ["ice_conc"]},
+        )
+        cfg.data.optional_groups = optional_groups
+        cfg.data.optional_fill = optional_fill
+        cfg.window.n_history_steps = 2
+        return cfg
+
+    def test_missing_days_are_filled(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """Windows with a missing optional day are kept, and the day holds -1."""
+        dm = CommonDataModule(
+            self._config(
+                mock_dataset, mock_dataset_missing_dates_fill_value, ["optional"]
+            )
+        )
+        dataset = dm.training_dataset
+        # History days 0 (present) and 1 (missing)
+        history = dataset[0]["optional"]
+        assert history.shape == (2, 1, 2, 2)
+        assert history[0].min() >= 0.0
+        np.testing.assert_array_equal(history[1], -1.0)
+
+    def test_fill_from_config(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        dm = CommonDataModule(
+            self._config(
+                mock_dataset,
+                mock_dataset_missing_dates_fill_value,
+                ["optional"],
+                optional_fill=-5.0,
+            )
+        )
+        np.testing.assert_array_equal(dm.training_dataset[0]["optional"][1], -5.0)
+
+    def test_unknown_optional_group_raises(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match="are not dataset groups"):
+            CommonDataModule(self._config(mock_dataset, mock_dataset, ["unknown"]))
+
+    def test_optional_groups_as_string_raises(self, mock_dataset: Path) -> None:
+        cfg = self._config(mock_dataset, mock_dataset, [])
+        cfg.data.optional_groups = "optional"
+        with pytest.raises(TypeError, match=r"Use \[optional\] instead"):
+            CommonDataModule(cfg)
+
+    def test_optional_target_group_raises(self, mock_dataset: Path) -> None:
+        with pytest.raises(
+            ValueError, match="target group 'group1' cannot be optional"
+        ):
+            CommonDataModule(self._config(mock_dataset, mock_dataset, ["group1"]))
+
+    def test_batches_match_input_spaces(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        dm = CommonDataModule(
+            self._config(
+                mock_dataset, mock_dataset_missing_dates_fill_value, ["optional"]
+            )
+        )
+        batch = next(iter(dm.train_dataloader(shuffle=False)))
+        for space in dm.input_spaces:
+            assert batch[space.name].shape[2:] == (space.channels, *space.shape)
+
+    def test_model_builds_and_trains_one_step(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """A model built from the input spaces accepts a batch with filled days."""
+        dm = CommonDataModule(
+            self._config(
+                mock_dataset, mock_dataset_missing_dates_fill_value, ["optional"]
+            )
+        )
+        encoder = {"_target_": "cryocast.models.encoders.NaiveLinearEncoder"}
+        model = EncodeProcessDecode(
+            name="encode-null-decode",
+            encoders=DictConfig(
+                {"latent_space": (2, 2), "group1": encoder, "optional": encoder}
+            ),
+            processor=DictConfig(
+                {"_target_": "cryocast.models.processors.NullProcessor"}
+            ),
+            decoder=DictConfig(
+                {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
+            ),
+            hemisphere="north",
+            input_spaces=[space.to_dict() for space in dm.input_spaces],
+            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+            metrics=[],
+            n_forecast_steps=dm.n_forecast_steps,
+            n_history_steps=dm.n_history_steps,
+            output_space=dm.output_space.to_dict(),
+            optimizer=DictConfig({}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            target_variable_indices=dm.target_variable_indices,
+        )
+        batch = next(iter(dm.train_dataloader(shuffle=False)))
+        result = model.training_step(batch, 0)
+        assert torch.isfinite(result.loss)
+        result.loss.backward()

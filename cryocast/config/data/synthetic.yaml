@@ -3,3 +3,10 @@ defaults:
     - samp_sicglobal_synthetic_5p625_2021_2024_24h_v2
   - split: synthetic
   - _self_
+
+# Input groups (group_as names) that may be missing on some days. Their missing days
+# hold optional_fill, in normalised units. Normalised training data lies in [0, 1],
+# and data outside the training period may fall slightly outside this. With []
+# nothing changes.
+optional_groups: []
+optional_fill: -1.0

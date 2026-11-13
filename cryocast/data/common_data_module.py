@@ -53,6 +53,27 @@ class CommonDataModule(LightningDataModule):
             target_variables=config["variables"]["target"],
         )
 
+        # Dataset groups that may be missing on some days, and the value for those days
+        optional_groups = config["data"].get("optional_groups", [])
+        if isinstance(optional_groups, str):
+            msg = (
+                f"optional_groups must be a list of group names, got the string "
+                f"{optional_groups!r}. Use [{optional_groups}] instead."
+            )
+            raise TypeError(msg)
+        self.optional_groups = [str(g) for g in optional_groups]
+        if unknown := sorted(set(self.optional_groups) - self.dataset_groups.keys()):
+            msg = (
+                f"Optional groups {unknown} are not dataset groups. "
+                f"Available groups: {sorted(self.dataset_groups.keys())}."
+            )
+            raise ValueError(msg)
+        # Only check when needed, as target_group_name raises if the target is invalid
+        if self.optional_groups and self.target_group_name in self.optional_groups:
+            msg = f"The target group {self.target_group_name!r} cannot be optional."
+            raise ValueError(msg)
+        self.optional_fill = config["data"].get("optional_fill", -1.0)
+
         # Set periods for prediction, testing, training and validation
         self.batch_size = int(config["window"]["batch_size"])
         self.predict_periods = self._normalise(config["data"]["split"]["predict"])
@@ -150,8 +171,13 @@ class CommonDataModule(LightningDataModule):
     @cached_property
     def datasets_unfiltered(self) -> dict[str, SingleDataset]:
         """Return an unfiltered dictionary of dataset group names to SingleDataset objects."""
+        # Optional groups keep the days they are missing, holding the fill value
         return {
-            name: SingleDataset(name, paths)
+            name: SingleDataset(
+                name,
+                paths,
+                fill_value=self.optional_fill if name in self.optional_groups else None,
+            )
             for name, paths in self.dataset_groups.items()
         }
 

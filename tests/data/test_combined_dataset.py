@@ -414,3 +414,143 @@ class TestCombinedDatasetClimatology:
         assert (
             combined.climatology_for(np.datetime64("2019-12-31T12:00:00", "s")) is None
         )
+
+
+class TestOptionalGroups:
+    """Inputs with a fill value keep windows on days they are missing.
+
+    The target comes from `mock_dataset` (all five days present). The optional input
+    comes from `mock_dataset_missing_dates_fill_value`, which is present on days 0, 2
+    and 4 only, and whose missing rows hold 99 in the zarr.
+    """
+
+    @staticmethod
+    def _combined(
+        target_path: Path,
+        optional_path: Path,
+        *,
+        fill_value: float | None = -1.0,
+        optional_date_ranges: list[dict[str, str | None]] | None = None,
+        include_future_inputs: bool = False,
+    ) -> CombinedDataset:
+        target = SingleDataset(name="target_group", input_files=[target_path])
+        optional = SingleDataset(
+            name="optional",
+            input_files=[optional_path],
+            date_ranges=optional_date_ranges or [{"start": None, "end": None}],
+            fill_value=fill_value,
+        )
+        return CombinedDataset(
+            datasets=[target, optional],
+            target_group_name="target_group",
+            target_variables=["ice_conc"],
+            n_history_steps=2,
+            n_forecast_steps=1,
+            include_future_inputs=include_future_inputs,
+        )
+
+    def test_default_drops_windows_with_missing_input(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """With no fill value, every window needs every input on every day."""
+        combined = self._combined(
+            mock_dataset, mock_dataset_missing_dates_fill_value, fill_value=None
+        )
+        # Every two-day history window includes day 1 or day 3
+        with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
+            _ = combined.dates
+
+    def test_windows_with_missing_optional_days_are_kept(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
+        assert combined.dates == list(dates_as_np[:3])
+
+    def test_present_and_missing_days(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """Present days hold the data and missing days hold the fill value."""
+        combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
+        optional = combined.inputs[1]
+        # History days 0 (present) and 1 (missing)
+        history = combined[0]["optional"]
+        assert history.shape == (2, 1, 2, 2)
+        assert history.dtype == np.float32
+        np.testing.assert_allclose(
+            history[0], optional.get_tchw([combined.dates[0]])[0]
+        )
+        np.testing.assert_array_equal(history[1], -1.0)
+
+    def test_fill_value_rows_never_reach_a_batch(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """The 99s written into missing rows must never be read."""
+        combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
+        for idx in range(len(combined)):
+            assert combined[idx]["optional"].max() <= 1.0
+
+    def test_custom_fill(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        combined = self._combined(
+            mock_dataset, mock_dataset_missing_dates_fill_value, fill_value=0
+        )
+        # History days 1 (missing) and 2 (present)
+        np.testing.assert_array_equal(combined[1]["optional"][0], 0.0)
+
+    def test_window_before_optional_input_starts(
+        self,
+        mock_dataset: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+        dates_as_str: tuple[str, ...],
+    ) -> None:
+        """A window entirely before an optional input starts is kept, all days filled."""
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset,
+            optional_date_ranges=[{"start": dates_as_str[3], "end": None}],
+        )
+        assert combined.dates[0] == dates_as_np[0]
+        np.testing.assert_array_equal(combined[0]["optional"], -1.0)
+
+    def test_future_inputs_present_and_missing_days(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """Future optional inputs cover the forecast steps and are filled when missing."""
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset_missing_dates_fill_value,
+            include_future_inputs=True,
+        )
+        optional = combined.inputs[1]
+        # Optional gaps do not restrict the dates, even over the forecast steps
+        assert combined.dates == list(dates_as_np[:3])
+        # Window 0: history days 0 (present) and 1 (missing), forecast day 2 (present)
+        batch = combined[0]
+        assert batch["optional"].shape == (2, 1, 2, 2)
+        assert batch["future_optional"].shape == (1, 1, 2, 2)
+        np.testing.assert_array_equal(batch["optional"][1], -1.0)
+        np.testing.assert_allclose(
+            batch["future_optional"], optional.get_tchw([dates_as_np[2]])
+        )
+        # Window 1: forecast day 3 is missing, so it holds the fill value
+        np.testing.assert_array_equal(combined[1]["future_optional"], -1.0)
+        # The required target input also gets its forecast steps
+        np.testing.assert_array_equal(
+            batch["future_target_group"],
+            combined.inputs[0].get_tchw([dates_as_np[2]]),
+        )
+
+    def test_missing_required_input_still_drops_window(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """Only inputs with a fill value are filled: a gap in the target drops it."""
+        combined = self._combined(mock_dataset_missing_dates_fill_value, mock_dataset)
+        with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
+            _ = combined.dates

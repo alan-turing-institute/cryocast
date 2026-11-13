@@ -23,12 +23,13 @@ class SingleDataset(Dataset):
     # Cache anemoi reads at class level to reduce disk I/O
     anemoi_cache: ClassVar[dict[tuple[Path, ...], AnemoiDataset]] = {}
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         input_files: Sequence[Path],
         *,
         date_ranges: Sequence[dict[str, str | None]] = [{"start": None, "end": None}],
+        fill_value: float | None = None,
         group: str | None = None,
         normalise: bool = True,
         variables: Sequence[str] = (),
@@ -44,6 +45,9 @@ class SingleDataset(Dataset):
             date_ranges: The ranges of dates to include in the dataset. Each range is a
                 dict with "start" and "end" keys, which can be None to indicate
                 open-ended ranges.
+            fill_value: If given, any date with no data holds this value, in
+                normalised units, instead of raising an error. This includes dates
+                outside the dataset. If None, only dates with data can be read.
             group: The group name for the dataset, used to identify it in plots and
                 logs. If None, the group name defaults to the dataset name.
             normalise: Whether to normalise the data to [0, 1] for each channel.
@@ -52,6 +56,12 @@ class SingleDataset(Dataset):
 
         """
         super().__init__()
+        if fill_value is not None and (
+            isinstance(fill_value, bool) or not isinstance(fill_value, (int, float))
+        ):
+            msg = f"fill_value must be a number, not {fill_value!r}."
+            raise TypeError(msg)
+        self.fill_value = None if fill_value is None else float(fill_value)
         self.hemisphere: Hemisphere = (
             Hemisphere.NORTH
             if any("north" in str(input_file).lower() for input_file in input_files)
@@ -188,6 +198,11 @@ class SingleDataset(Dataset):
         )
 
     @cached_property
+    def _missing(self) -> list[set[int]]:
+        """Return the indices of the dates with no data in each dataslice."""
+        return [set(ds.missing) for ds in self.dataslices]
+
+    @cached_property
     def end_date(self) -> np.datetime64:
         """Return the end date of the dataset."""
         return self.dates[-1]
@@ -262,14 +277,61 @@ class SingleDataset(Dataset):
             msg = f"Index {idx} out of range for dataset of length {len(self)}."
             raise IndexError(msg) from exc
 
-    def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
-        """Return normalised data for an arbitrary sequence of timesteps in [T, C, H, W] format."""
-        return self.normalise(
-            np.stack(
-                [self._chw_raw(self.to_index(target_date)) for target_date in dates],
-                axis=0,
+    def _read_slice(self, idx_ds: int, idx_date: int, n_steps: int) -> ArrayTCHW:
+        """Return normalised data for consecutive timesteps of one dataslice, [T, C, H, W].
+
+        Dates with no data hold the fill value. The dates with data are read as
+        contiguous slices, so a window with no missing dates is a single read.
+        """
+        dataslice = self.dataslices[idx_ds]
+        missing = self._missing[idx_ds]
+        if not any(idx_date + t in missing for t in range(n_steps)):
+            return self.normalise(
+                dataslice[idx_date : idx_date + n_steps].reshape(
+                    n_steps, *self.space.chw
+                )
             )
+        data = np.full(
+            (n_steps, *self.space.chw), self.fill_value, dtype=np.dtype(dataslice.dtype)
         )
+        start = 0
+        while start < n_steps:
+            if idx_date + start in missing:
+                start += 1
+                continue
+            end = start + 1
+            while end < n_steps and idx_date + end not in missing:
+                end += 1
+            data[start:end] = self.normalise(
+                dataslice[idx_date + start : idx_date + end].reshape(
+                    end - start, *self.space.chw
+                )
+            )
+            start = end
+        return data
+
+    def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
+        """Return normalised data for an arbitrary sequence of timesteps in [T, C, H, W] format.
+
+        A date with no data holds the fill value, or raises an IndexError if there is
+        no fill value.
+        """
+        indices: list[int | None] = (
+            [self.to_index(date) for date in dates]
+            if self.fill_value is None
+            else [self._date2idx.get(self.normalise_date(date)) for date in dates]
+        )
+        data = np.full(
+            (len(dates), *self.space.chw),
+            np.nan if self.fill_value is None else self.fill_value,
+            dtype=np.dtype(self.dataslices[0].dtype),
+        )
+        present = [(t, idx) for t, idx in enumerate(indices) if idx is not None]
+        if present:
+            data[[t for t, _ in present]] = self.normalise(
+                np.stack([self._chw_raw(idx) for _, idx in present], axis=0)
+            )
+        return data
 
     def get_tchw_slice(
         self, start_date: np.datetime64, n_steps: int, *, check: bool = True
@@ -282,6 +344,9 @@ class SingleDataset(Dataset):
         If `check` is True then we check that we're not crossing the boundary between
         dataslices, adding a small amount of overhead.
 
+        With a fill value, dates with no data hold it. The dates with data are still
+        read as contiguous slices where possible.
+
         Args:
             start_date: The date of the first timestep to return.
             n_steps: The number of consecutive timesteps to return.
@@ -291,6 +356,12 @@ class SingleDataset(Dataset):
 
         """
         start_date = self.normalise_date(start_date)
+        if self.fill_value is not None:
+            if (location := self._slice_location(start_date, n_steps)) is not None:
+                return self._read_slice(*location, n_steps)
+            return self.get_tchw(
+                [start_date + step * self.frequency for step in range(n_steps)]
+            )
         try:
             idx_global_start = self._date2idx[start_date]
             idx_ds_start, idx_date_start = self._idx2anemoi[idx_global_start]
@@ -316,6 +387,25 @@ class SingleDataset(Dataset):
                 f"{self.end_date}"
             )
             raise ValueError(msg) from exc
+
+    def _slice_location(
+        self, start_date: np.datetime64, n_steps: int
+    ) -> tuple[int, int] | None:
+        """Return the dataslice and start index holding n_steps days from start_date.
+
+        Returns None if no single dataslice covers all of them. Days with no data
+        count as covered, as they are part of the dataslice.
+        """
+        for idx_ds, dataslice in enumerate(self.dataslices):
+            first = self.normalise_date(dataslice.dates[0])
+            idx_date = int((start_date - first) // self.frequency)
+            if idx_date >= 0 and idx_date + n_steps <= len(dataslice.dates):
+                return idx_ds, idx_date
+        return None
+
+    def has_date(self, date: np.datetime64) -> bool:
+        """Return whether the dataset has data on a given date."""
+        return self.normalise_date(date) in self._date2idx
 
     def normalise(self, data: ArrayType) -> ArrayType:
         """Normalise the data to [0, 1] for each channel if configured to do so.
@@ -347,6 +437,7 @@ class SingleDataset(Dataset):
             name=self.name,
             input_files=self._input_files,
             date_ranges=date_ranges or self._date_ranges,
+            fill_value=self.fill_value,
             group=self.group,
             normalise=self._normalise if normalise is None else normalise,
             variables=variables or list(self._variables),

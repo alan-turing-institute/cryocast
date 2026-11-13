@@ -4,3 +4,10 @@ defaults:
     - demo_weathernorth_era5_0p5_2017_2019_24h_v1
   - split: demo_dataset
   - _self_
+
+# Input groups (group_as names) that may be missing on some days. Their missing days
+# hold optional_fill, in normalised units. Normalised training data lies in [0, 1],
+# and data outside the training period may fall slightly outside this. With []
+# nothing changes.
+optional_groups: []
+optional_fill: -1.0
