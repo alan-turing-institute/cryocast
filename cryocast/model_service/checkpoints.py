@@ -170,10 +170,16 @@ class CheckpointFile:
         if "variables" in ckpt_config:
             combined["variables"] = ckpt_config["variables"]
         # Optional inputs and their fill change what the model sees, so these must also
-        # match training
+        # match training. Checkpoints saved before optional inputs existed were trained
+        # with every input required, so they get no optional groups.
         for key in OPTIONAL_INPUT_KEYS:
             if (value := OmegaConf.select(ckpt_config, f"data.{key}")) is not None:
                 combined["data"][key] = value
+        if (
+            "data" in combined
+            and OmegaConf.select(ckpt_config, "data.optional_groups") is None
+        ):
+            combined["data"]["optional_groups"] = []
         # Batch size does not affect the trained model, so this can be overridden
         if "batch_size" in config.get("window", {}):
             combined["window"]["batch_size"] = config["window"]["batch_size"]
