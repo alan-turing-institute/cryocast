@@ -49,7 +49,11 @@ from omegaconf import DictConfig
 from torch import nn
 
 from cryocast.losses import LeadTimeWeightedLoss, build_loss
-from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
+from cryocast.models.diffusion import (
+    GaussianDiffusion,
+    LatentNormaliser,
+    UNetDiffusion,
+)
 from cryocast.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 from .base_processor import BaseProcessor
@@ -83,6 +87,7 @@ class DiffusionProcessor(BaseProcessor):
         normalization: str = "groupnorm",
         activation: str = "SiLU",
         use_autoregressive: bool = True,
+        normalise_latents: bool = False,
         loss: DictConfig | nn.Module,
         **kwargs: Any,
     ) -> None:
@@ -107,6 +112,11 @@ class DiffusionProcessor(BaseProcessor):
             activation (str): Activation function used throughout the network (e.g., "SiLU").
             use_autoregressive (bool): Whether to use autoregressive sampling and
                 one-step training. Default is True.
+            normalise_latents (bool): Whether to diffuse latents normalised to zero
+                mean and unit variance per channel, using running statistics
+                learned during training. The history and target are both
+                normalised, and predictions are returned in the original units.
+                Default is False.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
@@ -165,6 +175,23 @@ class DiffusionProcessor(BaseProcessor):
             beta_schedule=BetaSchedule(beta_schedule),
         )
 
+        # Optional per-channel normalisation of the latents
+        self.latent_normaliser = (
+            LatentNormaliser(c_combined) if normalise_latents else None
+        )
+
+    def _normalise(self, latent: TensorNTCHW) -> TensorNTCHW:
+        """Normalise latents if latent normalisation is enabled."""
+        if self.latent_normaliser is None:
+            return latent
+        return self.latent_normaliser.normalise(latent)
+
+    def _denormalise(self, latent: TensorNTCHW) -> TensorNTCHW:
+        """Return normalised latents to their original units if enabled."""
+        if self.latent_normaliser is None:
+            return latent
+        return self.latent_normaliser.denormalise(latent)
+
     def _build_metrics_prediction(self, pred_x0: TensorNCHW) -> TensorNTCHW:
         """Unfold the training-time x_0 estimate into an NTCHW combined-latent tensor.
 
@@ -219,9 +246,13 @@ class DiffusionProcessor(BaseProcessor):
             - Sampling begins from standard Gaussian noise.
 
         """
-        if self.use_autoregressive:
-            return ProcessorOutput(prediction=self._sample_autoregressive(x))
-        return ProcessorOutput(prediction=self._sample_parallel(x))
+        x = self._normalise(x)
+        prediction = (
+            self._sample_autoregressive(x)
+            if self.use_autoregressive
+            else self._sample_parallel(x)
+        )
+        return ProcessorOutput(prediction=self._denormalise(prediction))
 
     def _rollout_training(self, x: TensorNTCHW, y: TensorNTCHW) -> ProcessorOutput:
         """One training rollout using DDPM v-prediction loss.
@@ -253,6 +284,11 @@ class DiffusionProcessor(BaseProcessor):
         """
         b = x.shape[0]
         device = x.device
+
+        # Normalise the history and target with the running statistics
+        if self.latent_normaliser is not None:
+            self.latent_normaliser.update(x, y)
+        x, y = self._normalise(x), self._normalise(y)
 
         # History frames folded into channels for the 2D UNet.
         cond: TensorNCHW = x.flatten(
@@ -295,7 +331,7 @@ class DiffusionProcessor(BaseProcessor):
             pred_x0: TensorNCHW = self.diffusion.calculate_v(
                 x_start=pred_v, noise=noisy_y, t=t
             )
-            prediction = self._build_metrics_prediction(pred_x0)
+            prediction = self._denormalise(self._build_metrics_prediction(pred_x0))
 
         return ProcessorOutput(prediction=prediction, loss=loss)
 
