@@ -44,8 +44,9 @@ class CombinedDataset(Dataset):
             include_future_inputs: Whether each batch should also contain every
                 input dataset over the forecast steps (the same dates as ``target``),
                 under ``future_<input>`` keys. If ``True``, only start dates where every
-                input covers the forecast steps are valid. If ``False``, the batches are
-                unchanged.
+                required input covers the forecast steps are valid, and optional inputs
+                hold ``optional_fill`` on any forecast step they are missing. If
+                ``False``, the batches are unchanged.
             optional_groups: Input groups that can have missing days, e.g.
                 ``["float-argo"]``. A window is kept even if one of these groups is
                 missing a day, and that day is filled with ``optional_fill``. The
@@ -115,7 +116,7 @@ class CombinedDataset(Dataset):
         available_dates = sorted(
             available_date
             for available_date in input_date_set
-            # ... if all inputs have n_input_steps starting on start_date
+            # ... if all required inputs have n_input_steps starting on start_date
             if all(
                 date in input_date_set for date in self.get_input_steps(available_date)
             )
@@ -241,7 +242,9 @@ class CombinedDataset(Dataset):
         """Return normalised data of an input for consecutive timesteps, [T, C, H, W].
 
         Inputs must either have data on every date, enabling them to be read as a
-        contiguous slice or have a fill value for any missing dates.
+        contiguous slice or have a fill value for any missing dates. Required inputs
+        are read without checking for dataslice boundaries, so the caller must request
+        a valid window, e.g. a start date from `dates`.
 
         Args:
             dataset: The input dataset to read from.
@@ -253,7 +256,7 @@ class CombinedDataset(Dataset):
 
         """
         if dataset.name not in self.optional_groups:
-            return dataset.get_tchw_slice(start_date, n_steps)
+            return dataset.get_tchw_slice(start_date, n_steps, check=False)
         return dataset.get_tchw(
             self._consecutive_dates(start_date, n_steps),
             fill_value=self.optional_fill,
