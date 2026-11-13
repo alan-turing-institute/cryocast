@@ -171,8 +171,13 @@ class CommonDataModule(LightningDataModule):
     @cached_property
     def datasets_unfiltered(self) -> dict[str, SingleDataset]:
         """Return an unfiltered dictionary of dataset group names to SingleDataset objects."""
+        # Optional groups keep the days they are missing, holding the fill value
         return {
-            name: SingleDataset(name, paths)
+            name: SingleDataset(
+                name,
+                paths,
+                fill_value=self.optional_fill if name in self.optional_groups else None,
+            )
             for name, paths in self.dataset_groups.items()
         }
 
@@ -302,9 +307,6 @@ class CommonDataModule(LightningDataModule):
             target_variables=self.target_variables,
             climatology=self.climatology.mean if self.climatology else None,
             include_future_inputs=include_future_inputs,
-            # Groups with no requested variables are not inputs, so leave them out
-            optional_groups=[g for g in self.optional_groups if g in self.datasets],
-            optional_fill=self.optional_fill,
         )
         # The variables used for validation have already been logged for training
         if stage != "validation":

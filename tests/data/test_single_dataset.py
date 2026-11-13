@@ -239,21 +239,102 @@ class TestSingleDataset:
         ):
             dataset.get_tchw([dates_as_np[1]])
 
-    def test_get_tchw_fill_value(
+    def test_fill_value_on_missing_dates(
         self,
         mock_dataset_missing_dates_fill_value: Path,
         dates_as_np: tuple[np.datetime64, ...],
     ) -> None:
         """With a fill value, missing dates hold it instead of raising."""
-        dataset = SingleDataset(
+        plain = SingleDataset(
             name="test_missing", input_files=[mock_dataset_missing_dates_fill_value]
         )
-        result = dataset.get_tchw(list(dates_as_np), fill_value=-1.0)
+        filled = SingleDataset(
+            name="test_missing",
+            input_files=[mock_dataset_missing_dates_fill_value],
+            fill_value=-1.0,
+        )
+        # The dates with data are the same
+        assert filled.dates == plain.dates == list(dates_as_np[::2])
+        result = filled.get_tchw(list(dates_as_np))
         assert result.shape == (5, 1, 2, 2)
         np.testing.assert_array_equal(result[[1, 3]], -1.0)
         np.testing.assert_allclose(
-            result[[0, 2, 4]], dataset.get_tchw(list(dates_as_np[::2]))
+            result[[0, 2, 4]], plain.get_tchw(list(dates_as_np[::2]))
         )
+        # Dates outside the dataset also hold the fill value
+        outside = dates_as_np[0] - np.timedelta64(1, "D")
+        np.testing.assert_array_equal(filled.get_tchw([outside]), -1.0)
+
+    def test_fill_value_in_slices(
+        self,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+    ) -> None:
+        """Slices hold the fill value on missing dates and the data on the others."""
+        plain = SingleDataset(
+            name="test_missing", input_files=[mock_dataset_missing_dates_fill_value]
+        )
+        filled = SingleDataset(
+            name="test_missing",
+            input_files=[mock_dataset_missing_dates_fill_value],
+            fill_value=-1.0,
+        )
+        result = filled.get_tchw_slice(dates_as_np[0], 5)
+        np.testing.assert_array_equal(result[[1, 3]], -1.0)
+        np.testing.assert_allclose(
+            result[[0, 2, 4]], plain.get_tchw(list(dates_as_np[::2]))
+        )
+        # A slice of one present day is read as it is
+        np.testing.assert_allclose(
+            filled.get_tchw_slice(dates_as_np[2], 1),
+            plain.get_tchw([dates_as_np[2]]),
+        )
+        # A slice that starts before the dataset holds the fill value until it starts
+        before = filled.get_tchw_slice(dates_as_np[0] - np.timedelta64(2, "D"), 3)
+        np.testing.assert_array_equal(before[:2], -1.0)
+        np.testing.assert_allclose(before[2:], plain.get_tchw([dates_as_np[0]]))
+
+    def test_fill_value_in_a_date_range(
+        self,
+        mock_dataset_missing_dates_fill_value: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+        dates_as_str: tuple[str, ...],
+    ) -> None:
+        """Missing days are found within a date range that does not start at day 0."""
+        plain = SingleDataset(
+            name="test_missing", input_files=[mock_dataset_missing_dates_fill_value]
+        )
+        filled = SingleDataset(
+            name="test_missing",
+            input_files=[mock_dataset_missing_dates_fill_value],
+            date_ranges=[{"start": dates_as_str[1], "end": None}],
+            fill_value=-1.0,
+        )
+        assert filled.dates == list(dates_as_np[2::2])
+        result = filled.get_tchw_slice(dates_as_np[1], 4)
+        np.testing.assert_array_equal(result[[0, 2]], -1.0)
+        np.testing.assert_allclose(
+            result[[1, 3]], plain.get_tchw(list(dates_as_np[2::2]))
+        )
+
+    def test_fill_value_is_kept_by_subset(
+        self, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        filled = SingleDataset(
+            name="test_missing",
+            input_files=[mock_dataset_missing_dates_fill_value],
+            fill_value=-1.0,
+        )
+        assert filled.subset(normalise=False).fill_value == -1.0
+
+    @pytest.mark.parametrize("fill", ["mean", True])
+    def test_non_numeric_fill_raises(self, mock_dataset: Path, fill: object) -> None:
+        with pytest.raises(TypeError, match="fill_value must be a number"):
+            SingleDataset(
+                name="mock_dataset",
+                input_files=[mock_dataset],
+                fill_value=fill,  # type: ignore[arg-type]
+            )
 
     def test_len(self, mock_dataset: Path) -> None:
         dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])

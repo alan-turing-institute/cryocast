@@ -21,8 +21,6 @@ class CombinedDataset(Dataset):
         n_history_steps: int = 1,
         climatology: ArrayTCHW | None = None,
         include_future_inputs: bool = False,
-        optional_groups: Sequence[str] = (),
-        optional_fill: float = -1.0,
     ) -> None:
         """Initialise a combined dataset from a sequence of SingleDatasets.
 
@@ -44,16 +42,11 @@ class CombinedDataset(Dataset):
             include_future_inputs: Whether each batch should also contain every
                 input dataset over the forecast steps (the same dates as ``target``),
                 under ``future_<input>`` keys. If ``True``, only start dates where every
-                required input covers the forecast steps are valid, and optional inputs
-                hold ``optional_fill`` on any forecast step they are missing. If
-                ``False``, the batches are unchanged.
-            optional_groups: Input groups that can have missing days, e.g.
-                ``["float-argo"]``. A window is kept even if one of these groups is
-                missing a day, and that day is filled with ``optional_fill``. The
-                target cannot be optional. Empty by default.
-            optional_fill: The value for missing days of optional inputs, in
-                normalised units. Real data lies in [0, 1], so the default of -1 can
-                never be mistaken for it.
+                input covers the forecast steps are valid. If ``False``, the batches
+                are unchanged.
+
+        Inputs with a fill value (see `SingleDataset`) have every date in their range,
+        so they do not restrict the valid start dates.
 
         """
         super().__init__()
@@ -84,39 +77,16 @@ class CombinedDataset(Dataset):
             raise ValueError(msg)
         self.frequency = frequencies[0]
 
-        # Inputs that are allowed to be missing on some days
-        input_names = {ds.name for ds in self.inputs}
-        if unknown := sorted(set(optional_groups) - input_names):
-            msg = (
-                f"Optional groups {unknown} are not inputs of this dataset. "
-                f"Available inputs: {sorted(input_names)}."
-            )
-            raise ValueError(msg)
-        if target_group_name in optional_groups:
-            msg = f"The target dataset {target_group_name!r} cannot be optional."
-            raise ValueError(msg)
-        if isinstance(optional_fill, bool) or not isinstance(
-            optional_fill, (int, float)
-        ):
-            msg = f"optional_fill must be a number, not {optional_fill!r}."
-            raise TypeError(msg)
-        self.optional_groups = set(optional_groups)
-        self.optional_fill = float(optional_fill)
-
     @cached_property
     def dates(self) -> list[np.datetime64]:
-        """Get list of dates that are available in all required datasets."""
-        # Identify dates that exist in all required input datasets. Optional inputs
-        # are filled on any days they are missing, so they do not restrict the dates.
-        required_inputs = [
-            ds for ds in self.inputs if ds.name not in self.optional_groups
-        ]
-        input_date_set = set.intersection(*(set(ds.dates) for ds in required_inputs))
+        """Get list of dates that are available in all datasets."""
+        # Identify dates that exist in all input datasets
+        input_date_set = set.intersection(*(set(ds.dates) for ds in self.inputs))
         target_date_set = set(self.target.dates)
         available_dates = sorted(
             available_date
             for available_date in input_date_set
-            # ... if all required inputs have n_input_steps starting on start_date
+            # ... if all inputs have n_input_steps starting on start_date
             if all(
                 date in input_date_set for date in self.get_input_steps(available_date)
             )
@@ -154,8 +124,7 @@ class CombinedDataset(Dataset):
 
         Note that because we have already checked which starting dates are valid in the
         `dates` property, we know that the requested dates will be consecutive in each
-        required data input, so `get_input_window` can read them as a single slice.
-        Optional inputs hold `optional_fill` on any of those dates they are missing.
+        input, so they can be read as a single slice.
 
         Returns:
             A dictionary with dataset names as keys and a numpy array as the value.
@@ -176,7 +145,7 @@ class CombinedDataset(Dataset):
         # Read history and (if requested) forecast steps as one contiguous window
         batch: dict[str, ArrayTCHW] = {}
         for ds in self.inputs:
-            window = self.get_input_window(ds, start_date, self.n_input_steps)
+            window = ds.get_tchw_slice(start_date, self.n_input_steps, check=False)
             batch[ds.name] = window[: self.n_history_steps]
             if self.include_future_inputs:
                 batch[f"future_{ds.name}"] = window[self.n_history_steps :]
@@ -235,32 +204,6 @@ class CombinedDataset(Dataset):
         ``include_future_inputs`` is set.
         """
         return self._consecutive_dates(start_date, self.n_input_steps)
-
-    def get_input_window(
-        self, dataset: SingleDataset, start_date: np.datetime64, n_steps: int
-    ) -> ArrayTCHW:
-        """Return normalised data of an input for consecutive timesteps, [T, C, H, W].
-
-        Inputs must either have data on every date, enabling them to be read as a
-        contiguous slice or have a fill value for any missing dates. Required inputs
-        are read without checking for dataslice boundaries, so the caller must request
-        a valid window, e.g. a start date from `dates`.
-
-        Args:
-            dataset: The input dataset to read from.
-            start_date: The date of the first timestep to return.
-            n_steps: The number of consecutive timesteps to return.
-
-        Returns:
-            The normalised data for the specified input and timesteps.
-
-        """
-        if dataset.name not in self.optional_groups:
-            return dataset.get_tchw_slice(start_date, n_steps, check=False)
-        return dataset.get_tchw(
-            self._consecutive_dates(start_date, n_steps),
-            fill_value=self.optional_fill,
-        )
 
     def variable_list(self) -> list[str]:
         """Return a pretty-formatted list of input variables in the combined dataset.
