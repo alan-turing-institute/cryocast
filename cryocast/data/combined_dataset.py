@@ -45,8 +45,8 @@ class CombinedDataset(Dataset):
                 input covers the forecast steps are valid. If ``False``, the batches
                 are unchanged.
 
-        Inputs with a fill value (see `SingleDataset`) have every date in their range,
-        so they do not restrict the valid start dates.
+        Inputs with a fill value (see `SingleDataset`) hold it on any date they have
+        no data, so they do not restrict the valid start dates.
 
         """
         super().__init__()
@@ -80,13 +80,16 @@ class CombinedDataset(Dataset):
     @cached_property
     def dates(self) -> list[np.datetime64]:
         """Get list of dates that are available in all datasets."""
-        # Identify dates that exist in all input datasets
-        input_date_set = set.intersection(*(set(ds.dates) for ds in self.inputs))
+        # Identify dates that exist in all input datasets. Inputs with a fill value
+        # hold it on any date they have no data, so they do not restrict the dates.
+        input_date_set = set.intersection(
+            *(set(ds.dates) for ds in self.inputs if ds.fill_value is None)
+        )
         target_date_set = set(self.target.dates)
         available_dates = sorted(
             available_date
             for available_date in input_date_set
-            # ... if all inputs have n_input_steps starting on start_date
+            # ... if all required inputs have n_input_steps starting on start_date
             if all(
                 date in input_date_set for date in self.get_input_steps(available_date)
             )

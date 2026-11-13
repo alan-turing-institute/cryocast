@@ -501,19 +501,20 @@ class TestOptionalGroups:
         # History days 1 (missing) and 2 (present)
         np.testing.assert_array_equal(combined[1]["optional"][0], 0.0)
 
-    def test_dates_outside_optional_range_are_dropped(
+    def test_window_before_optional_input_starts(
         self,
         mock_dataset: Path,
         dates_as_np: tuple[np.datetime64, ...],
         dates_as_str: tuple[str, ...],
     ) -> None:
-        """The fill only covers missing days within an input's own date range."""
+        """A window entirely before an optional input starts is kept, all days filled."""
         combined = self._combined(
             mock_dataset,
             mock_dataset,
-            optional_date_ranges=[{"start": dates_as_str[1], "end": None}],
+            optional_date_ranges=[{"start": dates_as_str[3], "end": None}],
         )
-        assert combined.dates == list(dates_as_np[1:3])
+        assert combined.dates[0] == dates_as_np[0]
+        np.testing.assert_array_equal(combined[0]["optional"], -1.0)
 
     def test_future_inputs_present_and_missing_days(
         self,
