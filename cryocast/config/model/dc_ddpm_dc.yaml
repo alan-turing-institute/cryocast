@@ -2,6 +2,12 @@ _target_: cryocast.models.EncodeProcessDecode
 
 name: dc-ddpm-dc
 
+# By combining multiple terms in a single loss function, we can train all parts
+# of the model even when the processor is computing loss in latent space.
+# loss = latent_loss + w_autoencoder * autoencoder_loss
+auxiliary_loss_weights:
+  autoencoder: 1.0
+
 encoders:
   latent_space: [144, 144]
   era5:

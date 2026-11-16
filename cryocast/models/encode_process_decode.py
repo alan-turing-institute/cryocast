@@ -37,13 +37,14 @@ class EncodeProcessDecode(BaseModel):
         "processor",
     }
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         encoders: DictConfig | list[BaseEncoder],
         processor: DictConfig | BaseProcessor,
         decoder: DictConfig | BaseDecoder,
         target_variable_indices: list[int],
+        auxiliary_loss_weights: dict[str, float] | None = None,
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
         **kwargs: Any,
@@ -53,7 +54,7 @@ class EncodeProcessDecode(BaseModel):
         Note that we use BaseProcessor.computes_loss_in_latent_space to control:
         - `multistage_only`: the decoder must be pretrained first.
         - `needs_future_inputs`: training batches hold `future_<input>` keys.
-        - `_freeze_unused_modules`: freeze unused modules (e.g. the decoder)
+        - `_freeze_unused_modules`: freeze the decoder if the autoencoder loss is off
         - `rollout_space`: cannot be set to "physical"
         - `training_step`: takes the latent-loss branch.
 
@@ -62,6 +63,10 @@ class EncodeProcessDecode(BaseModel):
             processor: DictConfig or BaseProcessor, the latent-space processor.
             decoder: DictConfig or BaseDecoder, the decoder from latent to output space.
             target_variable_indices: indices of the target variables within the output space.
+            auxiliary_loss_weights: weights for auxiliary loss terms. These apply only
+                to processors that compute their loss in latent space. Supported keys:
+                `autoencoder` (default 1.0, must not be negative). Set it to 0 to
+                disable the autoencoder loss and freeze the decoder.
             mask_dir: directory containing masks for the decoder (if needed).
             rollout_space: RolloutSpace.LATENT or RolloutSpace.PHYSICAL (or the
                 equivalent string), where to perform the forecast loop.
@@ -153,12 +158,17 @@ class EncodeProcessDecode(BaseModel):
             )
         )
 
+        # Validate the auxiliary loss weights
+        self.autoencoder_loss_weight = self._validate_auxiliary_loss_weights(
+            auxiliary_loss_weights
+        )
+
         # Validate rollout options
         self.rollout_space = self._validate_rollout_options(rollout_space)
 
         # The physical rollout drives the decoder itself and computes the loss on the
         # decoded field, so it cannot host a processor that owns the training signal
-        # in latent space (whose decoder is frozen below).
+        # in latent space.
         if (
             self.rollout_space == RolloutSpace.PHYSICAL
             and self.processor.computes_loss_in_latent_space
@@ -166,7 +176,7 @@ class EncodeProcessDecode(BaseModel):
             msg = (
                 f"rollout_space='physical' is incompatible with processor "
                 f"{type(self.processor).__name__}, which computes its loss in latent "
-                f"space (the decoder is frozen and never trained on that path)."
+                f"space."
             )
             raise ValueError(msg)
 
@@ -222,7 +232,9 @@ class EncodeProcessDecode(BaseModel):
         ]
         return torch.cat(latent_inputs, dim=2)
 
-    def _encode_future_inputs(self, batch: dict[str, TensorNTCHW]) -> TensorNTCHW:
+    def _encode_future_inputs(
+        self, batch: dict[str, TensorNTCHW], *, with_grad: bool = False
+    ) -> TensorNTCHW:
         """Encode every input over the forecast steps into the combined latent space.
 
         This is the ground truth for processors that compute their loss in latent space.
@@ -230,6 +242,9 @@ class EncodeProcessDecode(BaseModel):
         Args:
             batch: Dictionary with a `future_<input>` TensorNTCHW entry per input
                 dataset with shape (batch, n_forecast_steps, n_input_channels_k, H_input_k, W_input_k)
+            with_grad: Whether to record gradients. Set this only when the result
+                also goes into the autoencoder loss. The caller must then detach the
+                copy that it gives to the processor as the latent target.
 
         Returns:
             TensorNTCHW with shape (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
@@ -248,10 +263,9 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg) from exc
 
-        # Disable gradients for the ground truth. The encoders are trainable during
-        # finetune, so otherwise the optimiser can decrease the loss by changing the
-        # target, and not the prediction.
-        with torch.no_grad():
+        # Do not record gradients unless the autoencoder loss needs them. This saves
+        # the memory for the encoder activations over the forecast steps.
+        with torch.set_grad_enabled(with_grad and torch.is_grad_enabled()):
             return self._encode_inputs(future_inputs)
 
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
@@ -383,18 +397,45 @@ class EncodeProcessDecode(BaseModel):
         return torch.stack(outputs, dim=1)
 
     def _freeze_unused_modules(self) -> None:
-        """Freeze unused modules."""
-        # Processors that compute loss in latent space do not touch the decoder, so we
-        # explicitly freeze it.
-        if self.processor.computes_loss_in_latent_space:
+        """Freeze unused modules.
+
+        If we compute the loss in latent space with no autoencoder loss, the training
+        loss does not use the decoder. We then freeze it.
+        """
+        if (
+            self.processor.computes_loss_in_latent_space
+            and self.autoencoder_loss_weight == 0
+        ):
             self.decoder.freeze()
+
+    def _uses_autoencoder_loss(self) -> bool:
+        """Whether the latent-loss training step adds the autoencoder loss.
+
+        We skip it if its weight is zero. We also skip it if the encoders and the
+        decoder are all frozen (for example in the processor stage), because it then
+        has no effect on training.
+        """
+        if self.autoencoder_loss_weight == 0:
+            return False
+        modules = [self.decoder, *self.encoders]
+        return any(p.requires_grad for m in modules for p in m.parameters())
+
+    @staticmethod
+    def _validate_auxiliary_loss_weights(weights: Mapping[str, float] | None) -> float:
+        """Validate the auxiliary loss weights and return the autoencoder weight."""
+        if (weight := float(dict(weights or {}).get("autoencoder", 1.0))) < 0:
+            msg = (
+                f"auxiliary_loss_weights.autoencoder must not be negative, but it is "
+                f"{weight}."
+            )
+            raise ValueError(msg)
+        return weight
 
     def _validate_rollout_options(
         self, rollout_space: RolloutSpace | str
     ) -> RolloutSpace:
         """Reject a rollout_space setting that cannot work, before anything is built."""
         rollout_space = RolloutSpace(rollout_space)
-
         if rollout_space == RolloutSpace.PHYSICAL:
             input_names = {input_space.name for input_space in self.input_spaces}
             if self.output_space.name not in input_names:
@@ -420,7 +461,7 @@ class EncodeProcessDecode(BaseModel):
 
     @override
     def train(self, mode: bool = True) -> "EncodeProcessDecode":
-        """Set training mode, with decoder frozen if computing loss in latent space."""
+        """Set training mode, and keep any unused modules frozen."""
         super().train(mode)
         if mode:
             self._freeze_unused_modules()
@@ -440,9 +481,15 @@ class EncodeProcessDecode(BaseModel):
         Processors that set the flag `computes_loss_in_latent_space=True` are a special
         case. We encode the inputs over both the history and the forecast steps into
         latent space, and call `rollout()` on the processor, which returns both a latent
-        prediction and a loss. We pass this prediction through a frozen decoder in order
-        to calculate metrics, but we use the loss returned by the processor for
-        backpropagation.
+        prediction and a loss. We decode this prediction without gradients to calculate
+        metrics.
+
+        The latent loss does not go through the decoder. Thus, we also add an
+        autoencoder loss, weighted by `auxiliary_loss_weights.autoencoder`: we decode
+        the encoded forecast-step inputs and compare them to the target. This loss
+        trains the encoders and the decoder, and keeps the latent space compatible with
+        the decoder. We skip it if its weight is zero, or if the encoders and the
+        decoder are all frozen (for example in the processor stage).
 
         Args:
             batch: Dictionary with one NTCHW entry per input dataset (n_history_steps)
@@ -458,12 +505,19 @@ class EncodeProcessDecode(BaseModel):
 
         # Custom loss path: use the loss returned by the processor
         if self.processor.computes_loss_in_latent_space:
+            use_autoencoder_loss = self._uses_autoencoder_loss()
+
             # Encode history and future inputs into the combined latent space.
             history_latent = self._encode_inputs(batch)
-            future_latent = self._encode_future_inputs(batch)
+            future_latent = self._encode_future_inputs(
+                batch, with_grad=use_autoencoder_loss
+            )
 
-            # Process in latent space
-            processor_output = self.processor.rollout(history_latent, future_latent)
+            # Process in latent space. Detach the target so that the latent loss
+            # cannot decrease by changing its own target.
+            processor_output = self.processor.rollout(
+                history_latent, future_latent.detach()
+            )
 
             # Get the loss from the processor output
             loss = processor_output.loss
@@ -474,13 +528,35 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
 
-            # Decode under no_grad for metrics/callbacks only.
             # Use persistence as the skip-connection anchor, if required.
             anchor = self._extract_anchor(batch[self.output_space.name])
+            anchor_ntchw = None if anchor is None else anchor.unsqueeze(1)
+
+            # Decode the encoded forecast-step inputs and compare them to the target.
+            if use_autoencoder_loss:
+                autoencoder_loss = self.loss(
+                    self.decoder.rollout(future_latent, anchor_ntchw), target
+                )
+                self.log(
+                    "train_latent_loss",
+                    loss,
+                    on_step=False,
+                    on_epoch=True,
+                    sync_dist=True,
+                )
+                self.log(
+                    "train_autoencoder_loss",
+                    autoencoder_loss,
+                    on_step=False,
+                    on_epoch=True,
+                    sync_dist=True,
+                )
+                loss = loss + self.autoencoder_loss_weight * autoencoder_loss
+
+            # Decode the prediction without gradients, for metrics and callbacks only.
             with torch.no_grad():
                 prediction = self.decoder.rollout(
-                    processor_output.prediction,
-                    None if anchor is None else anchor.unsqueeze(1),
+                    processor_output.prediction, anchor_ntchw
                 )
 
         # Standard path: calculate loss by comparing decoded output to target.

@@ -31,6 +31,14 @@ The processor is trained with frozen encoders and decoder from stages 1–2.
 
 Pretrained weights are loaded into the full `EncodeProcessDecode` model and the entire model is trained end-to-end.
 
+Some processors calculate their loss in latent space, for example `DiffusionProcessor`.
+This latent loss does not go through the decoder.
+Thus, the model also adds an autoencoder loss, which trains the encoders and the decoder.
+This loss also keeps the latent space compatible with the decoder.
+To disable it and keep the decoder frozen in this stage, set `auxiliary_loss_weights.autoencoder` to `0`.
+See [Loss in latent space](./add-a-processor.md#loss-in-latent-space).
+The processor stage does not use the autoencoder loss, because its encoders and decoder are frozen.
+
 ![Stage 4 diagram](../assets/staged-training-stage4.png)
 
 ## Running staged training

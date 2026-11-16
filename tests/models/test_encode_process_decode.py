@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -62,6 +63,67 @@ class _OracleProcessor(BaseProcessor):
         assert y.shape[2] == x.shape[2]
         self.target = y
         return ProcessorOutput(prediction=y.clone(), loss=torch.zeros(()))
+
+
+class _ScaledDecoder(BaseDecoder):
+    """Trainable decoder that multiplies one channel of the combined latent by scale."""
+
+    def __init__(self, *, channel: int, scale: float, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.channel = channel
+        self.scale = nn.Parameter(torch.tensor(scale))
+
+    def forward(self, x: TensorNCHW) -> TensorNCHW:
+        return x[:, self.channel : self.channel + 1] * self.scale
+
+
+def _oracle_model(
+    *,
+    cfg_loss: DictConfig,
+    cfg_metrics: list[dict[str, Any]],
+    auxiliary_loss_weights: dict[str, float] | None = None,
+) -> EncodeProcessDecode:
+    """Build a latent-loss model with a trainable encoder and a trainable decoder.
+
+    The decoder doubles the target channel, so the autoencoder loss is not zero. The
+    latent loss from _OracleProcessor is always zero.
+    """
+    shape = (8, 8)
+    sic = DataSpace(channels=2, name="sic", shape=shape)
+    output_space = DataSpace(channels=1, name="sic", shape=shape)
+    return EncodeProcessDecode(
+        name="oracle",
+        encoders=[_ScaledEncoder(data_space_in=sic, scale=1.0)],
+        processor=DictConfig({"_target_": f"{__name__}.{_OracleProcessor.__name__}"}),
+        decoder=_ScaledDecoder(
+            channel=1,
+            scale=2.0,
+            data_space_in=DataSpace(channels=2, name="combined", shape=shape),
+            data_space_out=output_space,
+        ),
+        auxiliary_loss_weights=auxiliary_loss_weights,
+        hemisphere="north",
+        input_spaces=[sic.to_dict()],
+        loss=cfg_loss,
+        metrics=cfg_metrics,
+        n_forecast_steps=2,
+        n_history_steps=2,
+        output_space=output_space.to_dict(),
+        optimizer=DictConfig({}),
+        scheduler=DictConfig({}),
+        lr_scheduler=DictConfig({}),
+        target_variable_indices=[1],
+    )
+
+
+def _oracle_batch() -> dict[str, TensorNTCHW]:
+    """Build a batch for the model from `_oracle_model`."""
+    future_sic = torch.rand(2, 2, 2, 8, 8)
+    return {
+        "sic": torch.rand(2, 2, 2, 8, 8),
+        "future_sic": future_sic,
+        "target": future_sic[:, :, 1:2].clone(),
+    }
 
 
 class TestEncodeProcessDecode:
@@ -469,6 +531,141 @@ class TestEncodeProcessDecode:
         assert processor.target is not None
         assert all(p.requires_grad for e in model.encoders for p in e.parameters())
         assert not processor.target.requires_grad
+
+    def test_init_rejects_negative_autoencoder_loss_weight(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        with pytest.raises(ValueError, match="must not be negative"):
+            _oracle_model(
+                cfg_loss=cfg_loss,
+                cfg_metrics=cfg_metrics,
+                auxiliary_loss_weights={"autoencoder": -1.0},
+            )
+
+    @pytest.mark.parametrize(
+        ("test_weights", "expected_weight"),
+        [
+            (None, 1.0),
+            ({}, 1.0),
+            ({"autoencoder": 0}, 0.0),
+            ({"autoencoder": 0.5}, 0.5),
+        ],
+        ids=["none", "empty", "zero", "half"],
+    )
+    def test_init_autoencoder_loss_weight(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        test_weights: dict[str, float] | None,
+        expected_weight: float,
+    ) -> None:
+        model = _oracle_model(
+            cfg_loss=cfg_loss,
+            cfg_metrics=cfg_metrics,
+            auxiliary_loss_weights=test_weights,
+        )
+        assert model.autoencoder_loss_weight == expected_weight
+
+    def test_autoencoder_loss_zero_weight_matches_main(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """Weight 0 gives the behaviour from before the autoencoder loss.
+
+        The decoder is frozen and stays in eval mode, and the loss is only the latent
+        loss, which does not go through the encoders or the decoder.
+        """
+        model = _oracle_model(
+            cfg_loss=cfg_loss,
+            cfg_metrics=cfg_metrics,
+            auxiliary_loss_weights={"autoencoder": 0.0},
+        )
+        model.train()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mock_log = MagicMock()
+            mp.setattr(model, "log", mock_log)
+            result = model.training_step(_oracle_batch(), 0)
+
+        # Only the latent loss from _OracleProcessor (zero) remains
+        assert result.loss.item() == 0.0
+        assert not result.loss.requires_grad
+        assert [c.args[0] for c in mock_log.call_args_list] == ["train_loss"]
+
+        # The decoder is frozen, and the encoders are not
+        assert not any(p.requires_grad for p in model.decoder.parameters())
+        assert not model.decoder.training
+        assert all(p.requires_grad for e in model.encoders for p in e.parameters())
+
+        # The latent target has no gradients
+        processor = model.processor
+        assert isinstance(processor, _OracleProcessor)
+        assert processor.target is not None
+        assert not processor.target.requires_grad
+
+    def test_autoencoder_loss_trains_encoders_and_decoder(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """The autoencoder loss trains the decoder and the encoders.
+
+        The latent loss is zero, so all of the loss comes from the autoencoder loss.
+        """
+        model = _oracle_model(
+            cfg_loss=cfg_loss,
+            cfg_metrics=cfg_metrics,
+            auxiliary_loss_weights={"autoencoder": 0.5},
+        )
+        model.train()
+        batch = _oracle_batch()
+        autoencoder_loss = model.loss(2.0 * batch["target"], batch["target"])
+
+        with pytest.MonkeyPatch.context() as mp:
+            mock_log = MagicMock()
+            mp.setattr(model, "log", mock_log)
+            result = model.training_step(batch, 0)
+        result.loss.backward()
+
+        torch.testing.assert_close(result.loss, 0.5 * autoencoder_loss)
+        logged = {c.args[0]: c.args[1] for c in mock_log.call_args_list}
+        assert logged["train_latent_loss"].item() == 0.0
+        torch.testing.assert_close(logged["train_autoencoder_loss"], autoencoder_loss)
+
+        # The decoder is trainable, and the gradient reaches it and the encoder
+        decoder, encoder = model.decoder, model.encoders[0]
+        assert isinstance(decoder, _ScaledDecoder)
+        assert isinstance(encoder, _ScaledEncoder)
+        assert decoder.training
+        assert decoder.scale.grad is not None
+        assert decoder.scale.grad.abs() > 0
+        assert encoder.scale.grad is not None
+        assert encoder.scale.grad.abs() > 0
+
+        # The latent loss must not train the shared encoder through the target latent
+        processor = model.processor
+        assert isinstance(processor, _OracleProcessor)
+        assert processor.target is not None
+        assert not processor.target.requires_grad
+
+    def test_autoencoder_loss_skipped_when_frozen(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """Skip the autoencoder loss if the encoders and the decoder are frozen.
+
+        This is the processor-stage case.
+        """
+        model = _oracle_model(cfg_loss=cfg_loss, cfg_metrics=cfg_metrics)
+        model.decoder.freeze()
+        for encoder in model.encoders:
+            encoder.freeze()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mock_log = MagicMock()
+            mp.setattr(model, "log", mock_log)
+            result = model.training_step(_oracle_batch(), 0)
+
+        # Only the latent loss from _OracleProcessor (zero) remains
+        assert result.loss.item() == 0.0
+        assert not result.loss.requires_grad
+        assert [c.args[0] for c in mock_log.call_args_list] == ["train_loss"]
 
     def test_checkpoint_loads_with_weights_only(
         self,

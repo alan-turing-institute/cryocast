@@ -103,9 +103,22 @@ CryoCast then does these steps automatically:
    Each batch gets one `future_<input>` key for each input group.
 2. The model encodes these inputs and gives the result to `rollout` as `y`.
    The model detaches `y` from the computation graph. Thus, the loss cannot change its own target.
-3. The model freezes the decoder.
+3. The model decodes the encoded inputs and compares them to the target.
+   This autoencoder loss trains the encoders and the decoder, because the latent loss does not go through the decoder.
+   The model adds it to the latent loss, with the weight `auxiliary_loss_weights.autoencoder` (default `1.0`).
+   The model logs the two parts as `train_latent_loss` and `train_autoencoder_loss`.
 
-You do not set a configuration key for these steps.
+You do not set a configuration key for steps 1 and 2.
+To change the weight of the autoencoder loss, set it at the top level of the model config:
+
+```yaml
+auxiliary_loss_weights:
+  autoencoder: 0.5
+```
+
+The weight must not be negative.
+If the weight is `0`, the model does not calculate the autoencoder loss, and it freezes the decoder.
+If the encoders and the decoder are all frozen, for example in the processor stage of [multistage training](./train-multistage.md), the model does not calculate the autoencoder loss.
 
 !!! warning
     The `future_<input>` keys contain ground-truth data for the forecast steps.

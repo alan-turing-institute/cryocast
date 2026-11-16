@@ -1340,8 +1340,15 @@ class TestModelService:
                 train_cfg=DictConfig({}), processor_model=pretrained
             )
 
+        # The finetune loss also has an autoencoder term, which the processor stage
+        # skips because its encoders and decoder are frozen. Compare only the latent
+        # loss.
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(model, "_uses_autoencoder_loss", lambda: False)
+            finetune_loss = loss(model)
+
         assert torch.isfinite(expected)
-        torch.testing.assert_close(loss(model), expected, rtol=0, atol=0)
+        torch.testing.assert_close(finetune_loss, expected, rtol=0, atol=0)
 
     def test_train_stage_processor_trains_new_processor(self, tmp_path: Path) -> None:
         service = ModelService.__new__(ModelService)
