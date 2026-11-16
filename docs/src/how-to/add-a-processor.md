@@ -118,7 +118,7 @@ auxiliary_loss_weights:
 
 The weight must not be negative.
 If the weight is `0`, the model does not calculate the autoencoder loss, and it freezes the decoder.
-If the encoders and the decoder are all frozen, for example in the processor stage of [multistage training](./train-multistage.md), the model does not calculate the autoencoder loss.
+The processor stage of [multistage training](./train-multistage.md) always sets the weight to `0`, because its encoders and decoder are frozen.
 
 !!! warning
     The `future_<input>` keys contain ground-truth data for the forecast steps.

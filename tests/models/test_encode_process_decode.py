@@ -645,28 +645,6 @@ class TestEncodeProcessDecode:
         assert processor.target is not None
         assert not processor.target.requires_grad
 
-    def test_autoencoder_loss_skipped_when_frozen(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        """Skip the autoencoder loss if the encoders and the decoder are frozen.
-
-        This is the processor-stage case.
-        """
-        model = _oracle_model(cfg_loss=cfg_loss, cfg_metrics=cfg_metrics)
-        model.decoder.freeze()
-        for encoder in model.encoders:
-            encoder.freeze()
-
-        with pytest.MonkeyPatch.context() as mp:
-            mock_log = MagicMock()
-            mp.setattr(model, "log", mock_log)
-            result = model.training_step(_oracle_batch(), 0)
-
-        # Only the latent loss from _OracleProcessor (zero) remains
-        assert result.loss.item() == 0.0
-        assert not result.loss.requires_grad
-        assert [c.args[0] for c in mock_log.call_args_list] == ["train_loss"]
-
     def test_checkpoint_loads_with_weights_only(
         self,
         cfg_decoder: DictConfig,

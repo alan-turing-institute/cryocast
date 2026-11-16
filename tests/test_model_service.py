@@ -1341,10 +1341,9 @@ class TestModelService:
             )
 
         # The finetune loss also has an autoencoder term, which the processor stage
-        # skips because its encoders and decoder are frozen. Compare only the latent
-        # loss.
+        # disables. Compare only the latent loss.
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(model, "_uses_autoencoder_loss", lambda: False)
+            mp.setattr(model, "autoencoder_loss_weight", 0.0)
             finetune_loss = loss(model)
 
         assert torch.isfinite(expected)

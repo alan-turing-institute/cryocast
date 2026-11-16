@@ -30,10 +30,12 @@ class ProcessorStage(EncodeProcessDecode):
         - copy encoders from DecoderStage and freeze their parameters
         - copy the decoder from DecoderStage and freeze its parameters
         - copy target_variable_indices from checkpoint or from DecoderStage
+        - disable the autoencoder loss, which has no effect with these modules frozen
         """
         kwargs.setdefault(
             "target_variable_indices", decoder_model.target_variable_indices
         )
+        kwargs["auxiliary_loss_weights"] = {"autoencoder": 0.0}
         super().__init__(
             encoders=[
                 copy.deepcopy(encoder).freeze() for encoder in decoder_model.encoders
