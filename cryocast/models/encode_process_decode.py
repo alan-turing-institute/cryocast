@@ -460,14 +460,6 @@ class EncodeProcessDecode(BaseModel):
         return self._forward_rollout_latent(inputs)
 
     @override
-    def train(self, mode: bool = True) -> "EncodeProcessDecode":
-        """Set training mode, and keep any unused modules frozen."""
-        super().train(mode)
-        if mode:
-            self._freeze_unused_modules()
-        return self
-
-    @override
     def training_step(
         self,
         batch: dict[str, TensorNTCHW],
