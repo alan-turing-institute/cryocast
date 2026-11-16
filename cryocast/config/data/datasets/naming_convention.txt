@@ -13,10 +13,12 @@ content:
   - sicnorth: sea ice concentration (northern hemisphere)
   - sicsouth: sea ice concentration (southern hemisphere)
   - sicglobal: sea ice concentration (both hemispheres)
+  - sitnorth: sea ice thickness (northern hemisphere)
   - weathernorth: weather data (northern hemisphere)
   - weathersouth: weather data (southern hemisphere)
 source:
   - argo: Argo float data
+  - cs2smos: Merged CryoSat-2/SMOS sea ice thickness from AWI
   - era5: ERA5 weather data
   - icenet: SSMIS sea ice data from OSISAF via IceNet v1
   - ssmis: SSMIS sea ice data from OSISAF
