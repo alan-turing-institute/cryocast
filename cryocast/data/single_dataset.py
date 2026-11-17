@@ -2,6 +2,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
+from itertools import pairwise
 from pathlib import Path
 from typing import ClassVar, TypeVar, cast
 
@@ -23,12 +24,13 @@ class SingleDataset(Dataset):
     # Cache anemoi reads at class level to reduce disk I/O
     anemoi_cache: ClassVar[dict[tuple[Path, ...], AnemoiDataset]] = {}
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         input_files: Sequence[Path],
         *,
         date_ranges: Sequence[dict[str, str | None]] = [{"start": None, "end": None}],
+        fill_value: float | None = None,
         group: str | None = None,
         normalise: bool = True,
         variables: Sequence[str] = (),
@@ -44,14 +46,34 @@ class SingleDataset(Dataset):
             date_ranges: The ranges of dates to include in the dataset. Each range is a
                 dict with "start" and "end" keys, which can be None to indicate
                 open-ended ranges.
+            fill_value: If given, any date with no data holds this value, in
+                normalised units, instead of raising an error. This includes dates
+                outside the dataset. If None, only dates with data can be read.
             group: The group name for the dataset, used to identify it in plots and
                 logs. If None, the group name defaults to the dataset name.
             normalise: Whether to normalise the data to [0, 1] for each channel.
             variables: The names of the variables to include in the dataset. If empty,
                 all variables are included.
 
+        Raises:
+            TypeError: If fill_value is not a number.
+            ValueError: If fill_value is given and normalise is False. The fill value
+                is in normalised units, so it has no meaning for raw data.
+
         """
         super().__init__()
+        if fill_value is not None and (
+            isinstance(fill_value, bool) or not isinstance(fill_value, (int, float))
+        ):
+            msg = f"fill_value must be a number, not {fill_value!r}."
+            raise TypeError(msg)
+        if fill_value is not None and not normalise:
+            msg = (
+                f"fill_value={fill_value!r} is in normalised units, so it cannot be "
+                "used with normalise=False."
+            )
+            raise ValueError(msg)
+        self.fill_value = None if fill_value is None else float(fill_value)
         self.hemisphere: Hemisphere = (
             Hemisphere.NORTH
             if any("north" in str(input_file).lower() for input_file in input_files)
@@ -86,7 +108,7 @@ class SingleDataset(Dataset):
         idx2anemoi = {}
         for idx_ds, dataset in enumerate(self.dataslices):
             for idx_date, date in enumerate(dataset.dates):
-                idx_global = self._date2idx.get(self.normalise_date(date), None)
+                idx_global = self.to_index(date)
                 if idx_global is not None:
                     idx2anemoi[idx_global] = (idx_ds, idx_date)
         return idx2anemoi
@@ -262,60 +284,93 @@ class SingleDataset(Dataset):
             msg = f"Index {idx} out of range for dataset of length {len(self)}."
             raise IndexError(msg) from exc
 
+    def _get_tchw_by_date(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
+        """Return normalised [T, C, H, W] data, reading each date separately.
+
+        A date with no data holds the fill value, or raises an IndexError if there is
+        no fill value.
+        """
+        indices = [self.to_index(date) for date in dates]
+        present = [(t, idx) for t, idx in enumerate(indices) if idx is not None]
+        np_dtype = np.dtype(self.dataslices[0].dtype)
+        normalised_data = (
+            self.normalise(np.stack([self._chw_raw(idx) for _, idx in present], axis=0))
+            if present
+            else np.empty((0, *self.space.chw), dtype=np_dtype)
+        )
+        # 1. there are no missing dates
+        if len(present) == len(dates):
+            return normalised_data
+        # 2. there are missing dates, but we have a fill value
+        if self.fill_value is not None:
+            infilled_data = np.full(
+                (len(dates), *self.space.chw), self.fill_value, dtype=np_dtype
+            )
+            infilled_data[[t for t, _ in present]] = normalised_data
+            return infilled_data
+        # 3. there are unhandled missing dates
+        missing = [
+            np.datetime_as_string(date, unit="D")
+            for date, idx in zip(dates, indices, strict=True)
+            if idx is None
+        ]
+        msg = (
+            f"Date(s) {','.join(missing)} not found in the dataset "
+            f"{np.datetime_as_string(self.start_date, unit='D')} "
+            f"to {np.datetime_as_string(self.end_date, unit='D')} every "
+            f"{self.frequency}"
+        )
+        raise IndexError(msg)
+
+    def _slice_location(self, dates: Sequence[np.datetime64]) -> tuple[int, int] | None:
+        """Return the dataslice and start index of a run of consecutive dates.
+
+        Returns None unless the dates are consecutive and one dataslice has data on
+        all of them.
+        """
+        # If the dates are not the same frequency as the dataset then they cannot be
+        # consecutive
+        if not dates or any(
+            later - earlier != self.frequency for earlier, later in pairwise(dates)
+        ):
+            return None
+        idx_global_first = self._date2idx.get(dates[0])
+        idx_global_last = self._date2idx.get(dates[-1])
+        # Global indices only count dates with data, so if the first and last are
+        # len(dates) - 1 indices apart, the slice must be consecutive
+        if (
+            idx_global_first is None
+            or idx_global_last is None
+            or idx_global_last != idx_global_first + len(dates) - 1
+        ):
+            return None
+        idx_ds, idx_date = self._idx2anemoi[idx_global_first]
+        if self._idx2anemoi[idx_global_last][0] != idx_ds:
+            return None
+        return idx_ds, idx_date
+
     def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
-        """Return normalised data for an arbitrary sequence of timesteps in [T, C, H, W] format."""
+        """Return normalised [T, C, H, W] data for a sequence of timesteps.
+
+        If the dates are consecutive and one dataslice has data on all of them, they
+        are read as a single slice. Otherwise each date is read separately.
+
+        A date with no data holds the fill value, or raises an IndexError if there is
+        no fill value.
+        """
+        dates = [self.normalise_date(date) for date in dates]
+        if (location := self._slice_location(dates)) is None:
+            return self._get_tchw_by_date(dates)
+        idx_ds, idx_date = location
         return self.normalise(
-            np.stack(
-                [self._chw_raw(self.to_index(target_date)) for target_date in dates],
-                axis=0,
+            self.dataslices[idx_ds][idx_date : idx_date + len(dates)].reshape(
+                len(dates), *self.space.chw
             )
         )
 
-    def get_tchw_slice(
-        self, start_date: np.datetime64, n_steps: int, *, check: bool = True
-    ) -> ArrayTCHW:
-        """Return the data for consecutive timesteps in [T, C, H, W] format.
-
-        Since contiguous dates must be in a single dataslice, we simply identify which
-        one this is and read from it.
-
-        If `check` is True then we check that we're not crossing the boundary between
-        dataslices, adding a small amount of overhead.
-
-        Args:
-            start_date: The date of the first timestep to return.
-            n_steps: The number of consecutive timesteps to return.
-            check: Whether to check that the requested slice is valid. If False, this
-                   method may return meaningless or incorrect data if the requested
-                   slice is invalid
-
-        """
-        start_date = self.normalise_date(start_date)
-        try:
-            idx_global_start = self._date2idx[start_date]
-            idx_ds_start, idx_date_start = self._idx2anemoi[idx_global_start]
-            if check:
-                idx_global_end = idx_global_start + n_steps - 1
-                idx_ds_end, _ = self._idx2anemoi[idx_global_end]
-                if idx_ds_start != idx_ds_end:
-                    msg = (
-                        f"Requested slice of {n_steps} steps following {start_date} "
-                        f"crosses the boundary between dataslices {idx_ds_start} and "
-                        f"{idx_ds_end}."
-                    )
-                    raise ValueError(msg)
-            return self.normalise(
-                self.dataslices[idx_ds_start][
-                    idx_date_start : idx_date_start + n_steps
-                ].reshape(n_steps, *self.space.chw)
-            )
-        except KeyError as exc:
-            msg = (
-                f"Requested slice of {n_steps} steps following {start_date} "
-                f"is out of range for dataset with dates from {self.start_date} to "
-                f"{self.end_date}"
-            )
-            raise ValueError(msg) from exc
+    def has_date(self, date: np.datetime64) -> bool:
+        """Return whether the dataset has data on a given date."""
+        return self.to_index(date) is not None
 
     def normalise(self, data: ArrayType) -> ArrayType:
         """Normalise the data to [0, 1] for each channel if configured to do so.
@@ -343,23 +398,17 @@ class SingleDataset(Dataset):
         normalise: bool | None = None,
         variables: Sequence[str] | None = None,
     ) -> "SingleDataset":
+        """Return a new dataset that uses a subset of this dataset."""
         return SingleDataset(
             name=self.name,
             input_files=self._input_files,
             date_ranges=date_ranges or self._date_ranges,
+            fill_value=self.fill_value,
             group=self.group,
             normalise=self._normalise if normalise is None else normalise,
             variables=variables or list(self._variables),
         )
 
-    def to_index(self, date: np.datetime64) -> int:
-        """Return the index of a given date in the dataset."""
-        date = self.normalise_date(date)
-        try:
-            return self._date2idx[date]
-        except KeyError as exc:
-            msg = (
-                f"Date {np.datetime_as_string(date, unit='D')} not found in the "
-                f"dataset {self.start_date} to {self.end_date} every {self.frequency}"
-            )
-            raise IndexError(msg) from exc
+    def to_index(self, date: np.datetime64) -> int | None:
+        """Return the index of a given date in the dataset, or None if it has no data."""
+        return self._date2idx.get(self.normalise_date(date))

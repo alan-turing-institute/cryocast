@@ -1,4 +1,5 @@
 defaults:
+  - allow_missing: default
   - datasets:
     - samp_floatsouth_argo_25p0km_2020_2024_24h_v3
     - samp_sicsouth_osisaf_25p0km_2020_2024_24h_v1

@@ -1,0 +1,2 @@
+groups: []  # input groups that may be missing on some days
+fill_value: -1.0  # fill value for missing days, in normalised units

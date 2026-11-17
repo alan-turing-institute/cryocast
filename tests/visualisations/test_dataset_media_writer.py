@@ -1,4 +1,5 @@
 import io
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
@@ -54,11 +55,9 @@ def fake_video_dataset() -> SingleDataset:
             """Return the three available timesteps."""
             return 3
 
-        def get_tchw_slice(
-            self, _start_date: np.datetime64, n_steps: int
-        ) -> np.ndarray:
+        def get_tchw(self, dates: Sequence[np.datetime64]) -> np.ndarray:
             """Return deterministic values for the requested number of timesteps."""
-            return np.ones((n_steps, 2, 4, 4), dtype=np.float32)
+            return np.ones((len(dates), 2, 4, 4), dtype=np.float32)
 
     return cast("SingleDataset", FakeVideoDataset())
 
