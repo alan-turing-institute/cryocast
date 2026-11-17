@@ -109,16 +109,19 @@ class CombinedDataset(Dataset):
                 "when the input datasets do not have overlapping time ranges."
             )
             raise ValueError(msg)
+        # Log fraction of available dates that have data for each input dataset
         for ds in self.inputs:
-            if ds.fill_value is not None and not any(
-                available_dates[0] <= date <= available_dates[-1] for date in ds.dates
-            ):
-                logger.warning(
-                    "Input '%s' has no data in the range %s to %s.",
-                    ds.name,
-                    available_dates[0],
-                    available_dates[-1],
-                )
+            n_filled = len(set(ds.dates).intersection(available_dates))
+            logger.info(
+                "Input '%s' has data on %.0f%% of dates from %s to %s.%s",
+                ds.name,
+                100 * n_filled / len(available_dates),
+                available_dates[0],
+                available_dates[-1],
+                f" Missing dates are filled with {ds.fill_value}."
+                if ds.fill_value is not None
+                else "",
+            )
         return available_dates
 
     @property

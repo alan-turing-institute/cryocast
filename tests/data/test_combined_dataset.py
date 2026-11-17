@@ -556,17 +556,33 @@ class TestOptionalGroups:
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
 
-    def test_warns_when_optional_input_has_no_data(
+    def test_logs_when_optional_input_has_no_data(
         self,
         mock_dataset: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """An optional input with no data in its date range logs a warning."""
+        """An optional input with no data in its date range logs 0% coverage."""
         combined = self._combined(
             mock_dataset,
             mock_dataset,
             optional_date_ranges=[{"start": "2030-01-01", "end": None}],
         )
-        with caplog.at_level(logging.WARNING, logger="cryocast.data.combined_dataset"):
+        with caplog.at_level(logging.INFO, logger="cryocast.data.combined_dataset"):
             _ = combined.dates
-        assert "Input 'optional' has no data in the range" in caplog.text
+        assert "Input 'optional' has data on 0% of dates" in caplog.text
+
+    def test_logs_coverage_of_optional_input(
+        self,
+        mock_dataset: Path,
+        mock_dataset_missing_dates_fill_value: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Partial coverage is logged as a percentage of the start dates."""
+        combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
+        with caplog.at_level(logging.INFO, logger="cryocast.data.combined_dataset"):
+            _ = combined.dates
+        # Start dates are days 0, 1 and 2; the optional input has data on 0 and 2
+        (record,) = [r for r in caplog.records if "Input 'optional'" in r.message]
+        assert record.levelno == logging.INFO
+        assert r"has data on 67% of dates" in record.message
+        assert r"filled with -1.0" in record.message
