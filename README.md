@@ -8,7 +8,7 @@
 | cryocast/callbacks/\_\_init\_\_.py                                 |        7 |        0 |    100% |           |
 | cryocast/callbacks/activation\_saver.py                            |       92 |        0 |    100% |           |
 | cryocast/callbacks/ema\_weight\_averaging\_callback.py             |       21 |        0 |    100% |           |
-| cryocast/callbacks/media\_logging\_callback.py                     |      166 |        0 |    100% |           |
+| cryocast/callbacks/media\_logging\_callback.py                     |      169 |        2 |     99% |   367-368 |
 | cryocast/callbacks/metric\_summary\_callback.py                    |      106 |        1 |     99% |        93 |
 | cryocast/callbacks/prediction\_writer.py                           |      203 |       19 |     91% |71-74, 79-80, 164-168, 282-283, 340-344, 346-350, 369, 392-393, 409-413 |
 | cryocast/callbacks/unconditional\_checkpoint.py                    |       26 |        0 |    100% |           |
@@ -31,9 +31,9 @@
 | cryocast/config/\_\_init\_\_.py                                    |        0 |        0 |    100% |           |
 | cryocast/data/\_\_init\_\_.py                                      |        5 |        0 |    100% |           |
 | cryocast/data/calendar\_day\_climatology.py                        |       40 |        0 |    100% |           |
-| cryocast/data/combined\_dataset.py                                 |       65 |        0 |    100% |           |
-| cryocast/data/common\_data\_module.py                              |      153 |        5 |     97% |233-234, 252-258 |
-| cryocast/data/single\_dataset.py                                   |      148 |        2 |     99% |   313-318 |
+| cryocast/data/combined\_dataset.py                                 |       73 |        0 |    100% |           |
+| cryocast/data/common\_data\_module.py                              |      165 |        5 |     97% |264-265, 283-289 |
+| cryocast/data/single\_dataset.py                                   |      167 |        1 |     99% |       349 |
 | cryocast/data/variable\_selection.py                               |       50 |        0 |    100% |           |
 | cryocast/exceptions.py                                             |        8 |        0 |    100% |           |
 | cryocast/feature\_importance.py                                    |       26 |        0 |    100% |           |
@@ -86,7 +86,7 @@
 | cryocast/metrics/spatial\_mean\_trace.py                           |        8 |        0 |    100% |           |
 | cryocast/metrics/ssim.py                                           |       43 |        2 |     95% |     55-56 |
 | cryocast/model\_service/\_\_init\_\_.py                            |        3 |        0 |    100% |           |
-| cryocast/model\_service/checkpoints.py                             |      165 |        0 |    100% |           |
+| cryocast/model\_service/checkpoints.py                             |      170 |        0 |    100% |           |
 | cryocast/model\_service/model\_service.py                          |      267 |        4 |     99% |59-60, 219-220 |
 | cryocast/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
 | cryocast/models/base\_model.py                                     |      157 |        3 |     98% |207, 211, 215 |
@@ -174,7 +174,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      113 |        1 |     99% |       182 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6682** |  **340** | **95%** |           |
+| **TOTAL**                                                          | **6729** |  **341** | **95%** |           |
 
 
 ## Setup coverage badge
