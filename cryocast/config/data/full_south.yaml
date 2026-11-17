@@ -1,14 +1,8 @@
 defaults:
+  - allow_missing: default
   - datasets:
     - full_floatsouth_argo_25p0km_1999_2025_24h_v2
     - full_sicsouth_osisaf_25p0km_1979_2025_24h_v1
     - full_weathersouth_era5_25p0km_1979_2025_24h_v3
   - split: full_dataset
   - _self_
-
-# Input groups (group_as names) that may be missing on some days. Their missing days
-# hold optional_fill, in normalised units. Normalised training data lies in [0, 1],
-# and data outside the training period may fall slightly outside this. With []
-# nothing changes.
-optional_groups: []
-optional_fill: -1.0

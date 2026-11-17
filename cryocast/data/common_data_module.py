@@ -54,33 +54,26 @@ class CommonDataModule(LightningDataModule):
         )
 
         # Dataset groups that may be missing on some days, and the value for those days
-        # Treat missing or empty 'optional_groups' in YAML as no optional groups
-        optional_groups = config["data"].get("optional_groups") or []
-        if isinstance(optional_groups, str):
-            msg = (
-                f"optional_groups must be a list of group names, got the string "
-                f"{optional_groups!r}. Use [{optional_groups}] instead."
-            )
-            raise TypeError(msg)
-        self.optional_groups = [str(g) for g in optional_groups]
-        if unknown := sorted(set(self.optional_groups) - self.dataset_groups.keys()):
-            msg = (
-                f"Optional groups {unknown} are not dataset groups. "
-                f"Available groups: {sorted(self.dataset_groups.keys())}."
-            )
-            raise ValueError(msg)
+        # Missing or empty 'allow_missing.groups' means that all groups are required
+        allow_missing = config["data"].get("allow_missing") or {}
+        groups = allow_missing.get("groups") or []
+        self.allow_missing_groups = (
+            [groups] if isinstance(groups, str) else [str(group) for group in groups]
+        )
+        self.missing_fill_value = allow_missing.get("fill_value", -1.0)
         # Only check when needed, as target_group_name raises if the target is invalid
-        if self.optional_groups and self.target_group_name in self.optional_groups:
-            msg = f"The target group {self.target_group_name!r} cannot be optional."
-            raise ValueError(msg)
-        self.optional_fill = config["data"].get("optional_fill", -1.0)
-        # Optional groups must have a fill value to use for their missing dates
-        if self.optional_groups and self.optional_fill is None:
-            msg = (
-                f"With optional_groups set to {self.optional_groups}, optional_fill "
-                "must be a number."
-            )
-            raise ValueError(msg)
+        if self.allow_missing_groups:
+            allowed = self.dataset_groups.keys() - {self.target_group_name}
+            if invalid := sorted(set(self.allow_missing_groups) - allowed):
+                msg = (
+                    f"allow_missing.groups {invalid} must be dataset groups other "
+                    f"than the target ({self.target_group_name}). Available groups: "
+                    f"{sorted(allowed)}."
+                )
+                raise ValueError(msg)
+            if self.missing_fill_value is None:
+                msg = "allow_missing.fill_value must be a number."
+                raise ValueError(msg)
 
         # Set periods for prediction, testing, training and validation
         self.batch_size = int(config["window"]["batch_size"])
@@ -179,12 +172,16 @@ class CommonDataModule(LightningDataModule):
     @cached_property
     def datasets_unfiltered(self) -> dict[str, SingleDataset]:
         """Return an unfiltered dictionary of dataset group names to SingleDataset objects."""
-        # Optional groups keep the days they are missing, holding the fill value
+        # Groups that allow missing days keep those days, holding the fill value
         return {
             name: SingleDataset(
                 name,
                 paths,
-                fill_value=self.optional_fill if name in self.optional_groups else None,
+                fill_value=(
+                    self.missing_fill_value
+                    if name in self.allow_missing_groups
+                    else None
+                ),
             )
             for name, paths in self.dataset_groups.items()
         }

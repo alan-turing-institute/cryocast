@@ -246,19 +246,20 @@ class TestMergeConfig:
 
         assert combined["variables"] == ckpt_config["variables"]
 
-    def test_optional_inputs_from_checkpoint(
+    def test_allow_missing_from_checkpoint(
         self,
         cfg_model_service: DictConfig,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Optional groups and their fill come from the checkpoint, with a warning."""
+        """Groups that allow missing days and their fill come from the checkpoint."""
         ckpt_config = cfg_model_service.copy()
-        ckpt_config["data"]["optional_groups"] = ["float-argo"]
-        ckpt_config["data"]["optional_fill"] = "mean"
+        ckpt_config["data"]["allow_missing"] = {
+            "groups": ["float-argo"],
+            "fill_value": -2.0,
+        }
         config = cfg_model_service.copy()
-        config["data"]["optional_groups"] = []
-        config["data"]["optional_fill"] = 0.0
+        config["data"]["allow_missing"] = {"groups": [], "fill_value": 0.0}
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)
 
@@ -267,23 +268,22 @@ class TestMergeConfig:
         ):
             combined = checkpoint_file.merge_config(config)
 
-        assert combined["data"]["optional_groups"] == ["float-argo"]
-        assert combined["data"]["optional_fill"] == "mean"
-        assert "data.optional_groups=['float-argo'] (config has [])" in caplog.text
-        assert "data.optional_fill='mean' (config has 0.0)" in caplog.text
+        assert combined["data"]["allow_missing"]["groups"] == ["float-argo"]
+        assert combined["data"]["allow_missing"]["fill_value"] == -2.0
+        assert "data.allow_missing.groups=['float-argo'] (config has [])" in caplog.text
+        assert "data.allow_missing.fill_value=-2.0 (config has 0.0)" in caplog.text
 
-    def test_older_checkpoint_has_no_optional_inputs(
+    def test_older_checkpoint_allows_no_missing(
         self,
         cfg_model_service: DictConfig,
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A checkpoint saved before optional inputs existed gets none, with a warning."""
+        """A checkpoint saved before allow_missing existed gets no groups, with a warning."""
         ckpt_config = cfg_model_service.copy()
-        ckpt_config["data"].pop("optional_groups", None)
-        ckpt_config["data"].pop("optional_fill", None)
+        ckpt_config["data"].pop("allow_missing", None)
         config = cfg_model_service.copy()
-        config["data"]["optional_groups"] = ["float-argo"]
+        config["data"]["allow_missing"] = {"groups": ["float-argo"]}
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)
 
@@ -292,8 +292,8 @@ class TestMergeConfig:
         ):
             combined = checkpoint_file.merge_config(config)
 
-        assert combined["data"]["optional_groups"] == []
-        assert "data.optional_groups=[] (config has ['float-argo'])" in caplog.text
+        assert combined["data"]["allow_missing"]["groups"] == []
+        assert "data.allow_missing.groups=[] (config has ['float-argo'])" in caplog.text
 
     def test_batch_size_from_config(
         self, cfg_model_service: DictConfig, tmp_path: Path

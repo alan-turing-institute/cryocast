@@ -960,15 +960,15 @@ class TestCommonDataModuleClimatology:
         assert "Cannot build climatology" in caplog.text
 
 
-class TestOptionalGroups:
-    """`data.optional_groups` keeps windows where an input is missing, filling it."""
+class TestAllowMissing:
+    """`data.allow_missing` keeps windows where an input is missing, filling it."""
 
     @staticmethod
     def _config(
         mock_dataset: Path,
         optional_path: Path,
-        optional_groups: list[str],
-        optional_fill: float = -1.0,
+        groups: list[str],
+        fill_value: float = -1.0,
     ) -> DictConfig:
         cfg = _build_config(
             str(mock_dataset.parent.parent.parent),
@@ -979,8 +979,7 @@ class TestOptionalGroups:
             input_variables={"group1": ["ice_conc"], "optional": ["ice_conc"]},
             target_variables={"group1": ["ice_conc"]},
         )
-        cfg.data.optional_groups = optional_groups
-        cfg.data.optional_fill = optional_fill
+        cfg.data.allow_missing = {"groups": groups, "fill_value": fill_value}
         cfg.window.n_history_steps = 2
         return cfg
 
@@ -1008,43 +1007,40 @@ class TestOptionalGroups:
                 mock_dataset,
                 mock_dataset_missing_dates_fill_value,
                 ["optional"],
-                optional_fill=-5.0,
+                fill_value=-5.0,
             )
         )
         np.testing.assert_array_equal(dm.training_dataset[0]["optional"][1], -5.0)
 
-    def test_unknown_optional_group_raises(self, mock_dataset: Path) -> None:
-        with pytest.raises(ValueError, match="are not dataset groups"):
+    def test_unknown_group_raises(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match="must be dataset groups other than"):
             CommonDataModule(self._config(mock_dataset, mock_dataset, ["unknown"]))
 
-    def test_optional_groups_as_string_raises(self, mock_dataset: Path) -> None:
+    def test_group_as_string(self, mock_dataset: Path) -> None:
         cfg = self._config(mock_dataset, mock_dataset, [])
-        cfg.data.optional_groups = "optional"
-        with pytest.raises(TypeError, match=r"Use \[optional\] instead"):
-            CommonDataModule(cfg)
+        cfg.data.allow_missing.groups = "optional"
+        assert CommonDataModule(cfg).allow_missing_groups == ["optional"]
 
-    def test_optional_groups_null_means_none(self, mock_dataset: Path) -> None:
+    def test_null_groups_means_none(self, mock_dataset: Path) -> None:
         cfg = self._config(mock_dataset, mock_dataset, [])
-        cfg.data.optional_groups = None
-        assert CommonDataModule(cfg).optional_groups == []
+        cfg.data.allow_missing.groups = None
+        assert CommonDataModule(cfg).allow_missing_groups == []
 
-    def test_null_optional_fill_raises(self, mock_dataset: Path) -> None:
+    def test_null_fill_value_raises(self, mock_dataset: Path) -> None:
         cfg = self._config(mock_dataset, mock_dataset, ["optional"])
-        cfg.data.optional_fill = None
-        with pytest.raises(ValueError, match="optional_fill must be a number"):
+        cfg.data.allow_missing.fill_value = None
+        with pytest.raises(
+            ValueError, match=r"allow_missing\.fill_value must be a number"
+        ):
             CommonDataModule(cfg)
 
-    def test_null_optional_fill_without_optional_groups(
-        self, mock_dataset: Path
-    ) -> None:
+    def test_null_fill_value_without_groups(self, mock_dataset: Path) -> None:
         cfg = self._config(mock_dataset, mock_dataset, [])
-        cfg.data.optional_fill = None
-        assert CommonDataModule(cfg).optional_fill is None
+        cfg.data.allow_missing.fill_value = None
+        assert CommonDataModule(cfg).missing_fill_value is None
 
-    def test_optional_target_group_raises(self, mock_dataset: Path) -> None:
-        with pytest.raises(
-            ValueError, match="target group 'group1' cannot be optional"
-        ):
+    def test_target_group_raises(self, mock_dataset: Path) -> None:
+        with pytest.raises(ValueError, match=r"\['group1'\] must be dataset groups"):
             CommonDataModule(self._config(mock_dataset, mock_dataset, ["group1"]))
 
     def test_batches_match_input_spaces(

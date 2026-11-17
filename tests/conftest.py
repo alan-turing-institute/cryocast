@@ -150,6 +150,7 @@ def cfg_model_service() -> DictConfig:
     return DictConfig(
         {
             "data": {
+                "allow_missing": {"groups": []},
                 "datasets": {
                     "mock-dataset-1": {
                         "name": "mock_dataset",

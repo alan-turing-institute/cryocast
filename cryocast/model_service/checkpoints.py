@@ -27,9 +27,6 @@ from cryocast.utils import to_plain_types
 
 log = logging.getLogger(__name__)
 
-# Keys under "data" that change the model's inputs, so must match training
-OPTIONAL_INPUT_KEYS = ("optional_groups", "optional_fill")
-
 
 @dataclass(frozen=True)
 class CheckpointFile:
@@ -141,14 +138,18 @@ class CheckpointFile:
     def merge_config(self, config: DictConfig) -> DictConfig:
         """Combine the current config with the config that the checkpoint was trained with.
 
-        The current config takes precedence, except for the "model", "variables" and
-        "window" sections and the "data.optional_groups" and "data.optional_fill"
-        keys, which describe the trained model. The "model" and "window" checkpoint
-        configs are merged over the current ones, apart from "window.batch_size",
-        while the "variables" checkpoint config and the optional input keys replace the
-        current ones entirely. If the current config names a different model, the
-        "model" checkpoint config also replaces the current one entirely. A warning
-        lists any current values that are replaced.
+        The current config takes precedence, except for the sections that describe the
+        trained model. These come from the checkpoint as follows:
+
+        - "model" and "window": each checkpoint value replaces the current value, but
+          "window.batch_size" keeps the current value. If the current config names a
+          different model, the full "model" section comes from the checkpoint.
+        - "variables" and "data.allow_missing": the checkpoint section replaces the
+          current section. If the checkpoint has no "data.allow_missing", it was
+          trained with every input required, so "data.allow_missing.groups" is set
+          to [].
+
+        A warning lists each current value that the checkpoint replaces.
 
         Args:
             config: The current config.
@@ -169,16 +170,15 @@ class CheckpointFile:
         # We must use the same variables that the checkpoint was trained with
         if "variables" in ckpt_config:
             combined["variables"] = ckpt_config["variables"]
-        # Optional inputs and their fill change what the model sees, so these must also
-        # match training. Checkpoints saved before optional inputs existed were trained
-        # with every input required, so they get no optional groups.
-        for key in OPTIONAL_INPUT_KEYS:
-            if (value := OmegaConf.select(ckpt_config, f"data.{key}")) is not None:
-                combined["data"][key] = value
-        if OmegaConf.select(
-            ckpt_config, "data.optional_groups"
-        ) is None and OmegaConf.select(combined, "data.optional_groups"):
-            combined["data"]["optional_groups"] = []
+        # Groups that allow missing days and their fill change what the model sees, so
+        # these must also match training. Checkpoints saved before allow_missing existed
+        # were trained with every input required, so they get no such groups.
+        OmegaConf.update(
+            combined,
+            "data.allow_missing",
+            OmegaConf.select(ckpt_config, "data.allow_missing", default={"groups": []}),
+            merge=False,
+        )
         # Batch size does not affect the trained model, so this can be overridden
         if "batch_size" in config.get("window", {}):
             combined["window"]["batch_size"] = config["window"]["batch_size"]
@@ -190,7 +190,7 @@ class CheckpointFile:
             "model",
             "variables",
             "window",
-            *(f"data.{key}" for key in OPTIONAL_INPUT_KEYS),
+            "data.allow_missing",
         ]
         configured_model = OmegaConf.select(config, "model.name")
         checkpoint_model = OmegaConf.select(ckpt_config, "model.name")
