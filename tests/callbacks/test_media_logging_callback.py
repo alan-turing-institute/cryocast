@@ -95,13 +95,14 @@ def dataset_with_uncertainty() -> tuple[MagicMock, MagicMock]:
 def _fake_input(name: str, *, missing: bool = False, filled: bool = False) -> MagicMock:
     """An input group double whose get_tchw returns [T, 1, 2, 2] ones, or raises.
 
-    If filled, the group has no data on any date but get_tchw returns the fill
-    value, as for an optional group with a fill value.
+    If missing, the group has no data on any date and get_tchw raises, as for a
+    required group. If filled, the group has no data on any date but get_tchw
+    returns the fill value, as for an optional group with a fill value.
     """
     input_ds = MagicMock()
     input_ds.name = name
     input_ds.variable_names = [f"{name}_var"]
-    input_ds.has_date.return_value = not filled
+    input_ds.has_date.return_value = not (filled or missing)
     if filled:
         input_ds.get_tchw.side_effect = lambda dates: np.full(
             (len(dates), 1, 2, 2), -1.0
@@ -679,13 +680,15 @@ class TestMakePlots:
         """Leave out a group with no data on a forecast date, but keep the others."""
         callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
         trainer, pl_module, dataset = make_plots_args
-        dataset.inputs = [_fake_input("argo", missing=True), _fake_input("era5")]
+        argo = _fake_input("argo", missing=True)
+        dataset.inputs = [argo, _fake_input("era5")]
 
         with caplog.at_level(logging.WARNING):
             callback.make_plots(trainer, pl_module, dataset, 1)
 
         assert list(stubs["log_static_inputs"].call_args.args[0]) == ["era5"]
-        assert "Skipping input plots for argo" in caplog.text
+        assert "Skipping input plots for argo: no data on" in caplog.text
+        argo.get_tchw.assert_not_called()
 
     def test_skips_input_plots_for_a_filled_group_missing_a_date(
         self,
