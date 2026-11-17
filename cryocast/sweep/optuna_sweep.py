@@ -121,12 +121,16 @@ class OptunaSweep:
         ask() and suggest() calls both mutate the sampler, so we use a single lock
         acquisition to keep the pair synchronised.
         """
+        parameters = self._built_parameters
         with self.sampler.lock(self.study):
             trial = self.study.ask()
-            overrides = [
-                (parameter, parameter.suggest(trial))
-                for parameter in self._built_parameters
-            ]
+            try:
+                overrides = [
+                    (parameter, parameter.suggest(trial)) for parameter in parameters
+                ]
+            except (Exception, KeyboardInterrupt):
+                self.study.tell(trial, state=TrialState.FAIL)
+                raise
             return trial, overrides
 
     def generate_trial_config(
@@ -249,11 +253,15 @@ class OptunaSweep:
             self.study.enqueue_trial(existing_values)
             # Register the trial and its parameters with the study
             trial = self.study.ask()
-            overrides = [
-                (parameter, parameter.suggest(trial))
-                for parameter in self._built_parameters
-            ]
-            trial.set_user_attr("resumed_from", str(config_path))
+            try:
+                overrides = [
+                    (parameter, parameter.suggest(trial))
+                    for parameter in self._built_parameters
+                ]
+                trial.set_user_attr("resumed_from", str(config_path))
+            except (Exception, KeyboardInterrupt):
+                self.study.tell(trial, state=TrialState.FAIL)
+                raise
             return trial, overrides
 
     def tell(
