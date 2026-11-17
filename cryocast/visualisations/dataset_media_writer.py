@@ -85,7 +85,7 @@ class DatasetMediaWriter:
             datetime_from_npdatetime(date)
             for date in dataset.dates[timestep : timestep + n_steps]
         )
-        tchw = dataset.get_tchw_slice(dataset.dates[timestep], n_steps)
+        tchw = dataset.get_tchw(dataset.dates[timestep : timestep + n_steps])
         variables = {
             f"{dataset.group}:{variable_name}": tchw[:, channel]
             for channel, variable_name in enumerate(dataset.variable_names)

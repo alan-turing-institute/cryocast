@@ -1,4 +1,5 @@
 defaults:
+  - allow_missing: default
   - datasets:
     - demo_sicnorth_osisaf_25p0km_2017_2019_24h_v1
     - demo_weathernorth_era5_0p5_2017_2019_24h_v1

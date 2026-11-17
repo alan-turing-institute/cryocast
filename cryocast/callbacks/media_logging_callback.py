@@ -344,17 +344,27 @@ class MediaLoggingCallback(Callback):
     ) -> dict[str, tuple[list[str], ArrayTCHW]]:
         """Map each input group to its channel names and data on the forecast dates.
 
-        An input group with no data on one of the dates is left out.
+        An input group with no data on one of the dates is left out. This includes
+        an input with a fill value, which would otherwise return the fill on that date.
         """
         np_forecast_dates = list(map(npdatetime_from_datetime, forecast_dates))
         grouped_input_data: dict[str, tuple[list[str], ArrayTCHW]] = {}
         for input_ds in dataset.inputs:
+            if missing_dates := [
+                date for date in np_forecast_dates if not input_ds.has_date(date)
+            ]:
+                log.warning(
+                    "Skipping input plots for %s: no data on %s",
+                    input_ds.name,
+                    ", ".join(str(date) for date in missing_dates),
+                )
+                continue
             try:
                 grouped_input_data[input_ds.name] = (
                     list(input_ds.variable_names),
                     input_ds.get_tchw(np_forecast_dates),
                 )
-            except (IndexError, ValueError, MemoryError, OSError) as exc:
+            except (ValueError, MemoryError, OSError) as exc:
                 log.warning("Skipping input plots for %s: %s", input_ds.name, exc)
         return grouped_input_data
 

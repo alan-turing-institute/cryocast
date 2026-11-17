@@ -53,6 +53,28 @@ class CommonDataModule(LightningDataModule):
             target_variables=config["variables"]["target"],
         )
 
+        # Dataset groups that may be missing on some days, and the value for those days
+        # Missing or empty 'allow_missing.groups' means that all groups are required
+        allow_missing = config["data"].get("allow_missing") or {}
+        groups = allow_missing.get("groups") or []
+        self.allow_missing_groups = (
+            [groups] if isinstance(groups, str) else [str(group) for group in groups]
+        )
+        self.missing_fill_value = allow_missing.get("fill_value")
+        # Only check when needed, as target_group_name raises if the target is invalid
+        if self.allow_missing_groups:
+            allowed = self.dataset_groups.keys() - {self.target_group_name}
+            if invalid := sorted(set(self.allow_missing_groups) - allowed):
+                msg = (
+                    f"allow_missing.groups {invalid} must be dataset groups other "
+                    f"than the target ({self.target_group_name}). Available groups: "
+                    f"{sorted(allowed)}."
+                )
+                raise ValueError(msg)
+            if self.missing_fill_value is None:
+                msg = "allow_missing.fill_value must be a number."
+                raise ValueError(msg)
+
         # Set periods for prediction, testing, training and validation
         self.batch_size = int(config["window"]["batch_size"])
         self.predict_periods = self._normalise(config["data"]["split"]["predict"])
@@ -150,8 +172,17 @@ class CommonDataModule(LightningDataModule):
     @cached_property
     def datasets_unfiltered(self) -> dict[str, SingleDataset]:
         """Return an unfiltered dictionary of dataset group names to SingleDataset objects."""
+        # Groups that allow missing days keep those days, holding the fill value
         return {
-            name: SingleDataset(name, paths)
+            name: SingleDataset(
+                name,
+                paths,
+                fill_value=(
+                    self.missing_fill_value
+                    if name in self.allow_missing_groups
+                    else None
+                ),
+            )
             for name, paths in self.dataset_groups.items()
         }
 
