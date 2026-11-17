@@ -326,7 +326,30 @@ class TestSingleDataset:
             input_files=[mock_dataset_missing_dates_fill_value],
             fill_value=-1.0,
         )
-        assert filled.subset(normalise=False).fill_value == -1.0
+        assert filled.subset().fill_value == -1.0
+        assert filled.subset(normalise=True).fill_value == -1.0
+
+    def test_unnormalised_subset_of_filled_dataset_raises(
+        self, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        filled = SingleDataset(
+            name="test_missing",
+            input_files=[mock_dataset_missing_dates_fill_value],
+            fill_value=-1.0,
+        )
+        with pytest.raises(ValueError, match="cannot be used with normalise=False"):
+            filled.subset(normalise=False)
+
+    def test_fill_value_without_normalise_raises(
+        self, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="cannot be used with normalise=False"):
+            SingleDataset(
+                name="test_missing",
+                input_files=[mock_dataset_missing_dates_fill_value],
+                fill_value=-1.0,
+                normalise=False,
+            )
 
     @pytest.mark.parametrize("fill", ["mean", True])
     def test_non_numeric_fill_raises(self, mock_dataset: Path, fill: object) -> None:

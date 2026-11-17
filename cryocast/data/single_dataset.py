@@ -54,6 +54,11 @@ class SingleDataset(Dataset):
             variables: The names of the variables to include in the dataset. If empty,
                 all variables are included.
 
+        Raises:
+            TypeError: If fill_value is not a number.
+            ValueError: If fill_value is given and normalise is False. The fill value
+                is in normalised units, so it has no meaning for raw data.
+
         """
         super().__init__()
         if fill_value is not None and (
@@ -61,6 +66,12 @@ class SingleDataset(Dataset):
         ):
             msg = f"fill_value must be a number, not {fill_value!r}."
             raise TypeError(msg)
+        if fill_value is not None and not normalise:
+            msg = (
+                f"fill_value={fill_value!r} is in normalised units, so it cannot be "
+                "used with normalise=False."
+            )
+            raise ValueError(msg)
         self.fill_value = None if fill_value is None else float(fill_value)
         self.hemisphere: Hemisphere = (
             Hemisphere.NORTH
@@ -450,13 +461,15 @@ class SingleDataset(Dataset):
         normalise: bool | None = None,
         variables: Sequence[str] | None = None,
     ) -> "SingleDataset":
+        """Return a new dataset that uses a subset of this dataset."""
+        _normalise = self._normalise if normalise is None else normalise
         return SingleDataset(
             name=self.name,
             input_files=self._input_files,
             date_ranges=date_ranges or self._date_ranges,
             fill_value=self.fill_value,
             group=self.group,
-            normalise=self._normalise if normalise is None else normalise,
+            normalise=_normalise,
             variables=variables or list(self._variables),
         )
 
