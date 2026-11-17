@@ -158,18 +158,15 @@ class CombinedDataset(Dataset):
 
         """
         start_date = self.dates[idx]
+        input_dates = self.get_input_steps(start_date)
         # Read history and (if requested) forecast steps as one contiguous window
         batch: dict[str, ArrayTCHW] = {}
         for ds in self.inputs:
-            window = ds.get_tchw_slice(start_date, self.n_input_steps, check=False)
+            window = ds.get_tchw(input_dates)
             batch[ds.name] = window[: self.n_history_steps]
             if self.include_future_inputs:
                 batch[f"future_{ds.name}"] = window[self.n_history_steps :]
-        batch["target"] = self.target.get_tchw_slice(
-            start_date + self.n_history_steps * self.frequency,
-            self.n_forecast_steps,
-            check=False,
-        )
+        batch["target"] = self.target.get_tchw(self.get_forecast_steps(start_date))
         if (climatology := self.climatology_for(start_date)) is not None:
             batch["climatology"] = climatology
         return batch

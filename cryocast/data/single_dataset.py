@@ -2,6 +2,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
+from itertools import pairwise
 from pathlib import Path
 from typing import ClassVar, TypeVar, cast
 
@@ -209,11 +210,6 @@ class SingleDataset(Dataset):
         )
 
     @cached_property
-    def _missing(self) -> list[set[int]]:
-        """Return the indices of the dates with no data in each dataslice."""
-        return [set(ds.missing) for ds in self.dataslices]
-
-    @cached_property
     def end_date(self) -> np.datetime64:
         """Return the end date of the dataset."""
         return self.dates[-1]
@@ -288,41 +284,8 @@ class SingleDataset(Dataset):
             msg = f"Index {idx} out of range for dataset of length {len(self)}."
             raise IndexError(msg) from exc
 
-    def _read_slice(self, idx_ds: int, idx_date: int, n_steps: int) -> ArrayTCHW:
-        """Return normalised data for consecutive timesteps of one dataslice, [T, C, H, W].
-
-        Dates with no data hold the fill value. The dates with data are read as
-        contiguous slices, so a window with no missing dates is a single read.
-        """
-        dataslice = self.dataslices[idx_ds]
-        missing = self._missing[idx_ds]
-        if not any(idx_date + t in missing for t in range(n_steps)):
-            return self.normalise(
-                dataslice[idx_date : idx_date + n_steps].reshape(
-                    n_steps, *self.space.chw
-                )
-            )
-        data = np.full(
-            (n_steps, *self.space.chw), self.fill_value, dtype=np.dtype(dataslice.dtype)
-        )
-        start = 0
-        while start < n_steps:
-            if idx_date + start in missing:
-                start += 1
-                continue
-            end = start + 1
-            while end < n_steps and idx_date + end not in missing:
-                end += 1
-            data[start:end] = self.normalise(
-                dataslice[idx_date + start : idx_date + end].reshape(
-                    end - start, *self.space.chw
-                )
-            )
-            start = end
-        return data
-
-    def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
-        """Return normalised [T, C, H, W] data for an arbitrary sequence of timesteps.
+    def _get_tchw_by_date(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
+        """Return normalised [T, C, H, W] data, reading each date separately.
 
         A date with no data holds the fill value, or raises an IndexError if there is
         no fill value.
@@ -341,15 +304,13 @@ class SingleDataset(Dataset):
         # 2. there are missing dates, but we have a fill value
         if self.fill_value is not None:
             infilled_data = np.full(
-                (len(dates), *self.space.chw),
-                self.fill_value,
-                dtype=np_dtype,
+                (len(dates), *self.space.chw), self.fill_value, dtype=np_dtype
             )
             infilled_data[[t for t, _ in present]] = normalised_data
             return infilled_data
         # 3. there are unhandled missing dates
         missing = [
-            np.datetime_as_string(self.normalise_date(date), unit="D")
+            np.datetime_as_string(date, unit="D")
             for date, idx in zip(dates, indices, strict=True)
             if idx is None
         ]
@@ -361,75 +322,51 @@ class SingleDataset(Dataset):
         )
         raise IndexError(msg)
 
-    def get_tchw_slice(
-        self, start_date: np.datetime64, n_steps: int, *, check: bool = True
-    ) -> ArrayTCHW:
-        """Return the data for consecutive timesteps in [T, C, H, W] format.
+    def _slice_location(self, dates: Sequence[np.datetime64]) -> tuple[int, int] | None:
+        """Return the dataslice and start index of a run of consecutive dates.
 
-        Since contiguous dates must be in a single dataslice, we simply identify which
-        one this is and read from it.
-
-        If `check` is True then we check that we're not crossing the boundary between
-        dataslices, adding a small amount of overhead.
-
-        With a fill value, dates with no data hold it. The dates with data are still
-        read as contiguous slices where possible.
-
-        Args:
-            start_date: The date of the first timestep to return.
-            n_steps: The number of consecutive timesteps to return.
-            check: Whether to check that the requested slice is valid. If False, this
-                   method may return meaningless or incorrect data if the requested
-                   slice is invalid
-
+        Returns None unless the dates are consecutive and one dataslice has data on
+        all of them.
         """
-        start_date = self.normalise_date(start_date)
-        if self.fill_value is not None:
-            if (location := self._slice_location(start_date, n_steps)) is not None:
-                return self._read_slice(*location, n_steps)
-            return self.get_tchw(
-                [start_date + step * self.frequency for step in range(n_steps)]
-            )
-        try:
-            idx_global_start = self._date2idx[start_date]
-            idx_ds_start, idx_date_start = self._idx2anemoi[idx_global_start]
-            if check:
-                idx_global_end = idx_global_start + n_steps - 1
-                idx_ds_end, _ = self._idx2anemoi[idx_global_end]
-                if idx_ds_start != idx_ds_end:
-                    msg = (
-                        f"Requested slice of {n_steps} steps following {start_date} "
-                        f"crosses the boundary between dataslices {idx_ds_start} and "
-                        f"{idx_ds_end}."
-                    )
-                    raise ValueError(msg)
-            return self.normalise(
-                self.dataslices[idx_ds_start][
-                    idx_date_start : idx_date_start + n_steps
-                ].reshape(n_steps, *self.space.chw)
-            )
-        except KeyError as exc:
-            msg = (
-                f"Requested slice of {n_steps} steps following {start_date} "
-                f"is out of range for dataset with dates from {self.start_date} to "
-                f"{self.end_date}"
-            )
-            raise ValueError(msg) from exc
+        # If the dates are not the same frequency as the dataset then they cannot be
+        # consecutive
+        if not dates or any(
+            later - earlier != self.frequency for earlier, later in pairwise(dates)
+        ):
+            return None
+        idx_global_first = self._date2idx.get(dates[0])
+        idx_global_last = self._date2idx.get(dates[-1])
+        # Global indices only count dates with data, so if the first and last are
+        # len(dates) - 1 indices apart, the slice must be consecutive
+        if (
+            idx_global_first is None
+            or idx_global_last is None
+            or idx_global_last != idx_global_first + len(dates) - 1
+        ):
+            return None
+        idx_ds, idx_date = self._idx2anemoi[idx_global_first]
+        if self._idx2anemoi[idx_global_last][0] != idx_ds:
+            return None
+        return idx_ds, idx_date
 
-    def _slice_location(
-        self, start_date: np.datetime64, n_steps: int
-    ) -> tuple[int, int] | None:
-        """Return the dataslice and start index holding n_steps days from start_date.
+    def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
+        """Return normalised [T, C, H, W] data for a sequence of timesteps.
 
-        Returns None if no single dataslice covers all of them. Days with no data
-        count as covered, as they are part of the dataslice.
+        If the dates are consecutive and one dataslice has data on all of them, they
+        are read as a single slice. Otherwise each date is read separately.
+
+        A date with no data holds the fill value, or raises an IndexError if there is
+        no fill value.
         """
-        for idx_ds, dataslice in enumerate(self.dataslices):
-            first = self.normalise_date(dataslice.dates[0])
-            idx_date = int((start_date - first) // self.frequency)
-            if idx_date >= 0 and idx_date + n_steps <= len(dataslice.dates):
-                return idx_ds, idx_date
-        return None
+        dates = [self.normalise_date(date) for date in dates]
+        if (location := self._slice_location(dates)) is None:
+            return self._get_tchw_by_date(dates)
+        idx_ds, idx_date = location
+        return self.normalise(
+            self.dataslices[idx_ds][idx_date : idx_date + len(dates)].reshape(
+                len(dates), *self.space.chw
+            )
+        )
 
     def has_date(self, date: np.datetime64) -> bool:
         """Return whether the dataset has data on a given date."""

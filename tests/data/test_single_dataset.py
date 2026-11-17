@@ -10,6 +10,11 @@ from cryocast.data.single_dataset import SingleDataset
 from cryocast.types import DataSpace
 
 
+def consecutive_days(start: np.datetime64, n_steps: int) -> list[np.datetime64]:
+    """Return n_steps consecutive daily dates from start."""
+    return [start + np.timedelta64(step, "D") for step in range(n_steps)]
+
+
 class TestSingleDataset:
     def test_name(self) -> None:
         dataset = SingleDataset(name="test_dataset", input_files=[])
@@ -151,17 +156,34 @@ class TestSingleDataset:
         ):
             dataset.get_tchw([np.datetime64("1970-01-01"), np.datetime64("1970-01-02")])
 
-    def test_get_tchw_slice(
+    def test_get_tchw_consecutive_dates_read_as_slice(
+        self,
+        mock_dataset: Path,
+        dates_as_np: tuple[np.datetime64, ...],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Consecutive dates are read as one slice with the same data as per-date reads."""
+        dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
+        expected = np.stack([dataset[idx] for idx in range(3)])
+
+        def fail(_dates: object) -> None:
+            msg = "consecutive dates must not be read one at a time"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(dataset, "_get_tchw_by_date", fail)
+        result = dataset.get_tchw(list(dates_as_np[:3]))
+        assert result.shape == (3, 3, 2, 2)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_get_tchw_non_consecutive_dates(
         self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
     ) -> None:
-        """get_tchw_slice returns the correct shape and the same data as get_tchw."""
+        """Dates that are not consecutive are read one at a time, in order."""
         dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
-        result = dataset.get_tchw_slice(dates_as_np[0], 3)
-        assert isinstance(result, np.ndarray)
-        assert result.shape == (3, 3, 2, 2)
-        np.testing.assert_array_equal(result, dataset.get_tchw(list(dates_as_np[:3])))
+        result = dataset.get_tchw([dates_as_np[3], dates_as_np[0]])
+        np.testing.assert_array_equal(result, np.stack([dataset[3], dataset[0]]))
 
-    def test_get_tchw_slice_check_raises(
+    def test_get_tchw_across_dataslices_raises(
         self,
         mock_dataset: Path,
         dates_as_str: tuple[str, ...],
@@ -177,27 +199,10 @@ class TestSingleDataset:
                 {"start": dates_as_str[3], "end": dates_as_str[4]},
             ],
         )
-        with pytest.raises(ValueError, match="crosses the boundary between dataslices"):
-            dataset.get_tchw_slice(dates_as_np[0], 3)
-
-    def test_get_tchw_slice_check_false(
-        self,
-        mock_dataset: Path,
-        dates_as_str: tuple[str, ...],
-        dates_as_np: tuple[np.datetime64, ...],
-    ) -> None:
-        # Requesting 3 steps from "2020-01-01" spans two dataslices:
-        # (2020-01-01 to 2020-01-02) and (2020-01-03 to 2020-01-04)
-        dataset = SingleDataset(
-            name="mock_dataset",
-            input_files=[mock_dataset],
-            date_ranges=[
-                {"start": dates_as_str[0], "end": dates_as_str[1]},
-                {"start": dates_as_str[3], "end": dates_as_str[4]},
-            ],
-        )
-        with pytest.raises(ValueError, match="cannot reshape array"):
-            dataset.get_tchw_slice(dates_as_np[0], 3, check=False)
+        with pytest.raises(
+            IndexError, match=r"Date\(s\) 2020-01-03 not found in the dataset"
+        ):
+            dataset.get_tchw(list(dates_as_np[:3]))
 
     def test_touching_ranges_merge_into_one_dataslice(
         self,
@@ -216,7 +221,7 @@ class TestSingleDataset:
         )
         assert len(dataset.dataslices) == 1
         assert len(dataset) == 5
-        result = dataset.get_tchw_slice(dates_as_np[0], 3, check=False)
+        result = dataset.get_tchw(list(dates_as_np[:3]))
         assert result.shape == (3, 3, 2, 2)
 
     def test_get_tchw_with_missing_dates(
@@ -239,6 +244,11 @@ class TestSingleDataset:
             IndexError, match=r"Date\(s\) 2020-01-02 not found in the dataset"
         ):
             dataset.get_tchw([dates_as_np[1]])
+        # A consecutive window with a missing day raises the same error
+        with pytest.raises(
+            IndexError, match=r"Date\(s\) 2020-01-02 not found in the dataset"
+        ):
+            dataset.get_tchw(list(dates_as_np[:3]))
 
     def test_fill_value_on_missing_dates(
         self,
@@ -280,18 +290,20 @@ class TestSingleDataset:
             input_files=[mock_dataset_missing_dates_fill_value],
             fill_value=-1.0,
         )
-        result = filled.get_tchw_slice(dates_as_np[0], 5)
+        result = filled.get_tchw(consecutive_days(dates_as_np[0], 5))
         np.testing.assert_array_equal(result[[1, 3]], -1.0)
         np.testing.assert_allclose(
             result[[0, 2, 4]], plain.get_tchw(list(dates_as_np[::2]))
         )
         # A slice of one present day is read as it is
         np.testing.assert_allclose(
-            filled.get_tchw_slice(dates_as_np[2], 1),
+            filled.get_tchw([dates_as_np[2]]),
             plain.get_tchw([dates_as_np[2]]),
         )
         # A slice that starts before the dataset holds the fill value until it starts
-        before = filled.get_tchw_slice(dates_as_np[0] - np.timedelta64(2, "D"), 3)
+        before = filled.get_tchw(
+            consecutive_days(dates_as_np[0] - np.timedelta64(2, "D"), 3)
+        )
         np.testing.assert_array_equal(before[:2], -1.0)
         np.testing.assert_allclose(before[2:], plain.get_tchw([dates_as_np[0]]))
 
@@ -312,7 +324,7 @@ class TestSingleDataset:
             fill_value=-1.0,
         )
         assert filled.dates == list(dates_as_np[2::2])
-        result = filled.get_tchw_slice(dates_as_np[1], 4)
+        result = filled.get_tchw(consecutive_days(dates_as_np[1], 4))
         np.testing.assert_array_equal(result[[0, 2]], -1.0)
         np.testing.assert_allclose(
             result[[1, 3]], plain.get_tchw(list(dates_as_np[2::2]))
@@ -539,7 +551,7 @@ class TestSingleDataset:
     def test_normalise_formula_tchw(
         self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
     ) -> None:
-        """Normalised get_tchw_slice output equals (raw - minimum) / (maximum - minimum).
+        """Normalised get_tchw output equals (raw - minimum) / (maximum - minimum).
 
         Verifies that [C,1,1] broadcasting works correctly against TCHW arrays —
         a regression in the reshape would silently misalign channels across time.
@@ -550,11 +562,9 @@ class TestSingleDataset:
         )
         min_ = dataset.statistics["minimum"][:, None, None].astype(np.float64)
         max_ = dataset.statistics["maximum"][:, None, None].astype(np.float64)
-        raw = dataset_raw.get_tchw_slice(dates_as_np[0], len(dataset)).astype(
-            np.float64
-        )
+        raw = dataset_raw.get_tchw(list(dates_as_np)).astype(np.float64)
         expected = (raw - min_) / (max_ - min_)
-        result = dataset.get_tchw_slice(dates_as_np[0], len(dataset)).astype(np.float64)
+        result = dataset.get_tchw(list(dates_as_np)).astype(np.float64)
         np.testing.assert_allclose(result, expected, rtol=1e-5)
 
     def test_normalise_false_returns_raw_chw(self, mock_dataset: Path) -> None:
@@ -572,13 +582,13 @@ class TestSingleDataset:
     def test_normalise_false_returns_raw_tchw(
         self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]
     ) -> None:
-        """normalise=False get_tchw_slice returns raw values, not normalised ones."""
+        """normalise=False get_tchw returns raw values, not normalised ones."""
         dataset_raw = SingleDataset(
             name="mock_dataset", input_files=[mock_dataset], normalise=False
         )
         dataset_norm = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
-        raw = dataset_raw.get_tchw_slice(dates_as_np[0], 3)
-        normalised = dataset_norm.get_tchw_slice(dates_as_np[0], 3)
+        raw = dataset_raw.get_tchw(list(dates_as_np[:3]))
+        normalised = dataset_norm.get_tchw(list(dates_as_np[:3]))
         assert not np.allclose(raw, normalised), (
             "normalise=False TCHW output equals normalised output"
         )
@@ -739,8 +749,8 @@ class TestSingleDatasetDateLookupNormalization:
 
         assert dataset.to_index(midnight) == 0
         np.testing.assert_array_equal(
-            dataset.get_tchw_slice(midnight, 1),
-            dataset.get_tchw([dataset.dates[0]]),
+            dataset.get_tchw([midnight]),
+            dataset[0][np.newaxis],
         )
 
 
