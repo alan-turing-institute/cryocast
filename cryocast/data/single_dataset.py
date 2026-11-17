@@ -399,14 +399,13 @@ class SingleDataset(Dataset):
         variables: Sequence[str] | None = None,
     ) -> "SingleDataset":
         """Return a new dataset that uses a subset of this dataset."""
-        _normalise = self._normalise if normalise is None else normalise
         return SingleDataset(
             name=self.name,
             input_files=self._input_files,
             date_ranges=date_ranges or self._date_ranges,
             fill_value=self.fill_value,
             group=self.group,
-            normalise=_normalise,
+            normalise=self._normalise if normalise is None else normalise,
             variables=variables or list(self._variables),
         )
 
