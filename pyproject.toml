@@ -29,7 +29,7 @@ dependencies = [
     "cdsapi==0.7.7", # indirect: CDS client used by anemoi-datasets for ERA5 downloads
     "earthkit-data==0.20.0",
     "eccodeslib==2.47.3.21", # indirect: binary libeccodes needed for ERA5 GRIB downloads
-    "filelock==4.2.4",
+    "filelock==4.2.10",
     "haversine==2.9.0",
     "hydra-core==1.3.8",
     "imageio-ffmpeg==0.6.0",
