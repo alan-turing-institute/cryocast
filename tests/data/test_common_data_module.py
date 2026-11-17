@@ -1023,6 +1023,24 @@ class TestOptionalGroups:
         with pytest.raises(TypeError, match=r"Use \[optional\] instead"):
             CommonDataModule(cfg)
 
+    def test_optional_groups_null_means_none(self, mock_dataset: Path) -> None:
+        cfg = self._config(mock_dataset, mock_dataset, [])
+        cfg.data.optional_groups = None
+        assert CommonDataModule(cfg).optional_groups == []
+
+    def test_null_optional_fill_raises(self, mock_dataset: Path) -> None:
+        cfg = self._config(mock_dataset, mock_dataset, ["optional"])
+        cfg.data.optional_fill = None
+        with pytest.raises(ValueError, match="optional_fill must be a number"):
+            CommonDataModule(cfg)
+
+    def test_null_optional_fill_without_optional_groups(
+        self, mock_dataset: Path
+    ) -> None:
+        cfg = self._config(mock_dataset, mock_dataset, [])
+        cfg.data.optional_fill = None
+        assert CommonDataModule(cfg).optional_fill is None
+
     def test_optional_target_group_raises(self, mock_dataset: Path) -> None:
         with pytest.raises(
             ValueError, match="target group 'group1' cannot be optional"

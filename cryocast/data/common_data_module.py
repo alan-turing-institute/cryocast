@@ -54,7 +54,8 @@ class CommonDataModule(LightningDataModule):
         )
 
         # Dataset groups that may be missing on some days, and the value for those days
-        optional_groups = config["data"].get("optional_groups", [])
+        # Treat missing or empty 'optional_groups' in YAML as no optional groups
+        optional_groups = config["data"].get("optional_groups") or []
         if isinstance(optional_groups, str):
             msg = (
                 f"optional_groups must be a list of group names, got the string "
@@ -73,6 +74,13 @@ class CommonDataModule(LightningDataModule):
             msg = f"The target group {self.target_group_name!r} cannot be optional."
             raise ValueError(msg)
         self.optional_fill = config["data"].get("optional_fill", -1.0)
+        # Optional groups must have a fill value to use for their missing dates
+        if self.optional_groups and self.optional_fill is None:
+            msg = (
+                f"With optional_groups set to {self.optional_groups}, optional_fill "
+                "must be a number."
+            )
+            raise ValueError(msg)
 
         # Set periods for prediction, testing, training and validation
         self.batch_size = int(config["window"]["batch_size"])
