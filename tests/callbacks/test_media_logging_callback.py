@@ -92,12 +92,21 @@ def dataset_with_uncertainty() -> tuple[MagicMock, MagicMock]:
     return dataset, uncertainty_ds
 
 
-def _fake_input(name: str, *, missing: bool = False) -> MagicMock:
-    """An input group double whose get_tchw returns [T, 1, 2, 2] ones, or raises."""
+def _fake_input(name: str, *, missing: bool = False, filled: bool = False) -> MagicMock:
+    """An input group double whose get_tchw returns [T, 1, 2, 2] ones, or raises.
+
+    If filled, the group has no data on any date but get_tchw returns the fill
+    value, as for an optional group with a fill value.
+    """
     input_ds = MagicMock()
     input_ds.name = name
     input_ds.variable_names = [f"{name}_var"]
-    if missing:
+    input_ds.has_date.return_value = not filled
+    if filled:
+        input_ds.get_tchw.side_effect = lambda dates: np.full(
+            (len(dates), 1, 2, 2), -1.0
+        )
+    elif missing:
         input_ds.get_tchw.side_effect = IndexError("Date 2020-01-02 not found")
     else:
         input_ds.get_tchw.side_effect = lambda dates: np.ones((len(dates), 1, 2, 2))
@@ -677,6 +686,25 @@ class TestMakePlots:
 
         assert list(stubs["log_static_inputs"].call_args.args[0]) == ["era5"]
         assert "Skipping input plots for argo" in caplog.text
+
+    def test_skips_input_plots_for_a_filled_group_missing_a_date(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        make_plots_args: tuple[MagicMock, MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Leave out a group with a fill value that has no data on a forecast date."""
+        callback, stubs = _callback_with_cache(monkeypatch, make_input_plots=True)
+        trainer, pl_module, dataset = make_plots_args
+        argo = _fake_input("argo", filled=True)
+        dataset.inputs = [argo, _fake_input("era5")]
+
+        with caplog.at_level(logging.WARNING):
+            callback.make_plots(trainer, pl_module, dataset, 1)
+
+        assert list(stubs["log_static_inputs"].call_args.args[0]) == ["era5"]
+        assert "Skipping input plots for argo: no data on" in caplog.text
+        argo.get_tchw.assert_not_called()
 
     def test_does_not_read_inputs_when_input_plots_disabled(
         self,
