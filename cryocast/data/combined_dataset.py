@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 from functools import cached_property
 
@@ -8,6 +9,8 @@ from cryocast.types import ArrayTCHW
 
 from .calendar_day_climatology import CalendarDayClimatology
 from .single_dataset import SingleDataset
+
+logger = logging.getLogger(__name__)
 
 
 class CombinedDataset(Dataset):
@@ -106,6 +109,16 @@ class CombinedDataset(Dataset):
                 "when the input datasets do not have overlapping time ranges."
             )
             raise ValueError(msg)
+        for ds in self.inputs:
+            if ds.fill_value is not None and not any(
+                available_dates[0] <= date <= available_dates[-1] for date in ds.dates
+            ):
+                logger.warning(
+                    "Input '%s' has no data in the range %s to %s.",
+                    ds.name,
+                    available_dates[0],
+                    available_dates[-1],
+                )
         return available_dates
 
     @property

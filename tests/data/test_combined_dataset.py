@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -554,3 +555,18 @@ class TestOptionalGroups:
         combined = self._combined(mock_dataset_missing_dates_fill_value, mock_dataset)
         with pytest.raises(ValueError, match="CombinedDataset has no valid dates"):
             _ = combined.dates
+
+    def test_warns_when_optional_input_has_no_data(
+        self,
+        mock_dataset: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An optional input with no data in its date range logs a warning."""
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset,
+            optional_date_ranges=[{"start": "2030-01-01", "end": None}],
+        )
+        with caplog.at_level(logging.WARNING, logger="cryocast.data.combined_dataset"):
+            _ = combined.dates
+        assert "Input 'optional' has no data in the range" in caplog.text
