@@ -147,7 +147,7 @@ class CheckpointFile:
         - "variables" and "data.allow_missing": the checkpoint section replaces the
           current section. If the checkpoint has no "data.allow_missing", it was
           trained with every input required, so "data.allow_missing.groups" is set
-          to [].
+          to [] and the current "data.allow_missing.fill_value" stays.
 
         A warning lists each current value that the checkpoint replaces.
 
@@ -172,13 +172,16 @@ class CheckpointFile:
             combined["variables"] = ckpt_config["variables"]
         # Groups that allow missing days and their fill change what the model sees, so
         # these must also match training. Checkpoints saved before allow_missing existed
-        # were trained with every input required, so they get no such groups.
-        OmegaConf.update(
-            combined,
-            "data.allow_missing",
-            OmegaConf.select(ckpt_config, "data.allow_missing", default={"groups": []}),
-            merge=False,
-        )
+        # were trained with every input required, so they get no such groups. With no
+        # groups the fill value has no effect, so the current value stays.
+        if (
+            ckpt_allow_missing := OmegaConf.select(ckpt_config, "data.allow_missing")
+        ) is None:
+            OmegaConf.update(combined, "data.allow_missing.groups", [], merge=False)
+        else:
+            OmegaConf.update(
+                combined, "data.allow_missing", ckpt_allow_missing, merge=False
+            )
         # Batch size does not affect the trained model, so this can be overridden
         if "batch_size" in config.get("window", {}):
             combined["window"]["batch_size"] = config["window"]["batch_size"]

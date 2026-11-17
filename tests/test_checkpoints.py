@@ -283,7 +283,7 @@ class TestMergeConfig:
         ckpt_config = cfg_model_service.copy()
         ckpt_config["data"].pop("allow_missing", None)
         config = cfg_model_service.copy()
-        config["data"]["allow_missing"] = {"groups": ["float-argo"]}
+        config["data"]["allow_missing"] = {"groups": ["float-argo"], "fill_value": -1.0}
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)
 
@@ -293,7 +293,9 @@ class TestMergeConfig:
             combined = checkpoint_file.merge_config(config)
 
         assert combined["data"]["allow_missing"]["groups"] == []
+        assert combined["data"]["allow_missing"]["fill_value"] == -1.0
         assert "data.allow_missing.groups=[] (config has ['float-argo'])" in caplog.text
+        assert "data.allow_missing.fill_value" not in caplog.text
 
     def test_batch_size_from_config(
         self, cfg_model_service: DictConfig, tmp_path: Path
