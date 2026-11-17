@@ -170,11 +170,11 @@ class TestEncodeProcessDecode:
         assert model.output_space == DataSpace.from_dict(cfg_output_space)
 
     @pytest.mark.parametrize(
-        ("test_computes_loss_in_latent_space", "expected_multistage_only"),
+        ("test_computes_loss_in_latent_space", "expected_needs_future_inputs"),
         [(False, False), (True, True)],
         ids=["default", "latent-loss"],
     )
-    def test_init_multistage_only(
+    def test_init_needs_future_inputs(
         self,
         cfg_decoder: DictConfig,
         cfg_encoders: DictConfig,
@@ -185,7 +185,7 @@ class TestEncodeProcessDecode:
         cfg_metrics: list[dict[str, Any]],
         *,
         test_computes_loss_in_latent_space: bool,
-        expected_multistage_only: bool,
+        expected_needs_future_inputs: bool,
     ) -> None:
         cfg_processor = DictConfig(
             {
@@ -210,8 +210,7 @@ class TestEncodeProcessDecode:
             lr_scheduler=DictConfig({}),
             target_variable_indices=[0],
         )
-        assert model.multistage_only is expected_multistage_only
-        assert model.needs_future_inputs is expected_multistage_only
+        assert model.needs_future_inputs is expected_needs_future_inputs
 
     def test_init_processor_builds_its_own_loss(
         self,
@@ -260,7 +259,7 @@ class TestEncodeProcessDecode:
             target_variable_indices=[0],
         )
         assert isinstance(model.processor.loss_fn, LeadTimeWeightedLoss)
-        assert model.multistage_only
+        assert model.needs_future_inputs
 
     @pytest.mark.parametrize(
         "test_n_forecast_steps", [1, 2, 5], ids=["forecast1", "forecast2", "forecast5"]

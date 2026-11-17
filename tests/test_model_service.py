@@ -836,20 +836,45 @@ class TestModelService:
 
         assert calls_before_fit == [call(include=expected)]
 
-    def test_train_standard_mode_rejects_model_requiring_multistage(self) -> None:
+    @pytest.mark.parametrize(
+        ("computes_loss_in_latent_space", "autoencoder_loss_weight"),
+        [(False, 0.0), (True, 1.0)],
+        ids=["physical-loss", "latent-loss-with-autoencoder"],
+    )
+    def test_train_single_stage_encode_process_decode(
+        self, *, computes_loss_in_latent_space: bool, autoencoder_loss_weight: float
+    ) -> None:
         service = ModelService.__new__(ModelService)
-        service.model_ = MagicMock()
-        service.model_.multistage_only = True
+        service.model_ = MagicMock(spec=EncodeProcessDecode)
+        service.model_.processor = MagicMock(
+            computes_loss_in_latent_space=computes_loss_in_latent_space
+        )
+        service.model_.autoencoder_loss_weight = autoencoder_loss_weight
+        service.config_ = DictConfig({"train": "train_config"})
+        service.checkpoint_file = None
 
-        with pytest.raises(ValueError, match="multistage"):
+        with pytest.MonkeyPatch.context() as mp:
+            mock_fit = MagicMock()
+            mp.setattr(service, "_fit", mock_fit)
             service.train()
 
-    def test_train_standard_mode_allows_model_not_requiring_multistage(
+        mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
+
+    def test_train_single_stage_rejects_latent_loss_without_autoencoder(
         self,
     ) -> None:
         service = ModelService.__new__(ModelService)
+        service.model_ = MagicMock(spec=EncodeProcessDecode)
+        service.model_.processor = MagicMock(computes_loss_in_latent_space=True)
+        service.model_.autoencoder_loss_weight = 0.0
+        service.checkpoint_file = None
+
+        with pytest.raises(ValueError, match="autoencoder loss"):
+            service.train()
+
+    def test_train_single_stage(self) -> None:
+        service = ModelService.__new__(ModelService)
         service.model_ = MagicMock()
-        service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -934,7 +959,6 @@ class TestModelService:
         """Resume training from the checkpoint that the model was loaded from."""
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock()
-        service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
         path = tmp_path / "last.ckpt"
         path.write_text("checkpoint")

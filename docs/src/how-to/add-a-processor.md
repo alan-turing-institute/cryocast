@@ -47,7 +47,8 @@ A diffusion model is an example of this type of processor.
 During training, it adds noise to the ground truth and predicts that noise.
 During inference, it starts from random noise and removes the noise step by step.
 
-These processors must be trained in multiple stages.
+These processors can be trained in single-stage or multistage mode.
+In single-stage training, the autoencoder loss trains the encoders and the decoder together with the processor.
 In multistage training, CryoCast trains the encoders and the decoder before the processor.
 CryoCast then trains the processor on a fixed latent space.
 

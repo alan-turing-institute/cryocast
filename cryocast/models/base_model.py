@@ -211,10 +211,6 @@ class BaseModel(LightningModule, ABC):
         return {} if not self.longitudes_fn else self.longitudes_fn()
 
     @property
-    def multistage_only(self) -> bool:
-        return False
-
-    @property
     def needs_future_inputs(self) -> bool:
         """Whether training needs every input over the forecast steps, not just history.
 

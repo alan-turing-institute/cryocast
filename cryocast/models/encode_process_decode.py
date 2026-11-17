@@ -52,7 +52,6 @@ class EncodeProcessDecode(BaseModel):
         """Initialise an EncodeProcessDecode model.
 
         Note that we use BaseProcessor.computes_loss_in_latent_space to control:
-        - `multistage_only`: the decoder must be pretrained first.
         - `needs_future_inputs`: training batches hold `future_<input>` keys.
         - the decoder is frozen if the autoencoder loss is off
         - `rollout_space`: cannot be set to "physical"
@@ -218,13 +217,6 @@ class EncodeProcessDecode(BaseModel):
             )
             state_dict = {k: v for k, v in state_dict.items() if k not in stale}
         return super().load_state_dict(state_dict, *args, **kwargs)
-
-    @property
-    @override
-    def multistage_only(self) -> bool:
-        # Processors that compute loss in latent space require a pretrained decoder, so
-        # must be run in multistage mode.
-        return self.processor.computes_loss_in_latent_space
 
     @property
     @override
@@ -403,8 +395,8 @@ class EncodeProcessDecode(BaseModel):
             output = self.decoder.finalise(raw_output, anchor)
             outputs.append(output)
 
-            # Drop the oldest target frame; append the newest with its target variables replaced
-            # Replace the oldest target frame by the newest, with
+            # Drop the oldest target frame then append the newest with its target
+            # variables replaced
             newest = target_window[:, -1].clone()
             newest[:, self.target_variable_indices] = output
             target_window = torch.cat(
