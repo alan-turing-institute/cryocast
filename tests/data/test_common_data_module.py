@@ -1034,6 +1034,14 @@ class TestAllowMissing:
         ):
             CommonDataModule(cfg)
 
+    def test_missing_fill_value_raises(self, mock_dataset: Path) -> None:
+        cfg = self._config(mock_dataset, mock_dataset, ["optional"])
+        del cfg.data.allow_missing.fill_value
+        with pytest.raises(
+            ValueError, match=r"allow_missing\.fill_value must be a number"
+        ):
+            CommonDataModule(cfg)
+
     def test_null_fill_value_without_groups(self, mock_dataset: Path) -> None:
         cfg = self._config(mock_dataset, mock_dataset, [])
         cfg.data.allow_missing.fill_value = None

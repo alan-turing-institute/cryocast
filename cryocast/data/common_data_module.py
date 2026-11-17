@@ -60,7 +60,7 @@ class CommonDataModule(LightningDataModule):
         self.allow_missing_groups = (
             [groups] if isinstance(groups, str) else [str(group) for group in groups]
         )
-        self.missing_fill_value = allow_missing.get("fill_value", -1.0)
+        self.missing_fill_value = allow_missing.get("fill_value")
         # Only check when needed, as target_group_name raises if the target is invalid
         if self.allow_missing_groups:
             allowed = self.dataset_groups.keys() - {self.target_group_name}
