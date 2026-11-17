@@ -146,7 +146,8 @@ class TestSingleDataset:
         assert data_array.shape == (5, 3, 2, 2)
         # Check exception for out of range
         with pytest.raises(
-            IndexError, match="Date 1970-01-01 not found in the dataset"
+            IndexError,
+            match=r"Date\(s\) 1970-01-01,1970-01-02 not found in the dataset",
         ):
             dataset.get_tchw([np.datetime64("1970-01-01"), np.datetime64("1970-01-02")])
 
@@ -235,7 +236,7 @@ class TestSingleDataset:
         result = dataset.get_tchw(expected_dates)
         assert result.shape == (3, 1, 2, 2)
         with pytest.raises(
-            IndexError, match="Date 2020-01-02 not found in the dataset"
+            IndexError, match=r"Date\(s\) 2020-01-02 not found in the dataset"
         ):
             dataset.get_tchw([dates_as_np[1]])
 
@@ -420,10 +421,7 @@ class TestSingleDataset:
         dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
         assert dataset.to_index(dates_as_np[0]) == 0
         assert dataset.to_index(dates_as_np[3]) == 3
-        with pytest.raises(
-            IndexError, match="Date 1970-01-01 not found in the dataset"
-        ):
-            dataset.to_index(np.datetime64("1970-01-01"))
+        assert dataset.to_index(np.datetime64("1970-01-01")) is None
 
     def test_has_date(
         self,
@@ -451,14 +449,8 @@ class TestSingleDataset:
         assert dataset.to_index(dates_as_np[0]) == 0  # 2020-01-01
         assert dataset.to_index(dates_as_np[2]) == 1  # 2020-01-03
         assert dataset.to_index(dates_as_np[4]) == 2  # 2020-01-05
-        with pytest.raises(
-            IndexError, match="Date 2020-01-02 not found in the dataset"
-        ):
-            dataset.to_index(dates_as_np[1])
-        with pytest.raises(
-            IndexError, match="Date 2020-01-04 not found in the dataset"
-        ):
-            dataset.to_index(dates_as_np[3])
+        assert dataset.to_index(dates_as_np[1]) is None
+        assert dataset.to_index(dates_as_np[3]) is None
 
     def test_variable_selection_all(self, mock_dataset: Path) -> None:
         """Test selecting all variables from a multi-variable dataset."""

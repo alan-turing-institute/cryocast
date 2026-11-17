@@ -96,7 +96,7 @@ class SingleDataset(Dataset):
         idx2anemoi = {}
         for idx_ds, dataset in enumerate(self.dataslices):
             for idx_date, date in enumerate(dataset.dates):
-                idx_global = self._date2idx.get(self.normalise_date(date), None)
+                idx_global = self.to_index(date)
                 if idx_global is not None:
                     idx2anemoi[idx_global] = (idx_ds, idx_date)
         return idx2anemoi
@@ -311,27 +311,44 @@ class SingleDataset(Dataset):
         return data
 
     def get_tchw(self, dates: Sequence[np.datetime64]) -> ArrayTCHW:
-        """Return normalised data for an arbitrary sequence of timesteps in [T, C, H, W] format.
+        """Return normalised [T, C, H, W] data for an arbitrary sequence of timesteps.
 
         A date with no data holds the fill value, or raises an IndexError if there is
         no fill value.
         """
-        indices: list[int | None] = (
-            [self.to_index(date) for date in dates]
-            if self.fill_value is None
-            else [self._date2idx.get(self.normalise_date(date)) for date in dates]
-        )
-        data = np.full(
-            (len(dates), *self.space.chw),
-            np.nan if self.fill_value is None else self.fill_value,
-            dtype=np.dtype(self.dataslices[0].dtype),
-        )
+        indices = [self.to_index(date) for date in dates]
         present = [(t, idx) for t, idx in enumerate(indices) if idx is not None]
-        if present:
-            data[[t for t, _ in present]] = self.normalise(
-                np.stack([self._chw_raw(idx) for _, idx in present], axis=0)
+        np_dtype = np.dtype(self.dataslices[0].dtype)
+        normalised_data = (
+            self.normalise(np.stack([self._chw_raw(idx) for _, idx in present], axis=0))
+            if present
+            else np.empty((0, *self.space.chw), dtype=np_dtype)
+        )
+        # 1. there are no missing dates
+        if len(present) == len(dates):
+            return normalised_data
+        # 2. there are missing dates, but we have a fill value
+        if self.fill_value is not None:
+            infilled_data = np.full(
+                (len(dates), *self.space.chw),
+                self.fill_value,
+                dtype=np_dtype,
             )
-        return data
+            infilled_data[[t for t, _ in present]] = normalised_data
+            return infilled_data
+        # 3. there are unhandled missing dates
+        missing = [
+            np.datetime_as_string(self.normalise_date(date), unit="D")
+            for date, idx in zip(dates, indices, strict=True)
+            if idx is None
+        ]
+        msg = (
+            f"Date(s) {','.join(missing)} not found in the dataset "
+            f"{np.datetime_as_string(self.start_date, unit='D')} "
+            f"to {np.datetime_as_string(self.end_date, unit='D')} every "
+            f"{self.frequency}"
+        )
+        raise IndexError(msg)
 
     def get_tchw_slice(
         self, start_date: np.datetime64, n_steps: int, *, check: bool = True
@@ -405,7 +422,7 @@ class SingleDataset(Dataset):
 
     def has_date(self, date: np.datetime64) -> bool:
         """Return whether the dataset has data on a given date."""
-        return self.normalise_date(date) in self._date2idx
+        return self.to_index(date) is not None
 
     def normalise(self, data: ArrayType) -> ArrayType:
         """Normalise the data to [0, 1] for each channel if configured to do so.
@@ -443,14 +460,6 @@ class SingleDataset(Dataset):
             variables=variables or list(self._variables),
         )
 
-    def to_index(self, date: np.datetime64) -> int:
-        """Return the index of a given date in the dataset."""
-        date = self.normalise_date(date)
-        try:
-            return self._date2idx[date]
-        except KeyError as exc:
-            msg = (
-                f"Date {np.datetime_as_string(date, unit='D')} not found in the "
-                f"dataset {self.start_date} to {self.end_date} every {self.frequency}"
-            )
-            raise IndexError(msg) from exc
+    def to_index(self, date: np.datetime64) -> int | None:
+        """Return the index of a given date in the dataset, or None if it has no data."""
+        return self._date2idx.get(self.normalise_date(date))
