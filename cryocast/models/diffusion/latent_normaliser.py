@@ -5,12 +5,15 @@ from torch import nn
 class LatentNormaliser(nn.Module):
     """Normalise latents to zero mean and unit variance per channel.
 
-    The per-channel mean and variance are running estimates, updated from each
-    training batch and fixed outside training, like the statistics in batch
-    normalisation. They are stored as buffers, so a trained model is sampled with
-    the same values it was trained with. The first updates use a plain average
-    over the batches seen so far, before switching to an exponential moving
-    average with the given momentum.
+    The per-channel mean and variance are the average over the first ``n_batches``
+    training batches. After that they are fixed, as they are outside training. They
+    are stored as buffers, so a trained model is sampled with the same values it was
+    trained with.
+
+    Fixing the statistics keeps them the same in the EMA-averaged model, which also
+    averages buffers but is only updated every few steps. Keep ``n_batches`` at or
+    below the EMA update interval, so the averaged model first copies the final
+    statistics.
     """
 
     running_mean: torch.Tensor
@@ -18,23 +21,22 @@ class LatentNormaliser(nn.Module):
     num_batches_tracked: torch.Tensor
 
     def __init__(
-        self, channels: int, *, momentum: float = 0.01, eps: float = 1e-5
+        self, channels: int, *, n_batches: int = 100, eps: float = 1e-5
     ) -> None:
         """Initialise the normaliser.
 
         Args:
             channels: Number of latent channels.
-            momentum: Weight of each new batch in the running statistics, once
-                more than ``1 / momentum`` batches have been seen. Must be in
-                (0, 1].
+            n_batches: Number of training batches to average the statistics over,
+                before fixing them. Must be at least 1.
             eps: Added to the variance to avoid dividing by zero.
 
         """
         super().__init__()
-        if not 0.0 < momentum <= 1.0:
-            msg = f"momentum must be in (0, 1], got {momentum}."
+        if n_batches < 1:
+            msg = f"n_batches must be at least 1, got {n_batches}."
             raise ValueError(msg)
-        self.momentum = momentum
+        self.n_batches = n_batches
         self.eps = eps
         self.register_buffer("running_mean", torch.zeros(channels))
         self.register_buffer("running_var", torch.ones(channels))
@@ -44,14 +46,14 @@ class LatentNormaliser(nn.Module):
     def update(self, *latents: torch.Tensor) -> None:
         """Update the running statistics from [N, T, C, H, W] latents.
 
-        Does nothing outside training.
+        Does nothing outside training, or once ``n_batches`` batches have been seen.
         """
-        if not self.training:
+        if not self.training or self.num_batches_tracked >= self.n_batches:
             return
         values = torch.cat(
             [latent.detach().transpose(0, 2).flatten(1) for latent in latents], dim=1
         ).float()  # (C, N * T * H * W)
-        weight = max(self.momentum, 1.0 / float(self.num_batches_tracked + 1))
+        weight = 1.0 / float(self.num_batches_tracked + 1)
         self.running_mean.lerp_(values.mean(dim=1), weight)
         self.running_var.lerp_(values.var(dim=1, unbiased=False), weight)
         self.num_batches_tracked += 1

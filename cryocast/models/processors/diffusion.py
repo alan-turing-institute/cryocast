@@ -113,8 +113,8 @@ class DiffusionProcessor(BaseProcessor):
             use_autoregressive (bool): Whether to use autoregressive sampling and
                 one-step training. Default is True.
             normalise_latents (bool): Whether to diffuse latents normalised to zero
-                mean and unit variance per channel, using running statistics
-                learned during training. The history and target are both
+                mean and unit variance per channel, using statistics averaged over
+                the first training batches. The history and target are both
                 normalised, and predictions are returned in the original units.
                 Default is False.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
@@ -285,7 +285,7 @@ class DiffusionProcessor(BaseProcessor):
         b = x.shape[0]
         device = x.device
 
-        # Normalise the history and target with the running statistics
+        # Normalise the history and target with the latent statistics
         if self.latent_normaliser is not None:
             self.latent_normaliser.update(x, y)
         x, y = self._normalise(x), self._normalise(y)

@@ -52,25 +52,22 @@ class TestLatentNormaliser:
             normaliser.denormalise(normaliser.normalise(latent)), latent
         )
 
-    def test_early_updates_average_all_batches(self) -> None:
-        normaliser = LatentNormaliser(CHANNELS, momentum=0.01)
+    def test_updates_average_all_batches(self) -> None:
+        normaliser = LatentNormaliser(CHANNELS)
         first, second = _latents(mean=(0.0, 0.0)), _latents(mean=(4.0, 2.0), seed=1)
         normaliser.update(first)
         normaliser.update(second)
         expected = (_per_channel(first)[0] + _per_channel(second)[0]) / 2
         torch.testing.assert_close(normaliser.running_mean, expected)
 
-    def test_later_updates_use_momentum(self) -> None:
-        normaliser = LatentNormaliser(CHANNELS, momentum=0.5)
-        first, second = _latents(mean=(0.0, 0.0)), _latents(mean=(4.0, 2.0), seed=1)
-        normaliser.update(first)
-        normaliser.update(second)
-        third = _latents(mean=(10.0, 10.0), seed=2)
-        before = normaliser.running_mean.clone()
-        normaliser.update(third)
-        torch.testing.assert_close(
-            normaliser.running_mean, 0.5 * before + 0.5 * _per_channel(third)[0]
-        )
+    def test_statistics_are_fixed_after_n_batches(self) -> None:
+        normaliser = LatentNormaliser(CHANNELS, n_batches=2)
+        normaliser.update(_latents(mean=(0.0, 0.0)))
+        normaliser.update(_latents(mean=(4.0, 2.0), seed=1))
+        state = {k: v.clone() for k, v in normaliser.state_dict().items()}
+        normaliser.update(_latents(mean=(100.0, 100.0), seed=2))
+        for key, value in normaliser.state_dict().items():
+            assert torch.equal(value, state[key])
 
     def test_statistics_are_fixed_outside_training(self) -> None:
         normaliser = LatentNormaliser(CHANNELS)
@@ -91,7 +88,7 @@ class TestLatentNormaliser:
             restored.normalise(latent), normaliser.normalise(latent)
         )
 
-    @pytest.mark.parametrize("momentum", [0.0, -0.1, 1.5])
-    def test_invalid_momentum_raises(self, momentum: float) -> None:
-        with pytest.raises(ValueError, match="momentum must be in"):
-            LatentNormaliser(CHANNELS, momentum=momentum)
+    @pytest.mark.parametrize("n_batches", [0, -1])
+    def test_invalid_n_batches_raises(self, n_batches: int) -> None:
+        with pytest.raises(ValueError, match="n_batches must be at least 1"):
+            LatentNormaliser(CHANNELS, n_batches=n_batches)
