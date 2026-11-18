@@ -187,6 +187,59 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
 
+    @override
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], *args: Any, **kwargs: Any
+    ) -> "_IncompatibleKeys":
+        """Load a state dict, ignoring weights for the removed target encoder.
+
+        Checkpoints saved before the target encoder was removed contain
+        ``target_encoder.*`` weights. Nothing uses them now, so they are dropped and
+        these checkpoints still load strictly.
+
+        Note: this override will be removed in a future update.
+        """
+        if stale := [key for key in state_dict if key.startswith("target_encoder.")]:
+            log.warning(
+                "Ignoring %d unused target_encoder checkpoint weights.", len(stale)
+            )
+            state_dict = {k: v for k, v in state_dict.items() if k not in stale}
+        return super().load_state_dict(state_dict, *args, **kwargs)
+
+    @property
+    @override
+    def needs_future_inputs(self) -> bool:
+        # Latent-space losses compare forecasts against encoded inputs, so they need
+        # inputs over future steps.
+        return self.processor.computes_loss_in_latent_space
+
+    def _anchor_nchw(self, window: TensorNTCHW) -> TensorNCHW | None:
+        """Extract the target variables from the most recent frame.
+
+        Args:
+            window: TensorNTCHW holding the target dataset, most recent frame last.
+
+        Returns:
+            TensorNCHW anchor, or None if the decoder has no skip connection.
+
+        """
+        if not self.decoder.skip_connection:
+            return None
+        return window[:, -1, self.target_variable_indices, :, :]
+
+    def _anchor_ntchw(self, window: TensorNTCHW) -> TensorNTCHW | None:
+        """Extract the target variables from the most recent frame, keeping T=1.
+
+        Args:
+            window: TensorNTCHW holding the target dataset, most recent frame last.
+
+        Returns:
+            TensorNTCHW anchor, or None if the decoder has no skip connection.
+
+        """
+        anchor = self._anchor_nchw(window)
+        return None if anchor is None else anchor.unsqueeze(1)
+
     def _configure_losses(self, weights: Mapping[str, float]) -> None:
         """Validate the auxiliary loss weights and freeze the decoder if it is unused.
 
@@ -229,94 +282,6 @@ class EncodeProcessDecode(BaseModel):
                     "decoder are trainable. Without the reconstruction loss, the latent "
                     "space can drift away from what the decoder expects."
                 )
-
-    @override
-    def load_state_dict(
-        self, state_dict: Mapping[str, Any], *args: Any, **kwargs: Any
-    ) -> "_IncompatibleKeys":
-        """Load a state dict, ignoring weights for the removed target encoder.
-
-        Checkpoints saved before the target encoder was removed contain
-        ``target_encoder.*`` weights. Nothing uses them now, so they are dropped and
-        these checkpoints still load strictly.
-
-        Note: this override will be removed in a future update.
-        """
-        if stale := [key for key in state_dict if key.startswith("target_encoder.")]:
-            log.warning(
-                "Ignoring %d unused target_encoder checkpoint weights.", len(stale)
-            )
-            state_dict = {k: v for k, v in state_dict.items() if k not in stale}
-        return super().load_state_dict(state_dict, *args, **kwargs)
-
-    @property
-    @override
-    def needs_future_inputs(self) -> bool:
-        # Latent-space losses compare forecasts against encoded inputs, so they need
-        # inputs over future steps.
-        return self.processor.computes_loss_in_latent_space
-
-    def _prediction_loss(
-        self,
-        prediction: TensorNTCHW,
-        mask: torch.Tensor | None,
-        target: TensorNTCHW,
-        anchor: TensorNTCHW | None,
-    ) -> torch.Tensor:
-        """Decode the processor's latent prediction and compare it to the target.
-
-        Only the samples in `mask` count. The prediction can hold fewer forecast steps
-        than the target (for example, only the first step for an autoregressive
-        processor), so we compare it to the same number of target steps.
-
-        Args:
-            prediction: Latent prediction from the processor training step, with
-                gradients back to the processor. Shape (batch, T, C_latent, H, W), with
-                T <= n_forecast_steps.
-            mask: Boolean mask of shape (batch,), or None to use all samples.
-            target: TensorNTCHW with shape (batch, n_forecast_steps, C_out, H, W).
-            anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
-
-        Returns:
-            Scalar loss. It is 0 if no sample is in the mask.
-
-        Raises:
-            ValueError: If the prediction has no gradients.
-
-        """
-        if not prediction.requires_grad:
-            msg = (
-                f"loss_weights.prediction is greater than 0, but processor "
-                f"{type(self.processor).__name__} returns a prediction without "
-                f"gradients during training. Return a differentiable prediction or "
-                f"set the weight to 0."
-            )
-            raise ValueError(msg)
-
-        # Without a mask, all samples count
-        if mask is None:
-            return self.loss(
-                self.decoder.rollout(prediction, anchor),
-                target[:, : prediction.shape[1]],
-            )
-
-        # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
-        # in the graph without decoding anything: with DDP, a parameter that has no
-        # gradient on one process stops training.
-        if not mask.any():
-            return (
-                sum(
-                    (p.sum() for p in self.decoder.parameters() if p.requires_grad),
-                    start=prediction.new_zeros(()),
-                )
-                * 0.0
-            )
-
-        # Decode only the samples in the mask
-        decoded = self.decoder.rollout(
-            prediction[mask], None if anchor is None else anchor[mask]
-        )
-        return self.loss(decoded, target[mask, : prediction.shape[1]])
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all inputs into latent space, concatenating on the channel dimension.
@@ -370,21 +335,6 @@ class EncodeProcessDecode(BaseModel):
         with torch.set_grad_enabled(with_grad and torch.is_grad_enabled()):
             return self._encode_inputs(future_inputs)
 
-    def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
-        """Extract the last frame's target variables as the decoder skip-connection anchor.
-
-        Returns None if the decoder has no skip connection configured, in which case
-        the anchor is unused.
-
-        Args:
-            window: TensorNTCHW holding the target dataset, most recent frame last, e.g.
-                the model's own input window or an evolving physical rollout state.
-
-        """
-        if not self.decoder.skip_connection:
-            return None
-        return window[:, -1, self.target_variable_indices, :, :]
-
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.
 
@@ -412,12 +362,10 @@ class EncodeProcessDecode(BaseModel):
         ).prediction
 
         # Use persistence as the skip-connection anchor, if required
-        persistence = self._extract_anchor(inputs[self.output_space.name])
+        anchor = self._anchor_ntchw(inputs[self.output_space.name])
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
-        return self.decoder.rollout(
-            latent_output, None if persistence is None else persistence.unsqueeze(1)
-        )
+        return self.decoder.rollout(latent_output, anchor)
 
     def _forward_rollout_physical(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in physical space.
@@ -484,7 +432,7 @@ class EncodeProcessDecode(BaseModel):
 
             # Use the evolving rollout state as the skip-connection anchor, if required.
             # -> (B, C_out, H_out, W_out)
-            anchor = self._extract_anchor(target_window)
+            anchor = self._anchor_nchw(target_window)
             output = self.decoder.finalise(raw_output, anchor)
             outputs.append(output)
 
@@ -497,6 +445,68 @@ class EncodeProcessDecode(BaseModel):
             )
 
         return torch.stack(outputs, dim=1)
+
+    def _prediction_loss(
+        self,
+        prediction: TensorNTCHW,
+        mask: torch.Tensor | None,
+        target: TensorNTCHW,
+        anchor: TensorNTCHW | None,
+    ) -> torch.Tensor:
+        """Decode the processor's latent prediction and compare it to the target.
+
+        Only the samples in `mask` count. The prediction can hold fewer forecast steps
+        than the target (for example, only the first step for an autoregressive
+        processor), so we compare it to the same number of target steps.
+
+        Args:
+            prediction: Latent prediction from the processor training step, with
+                gradients back to the processor. Shape (batch, T, C_latent, H, W), with
+                T <= n_forecast_steps.
+            mask: Boolean mask of shape (batch,), or None to use all samples.
+            target: TensorNTCHW with shape (batch, n_forecast_steps, C_out, H, W).
+            anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
+
+        Returns:
+            Scalar loss. It is 0 if no sample is in the mask.
+
+        Raises:
+            ValueError: If the prediction has no gradients.
+
+        """
+        if not prediction.requires_grad:
+            msg = (
+                f"loss_weights.prediction is greater than 0, but processor "
+                f"{type(self.processor).__name__} returns a prediction without "
+                f"gradients during training. Return a differentiable prediction or "
+                f"set the weight to 0."
+            )
+            raise ValueError(msg)
+
+        # Without a mask, all samples count
+        if mask is None:
+            return self.loss(
+                self.decoder.rollout(prediction, anchor),
+                target[:, : prediction.shape[1]],
+            )
+
+        # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
+        # in the graph without decoding anything: with DDP, a parameter that has no
+        # gradient on one process stops training.
+        if not mask.any():
+            return (
+                sum(
+                    (p.sum() for p in self.decoder.parameters() if p.requires_grad),
+                    start=prediction.new_zeros(()),
+                )
+                * 0.0
+            )
+
+        # Decode only the samples in the mask
+        decoded = self.decoder.rollout(
+            prediction[mask], None if anchor is None else anchor[mask]
+        )
+        return self.loss(decoded, target[mask, : prediction.shape[1]])
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Forward step of the model (used for inference).
@@ -571,15 +581,14 @@ class EncodeProcessDecode(BaseModel):
                 raise ValueError(msg)
 
             # Use persistence as the skip-connection anchor, if required.
-            anchor = self._extract_anchor(batch[self.output_space.name])
-            anchor_ntchw = None if anchor is None else anchor.unsqueeze(1)
+            anchor = self._anchor_ntchw(batch[self.output_space.name])
 
             # Calculate each auxiliary loss that has a non-zero weight.
             losses: dict[str, torch.Tensor] = {}
             if self.loss_weights["reconstruction"] > 0:
                 # Decode the encoded forecast-step inputs and compare them to the target
                 losses["reconstruction"] = self.loss(
-                    self.decoder.rollout(future_latent, anchor_ntchw), target
+                    self.decoder.rollout(future_latent, anchor), target
                 )
             if self.loss_weights["prediction"] > 0:
                 # Decode the differentiable prediction and compare it to the target
@@ -587,7 +596,7 @@ class EncodeProcessDecode(BaseModel):
                     processor_output.prediction,
                     processor_output.sample_mask,
                     target,
-                    anchor_ntchw,
+                    anchor,
                 )
 
             # Add the weighted auxiliary losses to the latent loss
@@ -606,9 +615,7 @@ class EncodeProcessDecode(BaseModel):
             # once, then repeat it over all the forecast steps.
             with torch.no_grad():
                 prediction = (
-                    self.decoder.rollout(
-                        processor_output.prediction.detach(), anchor_ntchw
-                    )
+                    self.decoder.rollout(processor_output.prediction.detach(), anchor)
                     .expand(-1, self.n_forecast_steps, -1, -1, -1)
                     .contiguous()
                 )
