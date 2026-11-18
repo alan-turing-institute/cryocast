@@ -47,7 +47,9 @@ A diffusion model is an example of this type of processor.
 During training, it adds noise to the ground truth and predicts that noise.
 During inference, it starts from random noise and removes the noise step by step.
 
-These processors must be trained in multiple stages.
+These processors can be trained in single-stage or multistage mode.
+In single-stage training, the reconstruction loss and the prediction loss train the encoders and the decoder together with the processor.
+You must enable at least one of them, see [Loss in latent space](#loss-in-latent-space).
 In multistage training, CryoCast trains the encoders and the decoder before the processor.
 CryoCast then trains the processor on a fixed latent space.
 
@@ -66,12 +68,20 @@ The value of `y` tells the processor which step is in progress:
 - If `y` is a tensor, the step is **training**.
 - If `y` is `None`, the step is **inference**.
 
+The model gives `y` to `rollout` only if the processor sets `computes_loss_in_latent_space=True`.
+For all other processors, `y` is always `None`.
+
 ```python
+from typing import Any
+
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import ProcessorOutput, TensorNTCHW
 
 
 class MyDiffusionProcessor(BaseProcessor):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(computes_loss_in_latent_space=True, **kwargs)
+
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
         # x: (N, T_history, C, H, W) - encoded inputs for the history steps
         # y: (N, T_forecast, C, H, W) - encoded inputs for the forecast steps
@@ -83,29 +93,79 @@ class MyDiffusionProcessor(BaseProcessor):
         return ProcessorOutput(prediction=self._inference(x))
 ```
 
-### Custom loss
+### Loss in latent space
 
-To use your own loss, set `loss` on the `ProcessorOutput` that `rollout` returns.
-`ProcessorStage` then uses this loss for the backward pass.
-It does not calculate its own loss.
+By default, the model decodes the prediction from `rollout` and calculates the loss against the target.
+The model ignores the `loss` field of `ProcessorOutput`.
+
+To use your own loss, give `computes_loss_in_latent_space=True` to `BaseProcessor.__init__`.
+During training, `rollout` must then set `loss` on the `ProcessorOutput` that it returns.
+If `loss` is `None`, the model raises a `ValueError`.
+The model uses this loss for the backward pass.
 It decodes the prediction under `torch.no_grad()`.
 Thus, the decoder makes output for the metrics and the callbacks, but this output does not change the gradients.
 
-If `loss` is `None` (the default), `ProcessorStage` decodes the prediction.
-It then calculates its own loss against the target.
-
-### Loss in latent space
-
-If your processor calculates its loss in latent space, give `computes_loss_in_latent_space=True` to `BaseProcessor.__init__`.
-CryoCast then does these steps automatically:
+CryoCast also does these steps automatically:
 
 1. The data module loads each input group for the forecast steps.
    Each batch gets one `future_<input>` key for each input group.
 2. The model encodes these inputs and gives the result to `rollout` as `y`.
    The model detaches `y` from the computation graph. Thus, the loss cannot change its own target.
-3. The model freezes the decoder.
+3. If the weight `loss_weights.reconstruction` is greater than `0` (default `0`), the model decodes the encoded inputs and compares them to the target.
+   This reconstruction loss trains the encoders and the decoder, because the latent loss does not go through the decoder.
+   The model adds it to the latent loss, with the weight `loss_weights.reconstruction`.
+   The model logs the two parts as `train_latent_loss` and `train_reconstruction_loss`.
 
-You do not set a configuration key for these steps.
+You do not set a configuration key for steps 1 and 2.
+To enable the reconstruction loss, set its weight at the top level of the model config:
+
+```yaml
+loss_weights:
+  reconstruction: 0.5
+```
+
+The weight must not be negative.
+If the weight is `0`, the model does not calculate the reconstruction loss.
+If the weight is `0` and the encoders or the decoder are trainable, the model logs a warning.
+Without the reconstruction loss, the latent space can drift away from what the decoder expects.
+
+### Prediction loss
+
+During training, the `prediction` from `rollout` can have gradients back to the processor.
+For example, a diffusion processor returns its estimate of the clean latent x_0.
+The prediction can also have fewer forecast steps than `n_forecast_steps`.
+For example, an autoregressive diffusion processor predicts only the first forecast step.
+The processor can also set `sample_mask` on the `ProcessorOutput`.
+This is a boolean mask with one value for each sample.
+For `DiffusionProcessor`, it is `True` for the samples whose diffusion timestep is below `0.5` of `timesteps`.
+
+If the weight `loss_weights.prediction` is greater than `0` (default `0`), the model does these steps:
+
+1. It decodes `prediction` and compares it to the target.
+   It compares only the forecast steps in the prediction.
+2. It uses only the samples in `sample_mask`.
+   If `sample_mask` is `None`, it uses all the samples.
+   For a diffusion processor, these are the samples with a low timestep: at high timesteps, the x_0 estimate is mostly noise.
+   If no sample is in the mask, this loss is `0`.
+3. It adds this loss to the total loss, with the weight `loss_weights.prediction`.
+   It logs this loss as `train_prediction_loss`.
+
+This loss trains the processor, the decoder and the encoders against the target in physical space.
+The weight must not be negative.
+If the prediction has no gradients during training, training raises a `ValueError`.
+
+```yaml
+loss_weights:
+  reconstruction: 1.0
+  prediction: 0.5
+
+processor:
+  _target_: cryocast.models.processors.DiffusionProcessor
+  timesteps: 250
+```
+
+The model freezes the decoder only if both weights are `0`.
+In this case, the training loss does not use the decoder.
 
 !!! warning
     The `future_<input>` keys contain ground-truth data for the forecast steps.

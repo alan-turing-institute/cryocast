@@ -501,14 +501,7 @@ class DDPM(BaseModel):
 
         # Compute loss on NTCHW tensors
         loss = self.loss(prediction, target)
-        self.log(
-            "train_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("train_loss", loss, prog_bar=True)
 
         # Update metrics and return
         self.train_metrics.update(prediction, target)
@@ -549,14 +542,7 @@ class DDPM(BaseModel):
 
         # Compute loss on NTCHW tensors
         loss = self.loss(prediction, target)
-        self.log(
-            "validation_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("validation_loss", loss, prog_bar=True)
 
         # Update metrics and return
         self.validation_metrics.update(prediction, target)
@@ -600,14 +586,7 @@ class DDPM(BaseModel):
 
         # Compute loss on NTCHW tensors
         loss = self.loss(prediction, target)
-        self.log(
-            "test_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("test_loss", loss, prog_bar=True)
 
         # Update metrics and return
         self.test_metrics.update(prediction, target)

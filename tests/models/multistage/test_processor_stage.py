@@ -211,7 +211,7 @@ class TestProcessorStage:
         assert processor_stage.rollout_space is rollout_space
         assert processor_stage.hparams["rollout_space"] == rollout_space
 
-    def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
+    def test_anchor_nchw_returns_tensor_when_decoder_has_skip_connection(
         self,
         encoder_stage: EncoderStage,
         *,
@@ -238,7 +238,7 @@ class TestProcessorStage:
             2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]
         )
 
-        anchor = processor_stage._extract_anchor(target)
+        anchor = processor_stage._anchor_nchw(target)
 
         assert anchor is not None
         assert torch.equal(anchor, target[:, -1, [0]])
