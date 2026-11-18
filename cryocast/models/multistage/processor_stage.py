@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 from omegaconf import DictConfig
 
 from cryocast.models import EncodeProcessDecode
-from cryocast.types import RolloutSpace, SkipAnchorType
+from cryocast.types import RolloutStrategy
 
 from .decoder_stage import DecoderStage
 
@@ -51,14 +51,15 @@ class ProcessorStage(EncodeProcessDecode):
         processor: DictConfig,
         decoder_model: DecoderStage,
         mask_dir: str | None = None,
-        rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
-        skip_anchor: SkipAnchorType | str | None = None,
+        rollout_strategy: RolloutStrategy | None = None,
     ) -> "ProcessorStage":
         """Create a ProcessorStage from a trained DecoderStage.
 
-        The rollout_space and skip_anchor must match the full model, so that the
-        processor is trained in the same mode as it will be finetuned and evaluated.
+        The rollout_strategy must match the full model, so that the processor is
+        trained in the same mode as it will be finetuned and evaluated. If it is None,
+        use the default rollout strategy.
         """
+        rollout_strategy = rollout_strategy or RolloutStrategy.from_options()
         return cls(
             decoder_model=decoder_model,
             hemisphere=decoder_model.hemisphere,
@@ -72,8 +73,8 @@ class ProcessorStage(EncodeProcessDecode):
             optimizer=copy.deepcopy(decoder_model.optimizer_cfg),
             output_space=decoder_model.output_space.to_dict(),
             processor=processor,
-            rollout_space=rollout_space,
-            skip_anchor=skip_anchor,
+            rollout_space=rollout_strategy.space,
+            skip_anchor=rollout_strategy.anchor,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )

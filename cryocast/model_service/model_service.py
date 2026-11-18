@@ -768,8 +768,7 @@ class ModelService:
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,
             mask_dir=str(self.data_module.mask_directory),
-            rollout_space=full_model.rollout_space,
-            skip_anchor=full_model.skip_anchor,
+            rollout_strategy=full_model.rollout_strategy,
         )
         log.info(
             "Training processor: history (%d, %d, %d, %d) -> forecast (%d, %d, %d, %d)",
