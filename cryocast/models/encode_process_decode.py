@@ -400,9 +400,11 @@ class EncodeProcessDecode(BaseModel):
         state advances as `x_{k+1} = clamp(x_k + delta_k, 0, 1)`, so a zero-output
         network reproduces persistence exactly.
 
-        The skip connection anchor is always the most recent frame in the target window,
-        corresponding to the previous forecast step. This is equivalent to
-        `SkipAnchorType.PREVIOUS`.
+        The skip connection anchor depends on `rollout_strategy.anchor`:
+        - PREVIOUS (default): the most recent frame in the target window, which is the
+          previous forecast step.
+        - INITIAL: the last observed frame, for every forecast step. The target window
+          still advances, so only the skip connection changes.
 
         Non-target input groups hold their most recent OBSERVED frame for every forecast
         step. No future information enters: only the input groups, which hold the
@@ -431,6 +433,10 @@ class EncodeProcessDecode(BaseModel):
         }
         target_window = inputs[target_name].clone()  # (B, n_history, C_t, H_t, W_t)
 
+        # With an INITIAL anchor, every step uses the last observed frame
+        # -> (B, C_out, H_out, W_out) or None
+        initial_anchor = self._anchor_nchw(target_window)
+
         outputs: list[TensorNCHW] = []
         for _ in range(self.n_forecast_steps):
             # Set target window to the most recent observation/prediction
@@ -455,9 +461,14 @@ class EncodeProcessDecode(BaseModel):
             # -> (B, C_out, H_out, W_out)
             raw_output: TensorNCHW = self.decoder(step_latent)
 
-            # Use the evolving rollout state as the skip-connection anchor, if required.
+            # Use the last observed frame or the evolving rollout state as the
+            # skip-connection anchor, if required.
             # -> (B, C_out, H_out, W_out)
-            anchor = self._anchor_nchw(target_window)
+            anchor = (
+                initial_anchor
+                if self.rollout_strategy.anchor == SkipAnchorType.INITIAL
+                else self._anchor_nchw(target_window)
+            )
             output = self.decoder.finalise(raw_output, anchor)
             outputs.append(output)
 

@@ -267,24 +267,15 @@ class RolloutStrategy:
         anchor: The frame that a decoder skip connection adds to each forecast step:
             the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
 
-    A physical rollout feeds each decoded step back into the next one, so it must
-    anchor each step on the previous output. This class rejects PHYSICAL with INITIAL.
-
     """
 
     space: RolloutSpace
     anchor: SkipAnchorType
 
     def __post_init__(self) -> None:
-        """Convert strings to enums and reject combinations that cannot work."""
+        """Convert strings to enums."""
         object.__setattr__(self, "space", RolloutSpace(self.space))
         object.__setattr__(self, "anchor", SkipAnchorType(self.anchor))
-        if self.is_physical and self.anchor == SkipAnchorType.INITIAL:
-            msg = (
-                "skip_anchor='initial' is not supported with rollout_space='physical'. "
-                "Use skip_anchor='previous' or leave it unset."
-            )
-            raise ValueError(msg)
 
     @classmethod
     def from_options(

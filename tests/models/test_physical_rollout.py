@@ -421,14 +421,15 @@ class TestNoFutureLeak:
 
 
 class TestConfigValidation:
-    def test_physical_rollout_rejects_initial_anchor(self) -> None:
-        """The model validates its options through RolloutStrategy."""
-        with pytest.raises(ValueError, match="skip_anchor='initial'"):
-            _build_model(
-                rollout_space="physical",
-                skip_anchor="initial",
-                decoder_extra=ADDITIVE_SKIP_DECODER,
-            )
+    def test_physical_rollout_accepts_initial_anchor(self) -> None:
+        """An INITIAL anchor in a physical rollout is a valid ablation."""
+        model = _build_model(
+            rollout_space="physical",
+            skip_anchor="initial",
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+        )
+        assert model.rollout_strategy.is_physical
+        assert model.rollout_strategy.anchor is SkipAnchorType.INITIAL
 
     def test_physical_rollout_requires_target_as_input(self) -> None:
         with pytest.raises(ValueError, match="to also be a model input"):
@@ -445,21 +446,26 @@ class TestConfigValidation:
             )
 
     @pytest.mark.parametrize(
-        ("skip_anchor", "warns"),
+        ("rollout_space", "skip_anchor", "warns"),
         [
-            pytest.param("previous", True, id="previous-warns"),
-            pytest.param("initial", False, id="default-is-silent"),
+            pytest.param("latent", "previous", True, id="latent-previous-warns"),
+            pytest.param("latent", "initial", False, id="latent-default-is-silent"),
+            pytest.param("physical", "initial", True, id="physical-initial-warns"),
+            pytest.param(
+                "physical", "previous", False, id="physical-default-is-silent"
+            ),
         ],
     )
     def test_anchor_without_skip_connection_warns_unless_default(
         self,
         caplog: pytest.LogCaptureFixture,
+        rollout_space: str,
         skip_anchor: str,
         warns: bool,  # noqa: FBT001
     ) -> None:
-        """Warn only if the anchor differs from the latent default, initial."""
+        """Warn only if the anchor differs from the default for the rollout space."""
         with caplog.at_level(logging.WARNING):
-            model = _build_model(skip_anchor=skip_anchor)
+            model = _build_model(rollout_space=rollout_space, skip_anchor=skip_anchor)
         assert model.rollout_strategy.anchor == skip_anchor
         assert ("has no effect" in caplog.text) is warns
 
@@ -517,6 +523,10 @@ class TestAnchorSemantics:
         ("rollout_space", "skip_anchor", "accumulates"),
         [
             pytest.param("physical", None, True, id="physical-default-accumulates"),
+            pytest.param(
+                "physical", "previous", True, id="physical-previous-accumulates"
+            ),
+            pytest.param("physical", "initial", False, id="physical-initial-is-static"),
             pytest.param("latent", None, False, id="latent-default-is-static"),
             pytest.param("latent", "initial", False, id="latent-initial-is-static"),
             pytest.param("latent", "previous", True, id="latent-previous-accumulates"),
@@ -569,6 +579,41 @@ class TestAnchorSemantics:
         # space when the checkpoint is loaded
         assert model.hparams["skip_anchor"] is None
 
+    def test_physical_initial_differs_from_latent_initial_only_by_feedback(
+        self,
+    ) -> None:
+        """With an INITIAL anchor, only the rollout space separates the two models.
+
+        Both models anchor every lead on the last observed frame and share weights, so
+        their first lead is the same. After that, the physical rollout re-encodes its
+        own predictions while the latent rollout feeds back raw latents, so the later
+        leads differ. Needs a processor that reads the whole window, hence the ViT.
+        """
+        latent = _build_model(
+            rollout_space="latent",
+            skip_anchor="initial",
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+            processor=VIT_PROCESSOR,
+        )
+        physical = _build_model(
+            rollout_space="physical",
+            skip_anchor="initial",
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+            processor=VIT_PROCESSOR,
+        )
+        _small_tendency(latent)
+        physical.load_state_dict(latent.state_dict())
+        latent.eval()
+        physical.eval()
+        inputs = _inputs(latent, seed=5)
+        with torch.no_grad():
+            from_latent = latent(inputs)
+            from_physical = physical(dict(inputs))
+
+        assert float(from_physical.max()) < 1.0, "clamp saturated; not a valid regime"
+        torch.testing.assert_close(from_physical[:, 0], from_latent[:, 0])
+        assert not torch.allclose(from_physical[:, -1], from_latent[:, -1])
+
 
 class TestTrainEvalParity:
     """training_step must score the SAME architecture that validation scores.
@@ -594,10 +639,18 @@ class TestTrainEvalParity:
         )
         return batch
 
-    def test_training_step_matches_forward_physical(self) -> None:
+    @pytest.mark.parametrize(
+        "skip_anchor",
+        [None, "initial"],
+        ids=["default-anchor", "initial-anchor"],
+    )
+    def test_training_step_matches_forward_physical(
+        self, skip_anchor: str | None
+    ) -> None:
         """Both the prediction and the loss come from the physical forward pass."""
         model = _build_model(
             rollout_space="physical",
+            skip_anchor=skip_anchor,
             decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         _small_tendency(model)
