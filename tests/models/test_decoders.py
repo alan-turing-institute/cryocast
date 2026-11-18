@@ -374,11 +374,22 @@ class TestDecoderSkipAnchor(_SkipConnectionBase):
         """The step number k = 1...N, shaped to broadcast over [B, T, C, H, W]."""
         return torch.arange(1, cls._N_FORECAST_STEPS + 1).view(1, -1, 1, 1, 1)
 
-    def test_initial_is_the_default_and_reuses_the_same_anchor(self) -> None:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            pytest.param({}, id="default"),
+            pytest.param({"anchor_type": SkipAnchorType.INITIAL}, id="explicit"),
+        ],
+    )
+    def test_initial_reuses_the_same_anchor(
+        self, kwargs: dict[str, SkipAnchorType]
+    ) -> None:
         decoder = self._decoder(method="additive", restrict_range="none", bias=0.1)
         persistence = self._persistence()
 
-        out = decoder.rollout(self._latent(self._N_FORECAST_STEPS), persistence)
+        out = decoder.rollout(
+            self._latent(self._N_FORECAST_STEPS), persistence, **kwargs
+        )
 
         expected = (persistence + 0.1).clamp(0, 1).expand_as(out)
         assert torch.allclose(out, expected, atol=1e-6)
@@ -452,7 +463,7 @@ class TestDecoderSkipAnchor(_SkipConnectionBase):
         decoder = self._decoder(method="none")
         latent = self._latent(self._N_FORECAST_STEPS)
 
-        initial = decoder.rollout(latent, None, anchor_type=SkipAnchorType.INITIAL)
+        initial = decoder.rollout(latent, None)
         previous = decoder.rollout(latent, None, anchor_type=SkipAnchorType.PREVIOUS)
 
         assert torch.equal(initial, previous)
@@ -487,11 +498,6 @@ class TestDecoderSkipAnchor(_SkipConnectionBase):
         decoder = self._decoder(method="additive")
         with pytest.raises(ValueError, match="no persistence input was provided"):
             decoder.rollout(self._latent(), None, anchor_type=SkipAnchorType.PREVIOUS)
-
-    def test_unknown_anchor_type_raises(self) -> None:
-        decoder = self._decoder(method="additive")
-        with pytest.raises(ValueError, match="not a valid SkipAnchorType"):
-            decoder.rollout(self._latent(), self._persistence(), anchor_type="prev")
 
     def test_previous_gradients_flow_through_every_step(self) -> None:
         decoder = self._decoder(method="additive", restrict_range="none", bias=0.0)

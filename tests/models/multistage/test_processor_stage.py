@@ -6,7 +6,13 @@ from omegaconf import DictConfig
 
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.models.processors import BaseProcessor
-from cryocast.types import DataSpace, ProcessorOutput, RolloutSpace, TensorNTCHW
+from cryocast.types import (
+    DataSpace,
+    ProcessorOutput,
+    RolloutSpace,
+    SkipAnchorType,
+    TensorNTCHW,
+)
 
 
 class _CaptureLatentLossProcessor(BaseProcessor):
@@ -23,6 +29,24 @@ class _CaptureLatentLossProcessor(BaseProcessor):
 
 
 class TestProcessorStage:
+    @pytest.fixture
+    def skip_decoder_stage(
+        self, encoder_stage: EncoderStage, cfg_output_space: DictConfig
+    ) -> DecoderStage:
+        """A DecoderStage whose decoder has an additive skip connection."""
+        return DecoderStage.from_template(
+            decoder=DictConfig(
+                {
+                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
+                    "skip_connection": {"method": "additive"},
+                }
+            ),
+            encoders=[encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
+            target_dataset_name="target",
+            target_variable_indices=[0],
+        )
+
     @pytest.fixture
     def processor_stage(
         self,
@@ -211,28 +235,40 @@ class TestProcessorStage:
         assert processor_stage.rollout_space is rollout_space
         assert processor_stage.hparams["rollout_space"] == rollout_space
 
+    @pytest.mark.parametrize(
+        ("skip_anchor", "expected"),
+        [
+            pytest.param(None, SkipAnchorType.INITIAL, id="default"),
+            pytest.param("previous", SkipAnchorType.PREVIOUS, id="previous"),
+        ],
+    )
+    def test_from_template_forwards_skip_anchor(
+        self,
+        skip_decoder_stage: DecoderStage,
+        *,
+        cfg_processor: DictConfig,
+        skip_anchor: str | None,
+        expected: SkipAnchorType,
+    ) -> None:
+        processor_stage = ProcessorStage.from_template(
+            processor=cfg_processor,
+            decoder_model=skip_decoder_stage,
+            skip_anchor=skip_anchor,
+        )
+
+        assert processor_stage.skip_anchor is expected
+        assert processor_stage.hparams["skip_anchor"] == skip_anchor
+
     def test_anchor_nchw_returns_tensor_when_decoder_has_skip_connection(
         self,
-        encoder_stage: EncoderStage,
+        skip_decoder_stage: DecoderStage,
         *,
         cfg_processor: DictConfig,
         cfg_output_space: DictConfig,
     ) -> None:
-        decoder_stage = DecoderStage.from_template(
-            decoder=DictConfig(
-                {
-                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
-                    "skip_connection": {"method": "additive"},
-                }
-            ),
-            encoders=[encoder_stage],
-            output_space=DataSpace.from_dict(cfg_output_space),
-            target_dataset_name="target",
-            target_variable_indices=[0],
-        )
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
-            decoder_model=decoder_stage,
+            decoder_model=skip_decoder_stage,
         )
         target = torch.rand(
             2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]

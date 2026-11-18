@@ -117,7 +117,8 @@ class BaseDecoder(Freezable):
         """Forward step: decode latent space into output space for a single timestep.
 
         Args:
-            x: TensorNCHW with (batch_size, n_latent_channels_total, latent_height, latent_width)
+            x: TensorNCHW with (batch_size, n_latent_channels_total, latent_height,
+                latent_width)
 
         Returns:
             TensorNCHW with (batch_size, output_channels, output_height, output_width)
@@ -131,7 +132,7 @@ class BaseDecoder(Freezable):
         x: TensorNTCHW,
         persistence: TensorNTCHW | None,
         *,
-        anchor_type: SkipAnchorType | str = SkipAnchorType.INITIAL,
+        anchor_type: SkipAnchorType = SkipAnchorType.INITIAL,
     ) -> TensorNTCHW:
         """Decode latent space into output space across multiple timesteps.
 
@@ -153,9 +154,12 @@ class BaseDecoder(Freezable):
         The anchor type has no effect when the decoder has no skip connection.
 
         Args:
-            x: TensorNTCHW with (batch_size, n_timeslices, n_latent_channels_total, latent_height, latent_width)
-            persistence: TensorNTCHW with (batch_size, 1, output_channels, output_height, output_width) to use as the anchor for the skip connection
-            anchor_type: SkipAnchorType (or its string value) that sets the anchor for each step after the first
+            x: TensorNTCHW with (batch_size, n_timeslices, n_latent_channels_total,
+                latent_height, latent_width)
+            persistence: TensorNTCHW with (batch_size, 1, output_channels,
+                output_height, output_width) to use as the skip connection anchor
+            anchor_type: SkipAnchorType that sets the anchor for each step after the
+                first (default: INITIAL)
 
         Returns:
             TensorNTCHW with (batch_size, n_timeslices, output_channels, output_height, output_width)
@@ -172,7 +176,6 @@ class BaseDecoder(Freezable):
 
         # If we are anchoring each step on the output of the previous step we need to
         # loop over the timesteps.
-        anchor_type = SkipAnchorType(anchor_type)
         if self.skip_connection is not None and anchor_type == SkipAnchorType.PREVIOUS:
             anchor = None if persistence is None else persistence[:, 0]
             outputs: list[TensorNCHW] = []

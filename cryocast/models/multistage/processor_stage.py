@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 from omegaconf import DictConfig
 
 from cryocast.models import EncodeProcessDecode
-from cryocast.types import RolloutSpace
+from cryocast.types import RolloutSpace, SkipAnchorType
 
 from .decoder_stage import DecoderStage
 
@@ -52,11 +52,12 @@ class ProcessorStage(EncodeProcessDecode):
         decoder_model: DecoderStage,
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
+        skip_anchor: SkipAnchorType | str | None = None,
     ) -> "ProcessorStage":
         """Create a ProcessorStage from a trained DecoderStage.
 
-        The rollout_space must match the full model, so that the processor is trained in
-        the same mode as it will be finetuned and evaluated.
+        The rollout_space and skip_anchor must match the full model, so that the
+        processor is trained in the same mode as it will be finetuned and evaluated.
         """
         return cls(
             decoder_model=decoder_model,
@@ -72,6 +73,7 @@ class ProcessorStage(EncodeProcessDecode):
             output_space=decoder_model.output_space.to_dict(),
             processor=processor,
             rollout_space=rollout_space,
+            skip_anchor=skip_anchor,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )
