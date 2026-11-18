@@ -291,17 +291,26 @@ class EncodeProcessDecode(BaseModel):
             )
             raise TypeError(msg)
 
-        # Decode every sample so that the decoder is always in the graph. With DDP, a
-        # parameter that has no gradient on one process stops training.
         prediction = processor_output.differentiable_prediction
         mask = processor_output.sample_mask
-        decoded = self.decoder.rollout(prediction, anchor)
-        target = target[:, : prediction.shape[1]]
 
-        # The mean over an empty mask is NaN. Return 0, and keep the graph.
+        # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
+        # in the graph without decoding anything: with DDP, a parameter that has no
+        # gradient on one process stops training.
         if not mask.any():
-            return decoded.sum() * 0.0
-        return self.loss(decoded[mask], target[mask])
+            return (
+                sum(
+                    (p.sum() for p in self.decoder.parameters() if p.requires_grad),
+                    start=prediction.new_zeros(()),
+                )
+                * 0.0
+            )
+
+        # Decode only the samples in the mask
+        decoded = self.decoder.rollout(
+            prediction[mask], None if anchor is None else anchor[mask]
+        )
+        return self.loss(decoded, target[mask, : prediction.shape[1]])
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all inputs into latent space, concatenating on the channel dimension.
@@ -584,9 +593,16 @@ class EncodeProcessDecode(BaseModel):
                     self.log_per_epoch(f"train_{name}_loss", value)
 
             # Decode the prediction without gradients, for metrics and callbacks only.
+            # A diffusion processor predicts one forecast step in autoregressive mode.
+            # Decode that step once, then repeat it over all the forecast steps.
+            latent_prediction = processor_output.prediction
+            if isinstance(processor_output, ProcessorOutputDiffusion):
+                latent_prediction = processor_output.differentiable_prediction.detach()
             with torch.no_grad():
-                prediction = self.decoder.rollout(
-                    processor_output.prediction, anchor_ntchw
+                prediction = (
+                    self.decoder.rollout(latent_prediction, anchor_ntchw)
+                    .expand(-1, self.n_forecast_steps, -1, -1, -1)
+                    .contiguous()
                 )
 
         # Standard path: calculate loss by comparing decoded output to target.

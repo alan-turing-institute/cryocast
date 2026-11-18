@@ -926,6 +926,68 @@ class TestPredictionLoss:
         assert decoder.scale.grad is not None
         assert decoder.scale.grad.item() == 0.0
 
+    def test_empty_mask_ignores_non_finite_decoded_values(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """An empty mask gives 0, also if decoding the prediction would give inf."""
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
+        processor = model.processor
+        assert isinstance(processor, _PredictionProcessor)
+        processor.sample_mask = torch.tensor([False, False])
+        batch = _oracle_batch()
+        batch["sic"][:, -1] = torch.inf
+
+        _, logged = self._training_step(model, batch)
+
+        assert logged["train_prediction_loss"].item() == 0.0
+
+    def test_decodes_only_masked_samples(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """The prediction loss decodes only the samples in the mask."""
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
+        processor = model.processor
+        assert isinstance(processor, _PredictionProcessor)
+        processor.sample_mask = torch.tensor([True, False])
+        decoded_shapes: list[tuple[bool, torch.Size]] = []
+        rollout = model.decoder.rollout
+
+        def spy(x: TensorNTCHW, persistence: TensorNTCHW | None) -> TensorNTCHW:
+            decoded_shapes.append((torch.is_grad_enabled(), x.shape))
+            return rollout(x, persistence)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(model.decoder, "rollout", spy)
+            self._training_step(model, _oracle_batch())
+
+        # With gradients: one masked sample. Without gradients: the metrics decode.
+        assert decoded_shapes == [
+            (True, torch.Size([1, 1, 2, 8, 8])),
+            (False, torch.Size([2, 1, 2, 8, 8])),
+        ]
+
+    def test_metrics_decode_one_autoregressive_step(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """Decode the one predicted step once, then repeat it over the forecast steps."""
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
+        batch = _oracle_batch()
+        expected = 2.0 * batch["sic"][:, -1:, 1:2].expand(-1, 2, -1, -1, -1)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(model, "log", MagicMock())
+            result = model.training_step(batch, 0)
+
+        torch.testing.assert_close(result.prediction, expected)
+        assert result.prediction.is_contiguous()
+        assert not result.prediction.requires_grad
+
     def test_gradient_reaches_processor_decoder_and_encoders(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
