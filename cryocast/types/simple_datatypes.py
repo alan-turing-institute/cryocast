@@ -77,26 +77,20 @@ class DataloaderArgs(TypedDict):
 
 @dataclass(frozen=True)
 class ProcessorOutput:
-    """Output of a processor rollout step."""
-
-    prediction: TensorNTCHW
-    loss: Tensor | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class ProcessorOutputDiffusion(ProcessorOutput):
-    """Output of a diffusion processor training step.
+    """Output of a processor rollout.
 
     Attributes:
-        differentiable_prediction: Latent prediction with gradients back to the
-            network (but not to the latent target), of shape (B, T, C, H, W). For
-            diffusion, this is the estimate of the clean latent x_0. T is 1 in
-            autoregressive mode and n_forecast_steps in parallel mode.
-        sample_mask: Boolean mask of shape (B,). True for the samples to use in a
-            loss on ``differentiable_prediction``. For diffusion, these are the
-            samples whose timestep is low enough.
+        prediction: Latent prediction of shape (N, T, C, H, W). At inference, T is
+            n_forecast_steps. During training, a processor that computes its loss in
+            latent space can return a prediction with gradients back to the network,
+            and T can be 1. For example, an autoregressive diffusion processor
+            predicts only the first forecast step.
+        loss: Optional processor-specific loss.
+        sample_mask: Optional boolean mask of shape (N,). True for the samples to use
+            in the prediction loss. None means that all samples are used.
 
     """
 
-    differentiable_prediction: TensorNTCHW
-    sample_mask: Tensor
+    prediction: TensorNTCHW
+    loss: Tensor | None = None
+    sample_mask: Tensor | None = None

@@ -13,8 +13,6 @@ from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
     ModelStepOutput,
-    ProcessorOutput,
-    ProcessorOutputDiffusion,
     RolloutSpace,
     TensorNCHW,
     TensorNTCHW,
@@ -260,18 +258,22 @@ class EncodeProcessDecode(BaseModel):
 
     def _prediction_loss(
         self,
-        processor_output: ProcessorOutput,
+        prediction: TensorNTCHW,
+        mask: torch.Tensor | None,
         target: TensorNTCHW,
         anchor: TensorNTCHW | None,
     ) -> torch.Tensor:
-        """Decode the processor's differentiable prediction and compare it to the target.
+        """Decode the processor's latent prediction and compare it to the target.
 
-        Only the samples in `sample_mask` count. The prediction can hold fewer forecast
-        steps than the target (for example, only the first step for an autoregressive
+        Only the samples in `mask` count. The prediction can hold fewer forecast steps
+        than the target (for example, only the first step for an autoregressive
         processor), so we compare it to the same number of target steps.
 
         Args:
-            processor_output: Output of the processor training step.
+            prediction: Latent prediction from the processor training step, with
+                gradients back to the processor. Shape (batch, T, C_latent, H, W), with
+                T <= n_forecast_steps.
+            mask: Boolean mask of shape (batch,), or None to use all samples.
             target: TensorNTCHW with shape (batch, n_forecast_steps, C_out, H, W).
             anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
 
@@ -279,20 +281,24 @@ class EncodeProcessDecode(BaseModel):
             Scalar loss. It is 0 if no sample is in the mask.
 
         Raises:
-            TypeError: If the processor does not return a differentiable prediction.
+            ValueError: If the prediction has no gradients.
 
         """
-        if not isinstance(processor_output, ProcessorOutputDiffusion):
+        if not prediction.requires_grad:
             msg = (
-                f"loss_weights.prediction is greater than 0, but "
-                f"processor {type(self.processor).__name__} does not return a "
-                f"differentiable prediction. Use a diffusion processor or set the "
-                f"weight to 0."
+                f"loss_weights.prediction is greater than 0, but processor "
+                f"{type(self.processor).__name__} returns a prediction without "
+                f"gradients during training. Return a differentiable prediction or "
+                f"set the weight to 0."
             )
-            raise TypeError(msg)
+            raise ValueError(msg)
 
-        prediction = processor_output.differentiable_prediction
-        mask = processor_output.sample_mask
+        # Without a mask, all samples count
+        if mask is None:
+            return self.loss(
+                self.decoder.rollout(prediction, anchor),
+                target[:, : prediction.shape[1]],
+            )
 
         # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
         # in the graph without decoding anything: with DDP, a parameter that has no
@@ -522,14 +528,14 @@ class EncodeProcessDecode(BaseModel):
         The latent loss does not go through the decoder. Thus, we can add two auxiliary
         losses. We skip each one if its weight is zero.
 
-        - Reconstruction loss, weighted by `loss_weights.reconstruction`: we decode
-          the encoded forecast-step inputs and compare them to the target. This loss
-          trains the encoders and the decoder, and keeps the latent space compatible
-          with the decoder. The processor stage always sets this weight to zero.
-        - Prediction loss, weighted by
-          `loss_weights.prediction`: we decode the differentiable prediction from
-          the processor and compare it to the target. This loss trains the
-          processor, the decoder and the encoders against the target in physical space.
+        - Reconstruction loss, weighted by `loss_weights.reconstruction`: we decode the
+          encoded forecast-step inputs and compare them to the target. This loss trains
+          the encoders and the decoder, and keeps the latent space compatible with the
+          decoder. The processor stage always sets this weight to zero.
+        - Prediction loss, weighted by `loss_weights.prediction`: we decode the latent
+          prediction from the processor, with gradients, and compare it to the target.
+          Only the samples in `sample_mask` count. This loss trains the processor, the
+          decoder and the encoders against the target in physical space.
 
         Args:
             batch: Dictionary with one NTCHW entry per input dataset (n_history_steps)
@@ -578,7 +584,10 @@ class EncodeProcessDecode(BaseModel):
             if self.loss_weights["prediction"] > 0:
                 # Decode the differentiable prediction and compare it to the target
                 losses["prediction"] = self._prediction_loss(
-                    processor_output, target, anchor_ntchw
+                    processor_output.prediction,
+                    processor_output.sample_mask,
+                    target,
+                    anchor_ntchw,
                 )
 
             # Add the weighted auxiliary losses to the latent loss
@@ -593,14 +602,13 @@ class EncodeProcessDecode(BaseModel):
                     self.log_per_epoch(f"train_{name}_loss", value)
 
             # Decode the prediction without gradients, for metrics and callbacks only.
-            # A diffusion processor predicts one forecast step in autoregressive mode.
-            # Decode that step once, then repeat it over all the forecast steps.
-            latent_prediction = processor_output.prediction
-            if isinstance(processor_output, ProcessorOutputDiffusion):
-                latent_prediction = processor_output.differentiable_prediction.detach()
+            # If the latent prediction has only one forecast step, we decode that step
+            # once, then repeat it over all the forecast steps.
             with torch.no_grad():
                 prediction = (
-                    self.decoder.rollout(latent_prediction, anchor_ntchw)
+                    self.decoder.rollout(
+                        processor_output.prediction.detach(), anchor_ntchw
+                    )
                     .expand(-1, self.n_forecast_steps, -1, -1, -1)
                     .contiguous()
                 )

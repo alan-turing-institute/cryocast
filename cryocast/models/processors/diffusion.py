@@ -53,7 +53,6 @@ from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
 from cryocast.types import (
     BetaSchedule,
     ProcessorOutput,
-    ProcessorOutputDiffusion,
     TensorNCHW,
     TensorNTCHW,
 )
@@ -205,9 +204,7 @@ class DiffusionProcessor(BaseProcessor):
             return ProcessorOutput(prediction=self._sample_autoregressive(x))
         return ProcessorOutput(prediction=self._sample_parallel(x))
 
-    def _rollout_training(
-        self, x: TensorNTCHW, y: TensorNTCHW
-    ) -> ProcessorOutputDiffusion:
+    def _rollout_training(self, x: TensorNTCHW, y: TensorNTCHW) -> ProcessorOutput:
         """One training rollout using DDPM v-prediction loss.
 
         During training, the clean future latent is corrupted using the forward
@@ -221,15 +218,11 @@ class DiffusionProcessor(BaseProcessor):
                 (B, n_forecast_steps, n_latent_channels_total, H, W).
 
         Returns:
-            ProcessorOutputDiffusion:
-            - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W)
-                Combined-latent tensor built from the detached predicted x_0.
-                Used only for metrics/callbacks.
+            ProcessorOutput:
+            - prediction: (B, T, n_latent_channels_total, H, W) predicted x_0,
+                with gradients back to the network, with T=1 in autoregressive
+                mode and T=n_forecast_steps in parallel mode.
             - loss: v-prediction loss value computed by ``self.loss_fn``.
-            - differentiable_prediction: (B, T, n_latent_channels_total, H, W)
-                predicted x_0,
-                with T=1 in autoregressive mode and T=n_forecast_steps in
-                parallel mode.
             - sample_mask: (B,) True where ``t`` is below ``self.prediction_loss_cutoff
                 * timesteps``.
 
@@ -286,14 +279,9 @@ class DiffusionProcessor(BaseProcessor):
             x_start=pred_v, noise=noisy_y, t=t
         ).unflatten(1, (n_steps, self.c_combined))
 
-        # Detached prediction for metrics only. In autoregressive mode, the
-        # single predicted step is repeated over all forecast steps.
-        prediction = pred_x0.detach().expand(-1, self.n_forecast_steps, -1, -1, -1)
-
-        return ProcessorOutputDiffusion(
-            prediction=prediction,
+        return ProcessorOutput(
+            prediction=pred_x0,
             loss=loss,
-            differentiable_prediction=pred_x0,
             sample_mask=t < self.prediction_loss_cutoff * self.timesteps,
         )
 
@@ -498,8 +486,12 @@ class DiffusionProcessor(BaseProcessor):
 
         Returns:
             ProcessorOutput:
-            - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W)
+            - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W) at
+                inference. During training, the predicted x_0 with gradients,
+                with only one forecast step in autoregressive mode.
             - loss: v-prediction loss from ``self.loss_fn`` (training only,
+                otherwise None)
+            - sample_mask: samples for the prediction loss (training only,
                 otherwise None)
 
         """

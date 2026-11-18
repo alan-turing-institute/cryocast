@@ -18,7 +18,7 @@ from cryocast.models.processors import (
     UNetProcessor,
     VitProcessor,
 )
-from cryocast.types import DataSpace, ProcessorOutput, ProcessorOutputDiffusion
+from cryocast.types import DataSpace, ProcessorOutput
 
 
 class TestBaseProcessor:
@@ -411,7 +411,7 @@ class TestDDPMProcessor:
 
         assert isinstance(result, ProcessorOutput)
         assert result.loss is None
-        assert not isinstance(result, ProcessorOutputDiffusion)
+        assert result.sample_mask is None
         assert result.prediction.shape == (
             test_batch_size,
             test_n_forecast_steps,
@@ -450,11 +450,8 @@ class TestDDPMProcessor:
         result = processor.rollout(x, y)
 
         assert isinstance(result, ProcessorOutput)
-        assert result.prediction.shape == (
-            test_batch_size,
-            test_n_forecast_steps,
-            *self.LATENT_CHW,
-        )
+        n_steps = 1 if test_use_autoregressive else test_n_forecast_steps
+        assert result.prediction.shape == (test_batch_size, n_steps, *self.LATENT_CHW)
         assert result.loss is not None
         assert result.loss.ndim == 0
 
@@ -467,7 +464,7 @@ class TestDDPMProcessor:
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    def test_training_differentiable_prediction_gradient_reaches_unet_not_target(
+    def test_training_prediction_gradient_reaches_unet_not_target(
         self, *, test_use_autoregressive: bool
     ) -> None:
         n_forecast_steps = 3
@@ -481,14 +478,14 @@ class TestDDPMProcessor:
 
         result = processor.rollout(x, y)
 
-        assert isinstance(result, ProcessorOutputDiffusion)
         n_steps = 1 if test_use_autoregressive else n_forecast_steps
-        assert result.differentiable_prediction.shape == (2, n_steps, *self.LATENT_CHW)
+        assert result.prediction.shape == (2, n_steps, *self.LATENT_CHW)
+        assert result.sample_mask is not None
         assert result.sample_mask.shape == (2,)
-        assert result.differentiable_prediction.requires_grad
+        assert result.prediction.requires_grad
 
         # Backpropagate through the prediction only (the loss also depends on y).
-        result.differentiable_prediction.sum().backward()
+        result.prediction.sum().backward()
         assert any(
             p.grad is not None and p.grad.abs().sum() > 0
             for p in processor.model.parameters()
@@ -498,7 +495,7 @@ class TestDDPMProcessor:
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    def test_training_metrics_prediction_unchanged(
+    def test_training_prediction_is_x0_estimate(
         self, *, test_use_autoregressive: bool
     ) -> None:
         n_forecast_steps = 3
@@ -513,7 +510,7 @@ class TestDDPMProcessor:
         torch.manual_seed(0)
         result = processor.rollout(x, y)
 
-        # Reproduce the previous no_grad metrics prediction with the same RNG draws.
+        # Reproduce the x_0 estimate with the same RNG draws.
         torch.manual_seed(0)
         with torch.no_grad():
             y_flat = y[:, 0] if test_use_autoregressive else y.flatten(1, 2)
@@ -524,12 +521,9 @@ class TestDDPMProcessor:
             pred_x0 = processor.diffusion.calculate_v(
                 x_start=pred_v, noise=noisy_y, t=t
             ).unflatten(1, (-1, self.LATENT_CHW[0]))
-            expected = pred_x0.expand(-1, n_forecast_steps, -1, -1, -1)
 
-        assert isinstance(result, ProcessorOutputDiffusion)
-        assert not result.prediction.requires_grad
-        torch.testing.assert_close(result.prediction, expected)
-        torch.testing.assert_close(result.differentiable_prediction.detach(), pred_x0)
+        torch.testing.assert_close(result.prediction.detach(), pred_x0)
+        assert result.sample_mask is not None
         # Default fraction 0.5 of timesteps=2: only t=0 counts
         assert torch.equal(result.sample_mask, t < 1)
 
@@ -549,7 +543,7 @@ class TestDDPMProcessor:
         torch.manual_seed(0)
         t = torch.randint(0, processor.timesteps, (batch_size,))
 
-        assert isinstance(result, ProcessorOutputDiffusion)
+        assert result.sample_mask is not None
         assert result.sample_mask.dtype == torch.bool
         # With timesteps=4, only t in {0, 1} counts
         assert torch.equal(result.sample_mask, t < 2)
@@ -831,12 +825,9 @@ class TestDDIMProcessor:
         assert isinstance(result, ProcessorOutput)
         assert result.loss is not None
         assert result.loss.ndim == 0
-        assert result.prediction.shape == (
-            test_batch_size,
-            test_n_forecast_steps,
-            test_latent_chw[0],
-            *test_latent_chw[1:],
-        )
+        # An autoregressive processor predicts only the first forecast step
+        n_steps = 1 if test_use_autoregressive else test_n_forecast_steps
+        assert result.prediction.shape == (test_batch_size, n_steps, *test_latent_chw)
 
     def test_every_channel_is_generated(
         self,

@@ -19,7 +19,6 @@ from cryocast.types import (
     DataSpace,
     Hemisphere,
     ProcessorOutput,
-    ProcessorOutputDiffusion,
     RolloutSpace,
     TensorNCHW,
     TensorNTCHW,
@@ -72,7 +71,7 @@ class _PredictionProcessor(BaseProcessor):
 
     The prediction is the last history latents times a trainable gain: one step in
     autoregressive mode, or n_forecast_steps steps in parallel mode. Set `sample_mask`
-    to choose the samples in `sample_mask` (default: all samples).
+    to choose the samples for the prediction loss (default: None, i.e. all samples).
     """
 
     def __init__(self, *, use_autoregressive: bool = True, **kwargs: Any) -> None:
@@ -84,16 +83,10 @@ class _PredictionProcessor(BaseProcessor):
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
         assert y is not None
         n_steps = 1 if self.use_autoregressive else self.n_forecast_steps
-        mask = (
-            torch.ones(x.shape[0], dtype=torch.bool)
-            if self.sample_mask is None
-            else self.sample_mask
-        )
-        return ProcessorOutputDiffusion(
-            prediction=y.clone(),
+        return ProcessorOutput(
+            prediction=self.gain * x[:, -n_steps:],
             loss=torch.zeros(()),
-            differentiable_prediction=self.gain * x[:, -n_steps:],
-            sample_mask=mask,
+            sample_mask=self.sample_mask,
         )
 
 
@@ -1038,7 +1031,7 @@ class TestPredictionLoss:
         assert model.decoder.training is not expected_frozen
         assert ("latent space can drift" in caplog.text) is expected_warning
 
-    def test_rejects_processor_without_differentiable_prediction(
+    def test_rejects_prediction_without_gradients(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
         model = _oracle_model(
@@ -1047,7 +1040,5 @@ class TestPredictionLoss:
             loss_weights={"prediction": 1.0},
         )
 
-        with pytest.raises(
-            TypeError, match="does not return a differentiable prediction"
-        ):
+        with pytest.raises(ValueError, match="returns a prediction without gradients"):
             model.training_step(_oracle_batch(), 0)

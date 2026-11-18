@@ -126,21 +126,20 @@ Without the reconstruction loss, the latent space can drift away from what the d
 
 ### Prediction loss
 
-A processor can also return a differentiable prediction from each training step.
+During training, the `prediction` from `rollout` can have gradients back to the processor.
 For example, a diffusion processor returns its estimate of the clean latent x_0.
-To do this, its `rollout` returns a `ProcessorOutputDiffusion`, which adds two fields to `ProcessorOutput`:
-
-- `differentiable_prediction`: the latent prediction, with gradients back to the processor.
-  It holds one forecast step in autoregressive mode, and all the forecast steps in parallel mode.
-- `sample_mask`: a boolean mask with one value for each sample.
-  For `DiffusionProcessor`, it is `True` for the samples whose diffusion timestep is below `0.5` of `timesteps`.
+The prediction can also have fewer forecast steps than `n_forecast_steps`.
+For example, an autoregressive diffusion processor predicts only the first forecast step.
+The processor can also set `sample_mask` on the `ProcessorOutput`.
+This is a boolean mask with one value for each sample.
+For `DiffusionProcessor`, it is `True` for the samples whose diffusion timestep is below `0.5` of `timesteps`.
 
 If the weight `loss_weights.prediction` is greater than `0` (default `0`), the model does these steps:
 
-1. It decodes `differentiable_prediction` and compares it to the target.
-   In autoregressive mode, it compares only the first forecast step.
-   In parallel mode, it compares all the forecast steps.
+1. It decodes `prediction` and compares it to the target.
+   It compares only the forecast steps in the prediction.
 2. It uses only the samples in `sample_mask`.
+   If `sample_mask` is `None`, it uses all the samples.
    For a diffusion processor, these are the samples with a low timestep: at high timesteps, the x_0 estimate is mostly noise.
    If no sample is in the mask, this loss is `0`.
 3. It adds this loss to the total loss, with the weight `loss_weights.prediction`.
@@ -148,7 +147,7 @@ If the weight `loss_weights.prediction` is greater than `0` (default `0`), the m
 
 This loss trains the processor, the decoder and the encoders against the target in physical space.
 The weight must not be negative.
-If the processor does not return a `ProcessorOutputDiffusion`, training raises a `TypeError`.
+If the prediction has no gradients during training, training raises a `ValueError`.
 
 ```yaml
 loss_weights:
