@@ -1,7 +1,6 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any
 
 import pytest
 import torch
@@ -364,7 +363,6 @@ class TestDDPMProcessor:
         use_autoregressive: bool,
         loss: DictConfig | torch.nn.Module | None = None,
         timesteps: int = 2,
-        **kwargs: Any,
     ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
@@ -379,7 +377,6 @@ class TestDDPMProcessor:
             dropout_rate=0.0,
             use_autoregressive=use_autoregressive,
             loss=torch.nn.MSELoss() if loss is None else loss,
-            **kwargs,
         )
 
     @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")

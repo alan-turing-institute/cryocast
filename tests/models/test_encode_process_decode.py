@@ -18,6 +18,7 @@ from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
     Hemisphere,
+    ModelStepOutput,
     ProcessorOutput,
     RolloutSpace,
     TensorNCHW,
@@ -151,6 +152,17 @@ def _oracle_batch() -> dict[str, TensorNTCHW]:
         "future_sic": future_sic,
         "target": future_sic[:, :, 1:2].clone(),
     }
+
+
+def _training_step(
+    model: EncodeProcessDecode, batch: dict[str, TensorNTCHW]
+) -> tuple[ModelStepOutput, dict[str, torch.Tensor]]:
+    """Run a training step and return the output and the logged values."""
+    with pytest.MonkeyPatch.context() as mp:
+        mock_log = MagicMock()
+        mp.setattr(model, "log", mock_log)
+        result = model.training_step(batch, 0)
+    return result, {c.args[0]: c.args[1] for c in mock_log.call_args_list}
 
 
 class TestEncodeProcessDecode:
@@ -603,13 +615,13 @@ class TestEncodeProcessDecode:
         )
         assert model.loss_weights == expected_weights
 
-    def test_reconstruction_loss_zero_weight_matches_main(
+    def test_zero_weights_freeze_decoder_and_use_latent_loss_only(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """Weight 0 gives the behaviour from before the reconstruction loss.
+        """With zero loss weights, the decoder is frozen and only the latent loss is used.
 
-        The decoder is frozen and stays in eval mode, and the loss is only the latent
-        loss, which does not go through the encoders or the decoder.
+        The decoder stays in eval mode, and the latent loss does not go through the
+        encoders or the decoder.
         """
         model = _oracle_model(
             cfg_loss=cfg_loss,
@@ -618,15 +630,12 @@ class TestEncodeProcessDecode:
         )
         model.train()
 
-        with pytest.MonkeyPatch.context() as mp:
-            mock_log = MagicMock()
-            mp.setattr(model, "log", mock_log)
-            result = model.training_step(_oracle_batch(), 0)
+        result, logged = _training_step(model, _oracle_batch())
 
         # Only the latent loss from _OracleProcessor (zero) remains
         assert result.loss.item() == 0.0
         assert not result.loss.requires_grad
-        assert [c.args[0] for c in mock_log.call_args_list] == ["train_loss"]
+        assert list(logged) == ["train_loss"]
 
         # The decoder is frozen, and the encoders are not
         assert not any(p.requires_grad for p in model.decoder.parameters())
@@ -655,14 +664,10 @@ class TestEncodeProcessDecode:
         batch = _oracle_batch()
         reconstruction_loss = model.loss(2.0 * batch["target"], batch["target"])
 
-        with pytest.MonkeyPatch.context() as mp:
-            mock_log = MagicMock()
-            mp.setattr(model, "log", mock_log)
-            result = model.training_step(batch, 0)
+        result, logged = _training_step(model, batch)
         result.loss.backward()
 
         torch.testing.assert_close(result.loss, 0.5 * reconstruction_loss)
-        logged = {c.args[0]: c.args[1] for c in mock_log.call_args_list}
         assert logged["train_latent_loss"].item() == 0.0
         torch.testing.assert_close(
             logged["train_reconstruction_loss"], reconstruction_loss
@@ -818,17 +823,6 @@ class TestPredictionLoss:
         model.train()
         return model
 
-    @staticmethod
-    def _training_step(
-        model: EncodeProcessDecode, batch: dict[str, TensorNTCHW]
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Run a training step and return the loss and the logged values."""
-        with pytest.MonkeyPatch.context() as mp:
-            mock_log = MagicMock()
-            mp.setattr(model, "log", mock_log)
-            result = model.training_step(batch, 0)
-        return result.loss, {c.args[0]: c.args[1] for c in mock_log.call_args_list}
-
     def test_autoregressive_compares_first_step_only(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
@@ -841,15 +835,15 @@ class TestPredictionLoss:
         batch = _oracle_batch()
         expected = model.loss(2.0 * batch["sic"][:, -1:, 1:2], batch["target"][:, :1])
 
-        loss, logged = self._training_step(model, batch)
+        result, logged = _training_step(model, batch)
 
         torch.testing.assert_close(logged["train_prediction_loss"], expected)
-        torch.testing.assert_close(loss, 0.5 * expected)
+        torch.testing.assert_close(result.loss, 0.5 * expected)
 
         # Changing the later forecast steps of the target does not change the loss
         batch["target"][:, 1:] += 1.0
-        loss_changed_target, _ = self._training_step(model, batch)
-        torch.testing.assert_close(loss_changed_target, loss)
+        changed, _ = _training_step(model, batch)
+        torch.testing.assert_close(changed.loss, result.loss)
 
     def test_parallel_compares_all_steps(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
@@ -863,12 +857,12 @@ class TestPredictionLoss:
         batch = _oracle_batch()
         expected = model.loss(2.0 * batch["sic"][:, -2:, 1:2], batch["target"])
 
-        loss, logged = self._training_step(model, batch)
+        result, logged = _training_step(model, batch)
 
         torch.testing.assert_close(logged["train_prediction_loss"], expected)
-        torch.testing.assert_close(loss, 0.5 * expected)
+        torch.testing.assert_close(result.loss, 0.5 * expected)
 
-    def test_zero_weight_gives_same_loss_as_before(
+    def test_zero_prediction_weight_skips_prediction_loss(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
         """With weight 0, the loss is the latent loss plus the reconstruction loss only."""
@@ -878,9 +872,9 @@ class TestPredictionLoss:
         batch = _oracle_batch()
         reconstruction_loss = model.loss(2.0 * batch["target"], batch["target"])
 
-        loss, logged = self._training_step(model, batch)
+        result, logged = _training_step(model, batch)
 
-        torch.testing.assert_close(loss, 0.5 * reconstruction_loss)
+        torch.testing.assert_close(result.loss, 0.5 * reconstruction_loss)
         assert "train_prediction_loss" not in logged
 
     def test_mask_selects_samples(
@@ -895,9 +889,9 @@ class TestPredictionLoss:
         batch = _oracle_batch()
         expected = model.loss(2.0 * batch["sic"][:1, -1:, 1:2], batch["target"][:1, :1])
 
-        loss, _ = self._training_step(model, batch)
+        result, _ = _training_step(model, batch)
 
-        torch.testing.assert_close(loss, expected)
+        torch.testing.assert_close(result.loss, expected)
 
     def test_empty_mask_gives_zero_not_nan(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
@@ -909,11 +903,11 @@ class TestPredictionLoss:
         assert isinstance(processor, _PredictionProcessor)
         processor.sample_mask = torch.tensor([False, False])
 
-        loss, logged = self._training_step(model, _oracle_batch())
-        loss.backward()
+        result, logged = _training_step(model, _oracle_batch())
+        result.loss.backward()
 
         assert logged["train_prediction_loss"].item() == 0.0
-        assert loss.item() == 0.0
+        assert result.loss.item() == 0.0
         decoder = model.decoder
         assert isinstance(decoder, _ScaledDecoder)
         assert decoder.scale.grad is not None
@@ -932,7 +926,7 @@ class TestPredictionLoss:
         batch = _oracle_batch()
         batch["sic"][:, -1] = torch.inf
 
-        _, logged = self._training_step(model, batch)
+        _, logged = _training_step(model, batch)
 
         assert logged["train_prediction_loss"].item() == 0.0
 
@@ -955,7 +949,7 @@ class TestPredictionLoss:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(model.decoder, "rollout", spy)
-            self._training_step(model, _oracle_batch())
+            _training_step(model, _oracle_batch())
 
         # With gradients: one masked sample. Without gradients: the metrics decode.
         assert decoded_shapes == [
@@ -973,9 +967,7 @@ class TestPredictionLoss:
         batch = _oracle_batch()
         expected = 2.0 * batch["sic"][:, -1:, 1:2].expand(-1, 2, -1, -1, -1)
 
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(model, "log", MagicMock())
-            result = model.training_step(batch, 0)
+        result, _ = _training_step(model, batch)
 
         torch.testing.assert_close(result.prediction, expected)
         assert result.prediction.is_contiguous()
@@ -989,8 +981,8 @@ class TestPredictionLoss:
             cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
         )
 
-        loss, _ = self._training_step(model, _oracle_batch())
-        loss.backward()
+        result, _ = _training_step(model, _oracle_batch())
+        result.loss.backward()
 
         processor, decoder, encoder = model.processor, model.decoder, model.encoders[0]
         assert isinstance(processor, _PredictionProcessor)
