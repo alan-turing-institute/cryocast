@@ -42,7 +42,7 @@ live in the same space as the encoded history.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from omegaconf import DictConfig
@@ -73,6 +73,8 @@ class DiffusionProcessor(BaseProcessor):
         TensorNTCHW with shape (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
         - Every channel contains the denoised prediction from reverse diffusion
     """
+
+    prediction_loss_cutoff: ClassVar[float] = 0.5  # earlier timesteps are too noisy
 
     def __init__(  # noqa: PLR0913
         self,
@@ -130,7 +132,6 @@ class DiffusionProcessor(BaseProcessor):
         c_combined = self.data_space.channels
         self.c_combined = c_combined
 
-        self.prediction_loss_cutoff = 0.5  # earlier timesteps are too noisy
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
 
