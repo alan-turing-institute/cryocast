@@ -81,3 +81,11 @@ class ProcessorOutput:
 
     prediction: TensorNTCHW
     loss: Tensor | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProcessorOutputDiffusion(ProcessorOutput):
+    """Output of a diffusion processor training step."""
+
+    pred_x0: TensorNTCHW
+    pred_x0_weight: Tensor

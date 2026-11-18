@@ -17,7 +17,7 @@ from cryocast.models.processors import (
     UNetProcessor,
     VitProcessor,
 )
-from cryocast.types import DataSpace, ProcessorOutput
+from cryocast.types import DataSpace, ProcessorOutput, ProcessorOutputDiffusion
 
 
 class TestBaseProcessor:
@@ -407,6 +407,7 @@ class TestDDPMProcessor:
 
         assert isinstance(result, ProcessorOutput)
         assert result.loss is None
+        assert not isinstance(result, ProcessorOutputDiffusion)
         assert result.prediction.shape == (
             test_batch_size,
             test_n_forecast_steps,
@@ -457,6 +458,76 @@ class TestDDPMProcessor:
         assert any(
             p.grad is not None and p.grad.abs().sum() > 0
             for p in processor.model.parameters()
+        )
+
+    @pytest.mark.parametrize(
+        "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
+    )
+    def test_training_pred_x0_gradient_reaches_unet_not_target(
+        self, *, test_use_autoregressive: bool
+    ) -> None:
+        n_forecast_steps = 3
+        processor = self._make_processor(
+            n_forecast_steps=n_forecast_steps,
+            n_history_steps=2,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(2, 2, *self.LATENT_CHW)
+        y = torch.randn(2, n_forecast_steps, *self.LATENT_CHW, requires_grad=True)
+
+        result = processor.rollout(x, y)
+
+        assert isinstance(result, ProcessorOutputDiffusion)
+        n_steps = 1 if test_use_autoregressive else n_forecast_steps
+        assert result.pred_x0.shape == (2, n_steps, *self.LATENT_CHW)
+        assert result.pred_x0_weight.shape == (2,)
+        assert result.pred_x0.requires_grad
+
+        # Backpropagate through pred_x0 only (the loss also depends on y).
+        result.pred_x0.sum().backward()
+        assert any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in processor.model.parameters()
+        )
+        assert y.grad is None
+
+    @pytest.mark.parametrize(
+        "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
+    )
+    def test_training_metrics_prediction_unchanged(
+        self, *, test_use_autoregressive: bool
+    ) -> None:
+        n_forecast_steps = 3
+        processor = self._make_processor(
+            n_forecast_steps=n_forecast_steps,
+            n_history_steps=2,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(2, 2, *self.LATENT_CHW)
+        y = torch.randn(2, n_forecast_steps, *self.LATENT_CHW)
+
+        torch.manual_seed(0)
+        result = processor.rollout(x, y)
+
+        # Reproduce the previous no_grad metrics prediction with the same RNG draws.
+        torch.manual_seed(0)
+        with torch.no_grad():
+            y_flat = y[:, 0] if test_use_autoregressive else y.flatten(1, 2)
+            t = torch.randint(0, processor.timesteps, (2,)).long()
+            noise = torch.randn_like(y_flat)
+            noisy_y = processor.diffusion.q_sample(y_flat, t, noise)
+            pred_v = processor.model(noisy_y, t, x.flatten(1, 2))
+            pred_x0 = processor.diffusion.calculate_v(
+                x_start=pred_v, noise=noisy_y, t=t
+            ).unflatten(1, (-1, self.LATENT_CHW[0]))
+            expected = pred_x0.expand(-1, n_forecast_steps, -1, -1, -1)
+
+        assert isinstance(result, ProcessorOutputDiffusion)
+        assert not result.prediction.requires_grad
+        torch.testing.assert_close(result.prediction, expected)
+        torch.testing.assert_close(result.pred_x0.detach(), pred_x0)
+        torch.testing.assert_close(
+            result.pred_x0_weight, processor.diffusion.alphas_cumprod[t]
         )
 
     # n_forecast_steps=3 differs from the 4 latent channels so a swapped (C, T) unflatten

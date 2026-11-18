@@ -48,6 +48,7 @@ from .simple_datatypes import (
     AnemoiLoadArgs,
     DataloaderArgs,
     ProcessorOutput,
+    ProcessorOutputDiffusion,
 )
 
 __all__ = [
@@ -80,6 +81,7 @@ __all__ = [
     "ModelStepOutput",
     "PlotSpec",
     "ProcessorOutput",
+    "ProcessorOutputDiffusion",
     "RangeRestriction",
     "RolloutSpace",
     "SkipConnectionType",

@@ -50,7 +50,13 @@ from torch import nn
 
 from cryocast.losses import LeadTimeWeightedLoss, build_loss
 from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
-from cryocast.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTCHW
+from cryocast.types import (
+    BetaSchedule,
+    ProcessorOutput,
+    ProcessorOutputDiffusion,
+    TensorNCHW,
+    TensorNTCHW,
+)
 
 from .base_processor import BaseProcessor
 
@@ -165,31 +171,6 @@ class DiffusionProcessor(BaseProcessor):
             beta_schedule=BetaSchedule(beta_schedule),
         )
 
-    def _build_metrics_prediction(self, pred_x0: TensorNCHW) -> TensorNTCHW:
-        """Unfold the training-time x_0 estimate into an NTCHW combined-latent tensor.
-
-        The returned tensor is only used for metrics/callbacks (the actual
-        training signal is the v-prediction loss).
-
-        Args:
-            pred_x0 (TensorNCHW): Predicted x_0 of shape (B, C_combined, H, W)
-                in autoregressive mode, or (B, n_forecast_steps * C_combined, H, W)
-                in parallel mode.
-
-        Returns:
-            TensorNTCHW: Combined-latent tensor of shape
-                (B, n_forecast_steps, C_combined, H, W).
-
-        """
-        b, _, h, w = pred_x0.shape
-        # In autoregressive mode, we duplicate predicted x_0 across all forecast steps
-        if self.use_autoregressive:
-            return pred_x0.unsqueeze(1).expand(
-                b, self.n_forecast_steps, self.c_combined, h, w
-            )
-        # In parallel mode, the predicted x_0 is folded into channels for all forecast steps.
-        return pred_x0.reshape(b, self.n_forecast_steps, self.c_combined, h, w)
-
     def _rollout_inference(self, x: TensorNTCHW) -> ProcessorOutput:
         """Generate a latent forecast using a reverse diffusion process.
 
@@ -223,7 +204,9 @@ class DiffusionProcessor(BaseProcessor):
             return ProcessorOutput(prediction=self._sample_autoregressive(x))
         return ProcessorOutput(prediction=self._sample_parallel(x))
 
-    def _rollout_training(self, x: TensorNTCHW, y: TensorNTCHW) -> ProcessorOutput:
+    def _rollout_training(
+        self, x: TensorNTCHW, y: TensorNTCHW
+    ) -> ProcessorOutputDiffusion:
         """One training rollout using DDPM v-prediction loss.
 
         During training, the clean future latent is corrupted using the forward
@@ -237,11 +220,15 @@ class DiffusionProcessor(BaseProcessor):
                 (B, n_forecast_steps, n_latent_channels_total, H, W).
 
         Returns:
-            ProcessorOutput:
+            ProcessorOutputDiffusion:
             - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W)
-                Combined-latent tensor built from the predicted x_0. Used
-                only for metrics/callbacks under ``torch.no_grad``.
+                Combined-latent tensor built from the detached predicted x_0.
+                Used only for metrics/callbacks.
             - loss: v-prediction loss value computed by ``self.loss_fn``.
+            - pred_x0: (B, T, n_latent_channels_total, H, W) predicted x_0,
+                with T=1 in autoregressive mode and T=n_forecast_steps in
+                parallel mode.
+            - pred_x0_weight: (B,) weight for a loss on ``pred_x0``.
 
         Notes:
             - In autoregressive mode, the model is trained on forecast step 0
@@ -269,9 +256,10 @@ class DiffusionProcessor(BaseProcessor):
         # Random diffusion timestep per sample.
         t = torch.randint(0, self.timesteps, (b,), device=device).long()
 
-        # Add noise to the clean target at diffusion step t.
+        # Add noise to the clean target at diffusion step t. Detach it so that
+        # no gradient reaches y through the UNet input or the x_0 estimate.
         noise: TensorNCHW = torch.randn_like(y_flat)
-        noisy_y: TensorNCHW = self.diffusion.q_sample(y_flat, t, noise)
+        noisy_y: TensorNCHW = self.diffusion.q_sample(y_flat, t, noise).detach()
 
         # Predict the velocity conditioned on the noisy target and history.
         pred_v: TensorNCHW = self.model(noisy_y, t, cond)
@@ -288,16 +276,24 @@ class DiffusionProcessor(BaseProcessor):
             target_v.unflatten(1, (n_steps, self.c_combined)),
         )
 
-        # Reconstruct x0 for metrics only; this is not used for training.
-        with torch.no_grad():
-            # calculate_v() has the same formula as the x_0 reconstruction,
-            # so we reuse it by passing pred_v as x_start.
-            pred_x0: TensorNCHW = self.diffusion.calculate_v(
-                x_start=pred_v, noise=noisy_y, t=t
-            )
-            prediction = self._build_metrics_prediction(pred_x0)
+        # Reconstruct x_0 from pred_v. calculate_v() has the same formula as
+        # the x_0 reconstruction, so we reuse it by passing pred_v as x_start.
+        # The graph goes back to the network through pred_v only.
+        pred_x0: TensorNTCHW = self.diffusion.calculate_v(
+            x_start=pred_v, noise=noisy_y, t=t
+        ).unflatten(1, (n_steps, self.c_combined))
 
-        return ProcessorOutput(prediction=prediction, loss=loss)
+        # Detached prediction for metrics only. In autoregressive mode, the
+        # single predicted step is repeated over all forecast steps.
+        prediction = pred_x0.detach().expand(-1, self.n_forecast_steps, -1, -1, -1)
+
+        # Timestep weight ranges from 0 for noisy timesteps to 1 for clean timesteps
+        return ProcessorOutputDiffusion(
+            prediction=prediction,
+            loss=loss,
+            pred_x0=pred_x0,
+            pred_x0_weight=self.diffusion.alphas_cumprod.to(t.device)[t],
+        )
 
     def _run_ddim_reverse_diffusion(
         self, y: TensorNCHW, cond: TensorNCHW
