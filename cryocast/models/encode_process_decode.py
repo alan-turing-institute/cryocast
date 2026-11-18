@@ -14,6 +14,7 @@ from cryocast.types import (
     DataSpace,
     ModelStepOutput,
     RolloutSpace,
+    SkipAnchorType,
     TensorNCHW,
     TensorNTCHW,
 )
@@ -47,6 +48,7 @@ class EncodeProcessDecode(BaseModel):
         loss_weights: dict[str, float] | None = None,
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
+        skip_anchor: SkipAnchorType | str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise an EncodeProcessDecode model.
@@ -73,6 +75,9 @@ class EncodeProcessDecode(BaseModel):
             mask_dir: directory containing masks for the decoder (if needed).
             rollout_space: RolloutSpace.LATENT or RolloutSpace.PHYSICAL (or the
                 equivalent string), where to perform the forecast loop.
+            skip_anchor: Whether to use the last, real observed frame or the most recent
+                forecast step as the skip connection anchor. If None, use the default
+                for the rollout space: INITIAL for latent and PREVIOUS for physical.
             **kwargs: forwarded to ``BaseModel`` (spaces, masks, range, skip).
 
         """
@@ -186,6 +191,24 @@ class EncodeProcessDecode(BaseModel):
                     f"latent space."
                 )
                 raise ValueError(msg)
+
+        # Resolve the skip-connection anchor. If it is unset, use the default for the
+        # rollout space.
+        is_physical = self.rollout_space == RolloutSpace.PHYSICAL
+        default = SkipAnchorType.PREVIOUS if is_physical else SkipAnchorType.INITIAL
+        self.skip_anchor = SkipAnchorType(skip_anchor or default)
+        if is_physical and self.skip_anchor == SkipAnchorType.INITIAL:
+            msg = (
+                "skip_anchor='initial' is not supported with rollout_space='physical'. "
+                "Use skip_anchor='previous' or leave it unset."
+            )
+            raise ValueError(msg)
+        if self.skip_anchor != default and self.decoder.skip_connection is None:
+            log.warning(
+                "skip_anchor='%s' has no effect because the decoder has no skip "
+                "connection.",
+                self.skip_anchor.value,
+            )
 
     @override
     def load_state_dict(
@@ -343,7 +366,8 @@ class EncodeProcessDecode(BaseModel):
         - concatenate inputs in `NTCHW` latent space (batch, n_history_steps, n_latent_channels_total, H_latent, W_latent)
         - process in latent space `NTCHW` (batch, n_forecast_steps, n_latent_channels_total, H_latent, W_latent)
         - decode back to `NTCHW` output space (batch, n_forecast_steps, n_output_channels, H_output, W_output)
-        - add a skip connection from the most recent target value to every forecast step
+        - add a skip connection to each forecast step. Its anchor is the most recent
+          target value, or the previous forecast step if `skip_anchor` is PREVIOUS
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -361,11 +385,11 @@ class EncodeProcessDecode(BaseModel):
             latent_input_combined
         ).prediction
 
-        # Use persistence as the skip-connection anchor, if required
+        # Use persistence as the skip-connection anchor for the first step, if required
         anchor = self._anchor_ntchw(inputs[self.output_space.name])
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
-        return self.decoder.rollout(latent_output, anchor)
+        return self.decoder.rollout(latent_output, anchor, anchor_type=self.skip_anchor)
 
     def _forward_rollout_physical(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in physical space.
@@ -486,7 +510,7 @@ class EncodeProcessDecode(BaseModel):
         # Without a mask, all samples count
         if mask is None:
             return self.loss(
-                self.decoder.rollout(prediction, anchor),
+                self.decoder.rollout(prediction, anchor, anchor_type=self.skip_anchor),
                 target[:, : prediction.shape[1]],
             )
 
@@ -504,7 +528,9 @@ class EncodeProcessDecode(BaseModel):
 
         # Decode only the samples in the mask
         decoded = self.decoder.rollout(
-            prediction[mask], None if anchor is None else anchor[mask]
+            prediction[mask],
+            None if anchor is None else anchor[mask],
+            anchor_type=self.skip_anchor,
         )
         return self.loss(decoded, target[mask, : prediction.shape[1]])
 
@@ -597,7 +623,10 @@ class EncodeProcessDecode(BaseModel):
             if self.loss_weights["reconstruction"] > 0:
                 # Decode the encoded forecast-step inputs and compare them to the target
                 losses["reconstruction"] = self.loss(
-                    self.decoder.rollout(future_latent, anchor), target
+                    self.decoder.rollout(
+                        future_latent, anchor, anchor_type=self.skip_anchor
+                    ),
+                    target,
                 )
             if self.loss_weights["prediction"] > 0:
                 # Decode the differentiable prediction and compare it to the target
@@ -624,7 +653,9 @@ class EncodeProcessDecode(BaseModel):
             training_mode = self.decoder.training
             self.decoder.eval()
             with torch.no_grad():
-                prediction = self.decoder.rollout(processor_output.prediction, anchor)
+                prediction = self.decoder.rollout(
+                    processor_output.prediction, anchor, anchor_type=self.skip_anchor
+                )
             self.decoder.train(training_mode)
             # If the latent prediction has fewer forecast steps than the target, repeat
             # the last one until we have the correct number

@@ -26,6 +26,7 @@ The properties tested here, in order of importance:
 * No future information can enter through either option.
 """
 
+import logging
 from typing import Any, cast
 
 import pytest
@@ -33,6 +34,7 @@ import torch
 from omegaconf import DictConfig
 
 from cryocast.models import EncodeProcessDecode
+from cryocast.types import SkipAnchorType
 
 TARGET_GROUP = "sic-ssmis"
 SEED = 1234
@@ -57,6 +59,7 @@ VIT_PROCESSOR: dict[str, Any] = {
 def _build_model(
     *,
     rollout_space: str | None = None,
+    skip_anchor: str | None = None,
     decoder_extra: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
@@ -116,6 +119,7 @@ def _build_model(
         scheduler=DictConfig({}),
         lr_scheduler=DictConfig({}),
         **rollout_kwargs,
+        skip_anchor=skip_anchor,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
@@ -415,6 +419,37 @@ class TestNoFutureLeak:
 
 
 class TestConfigValidation:
+    def test_bad_skip_anchor(self) -> None:
+        with pytest.raises(ValueError, match="sideways"):
+            _build_model(skip_anchor="sideways")
+
+    def test_physical_rollout_rejects_initial_anchor(self) -> None:
+        with pytest.raises(ValueError, match="skip_anchor='initial'"):
+            _build_model(
+                rollout_space="physical",
+                skip_anchor="initial",
+                decoder_extra=ADDITIVE_SKIP_DECODER,
+            )
+
+    @pytest.mark.parametrize(
+        ("skip_anchor", "warns"),
+        [
+            pytest.param("previous", True, id="previous-warns"),
+            pytest.param("initial", False, id="default-is-silent"),
+        ],
+    )
+    def test_anchor_without_skip_connection_warns_unless_default(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        skip_anchor: str,
+        warns: bool,  # noqa: FBT001
+    ) -> None:
+        """Warn only if the anchor differs from the latent default, initial."""
+        with caplog.at_level(logging.WARNING):
+            model = _build_model(skip_anchor=skip_anchor)
+        assert model.skip_anchor == skip_anchor
+        assert ("has no effect" in caplog.text) is warns
+
     def test_bad_rollout_space(self) -> None:
         with pytest.raises(ValueError, match="not a valid RolloutSpace"):
             _build_model(rollout_space="nonsense")
@@ -451,10 +486,11 @@ class TestAnchorSemantics:
     """Static and moving anchors are one mechanism differing only in the anchor frame.
 
     The static anchor (#405) and the moving anchor (#410) are the same additive skip
-    connection; only the frame supplied as the anchor differs.
+    connection; only the frame supplied as the anchor differs. `skip_anchor` selects
+    it, and when it is unset each rollout space keeps its historical anchor.
 
-    Both cases below drive the decoder to emit a CONSTANT tendency c, which makes the
-    two anchor choices analytically separable:
+    Each case drives the decoder to emit a CONSTANT tendency c, which makes the two
+    anchor choices analytically separable:
         static anchor  ->  output_k = clamp(observation + c)      (same for every lead)
         moving anchor  ->  output_k = clamp(output_{k-1} + c)     (accumulates with k)
     """
@@ -469,19 +505,29 @@ class TestAnchorSemantics:
             final.bias.fill_(value)
 
     @pytest.mark.parametrize(
-        ("rollout_space", "accumulates"),
-        [("physical", True), ("latent", False)],
-        ids=["moving-anchor-accumulates", "static-anchor-does-not-accumulate"],
+        ("rollout_space", "skip_anchor", "accumulates"),
+        [
+            pytest.param("physical", None, True, id="physical-default-accumulates"),
+            pytest.param("latent", None, False, id="latent-default-is-static"),
+            pytest.param("latent", "initial", False, id="latent-initial-is-static"),
+            pytest.param("latent", "previous", True, id="latent-previous-accumulates"),
+        ],
     )
-    def test_anchor_accumulation(self, rollout_space: str, accumulates: bool) -> None:  # noqa: FBT001
+    def test_anchor_accumulation(
+        self,
+        rollout_space: str,
+        skip_anchor: str | None,
+        accumulates: bool,  # noqa: FBT001
+    ) -> None:
         """Moving vs static anchor under a constant tendency.
 
-        rollout_space='physical': each lead corrects the PREVIOUS lead, so the
-        tendency accumulates. The default latent path anchors EVERY lead on the newest
+        With a moving anchor each lead corrects the PREVIOUS lead, so the tendency
+        accumulates. With a static anchor EVERY lead is anchored on the newest
         observation, so it does not.
         """
         model = _build_model(
             rollout_space=rollout_space,
+            skip_anchor=skip_anchor,
             decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         step = 0.05
@@ -491,11 +537,28 @@ class TestAnchorSemantics:
         with torch.no_grad():
             prediction = model(inputs)
 
-        newest = inputs[TARGET_GROUP][:, -1]
+        anchor = inputs[TARGET_GROUP][:, -1]
         for lead in range(model.n_forecast_steps):
-            increment = step * (lead + 1) if accumulates else step
-            expected = (newest + increment).clamp(0.0, 1.0)
+            expected = (anchor + step).clamp(0.0, 1.0)
             assert torch.allclose(prediction[:, lead], expected)
+            if accumulates:
+                anchor = expected
+
+    @pytest.mark.parametrize(
+        ("rollout_space", "expected"),
+        [("latent", SkipAnchorType.INITIAL), ("physical", SkipAnchorType.PREVIOUS)],
+        ids=["latent", "physical"],
+    )
+    def test_default_resolves_per_rollout_space(
+        self, rollout_space: str, expected: SkipAnchorType
+    ) -> None:
+        model = _build_model(
+            rollout_space=rollout_space, decoder_extra=ADDITIVE_SKIP_DECODER
+        )
+        assert model.skip_anchor is expected
+        # The unresolved value is saved, so that the default can follow the rollout
+        # space when the checkpoint is loaded
+        assert model.hparams["skip_anchor"] is None
 
 
 class TestTrainEvalParity:

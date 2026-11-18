@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import lightning
 import pytest
 import torch
 from lightning import Trainer
@@ -21,6 +22,7 @@ from cryocast.types import (
     ModelStepOutput,
     ProcessorOutput,
     RolloutSpace,
+    SkipAnchorType,
     TensorNCHW,
     TensorNTCHW,
 )
@@ -101,6 +103,23 @@ class _PredictionProcessor(BaseProcessor):
         )
 
 
+class _RepeatLastProcessor(BaseProcessor):
+    """Latent-loss processor that repeats the last history latent at every step.
+
+    Unlike _OracleProcessor it does not read the future latent, so the forward pass
+    and the training step give the same prediction.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(computes_loss_in_latent_space=True, **kwargs)
+
+    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
+        return ProcessorOutput(
+            prediction=x[:, -1:].repeat(1, self.n_forecast_steps, 1, 1, 1),
+            loss=torch.zeros(()),
+        )
+
+
 class _ScaledDecoder(BaseDecoder):
     """Trainable decoder that multiplies one channel of the combined latent by scale."""
 
@@ -131,6 +150,9 @@ def _oracle_model(
     loss_weights: dict[str, float] | None = None,
     n_forecast_steps: int = 2,
     processor: DictConfig | None = None,
+    decoder_scale: float = 2.0,
+    skip_connection: dict[str, Any] | None = None,
+    skip_anchor: str | None = None,
 ) -> EncodeProcessDecode:
     """Build a latent-loss model with a trainable encoder and a trainable decoder.
 
@@ -147,11 +169,13 @@ def _oracle_model(
         or DictConfig({"_target_": f"{__name__}.{_OracleProcessor.__name__}"}),
         decoder=_ScaledDecoder(
             channel=1,
-            scale=2.0,
+            scale=decoder_scale,
             data_space_in=DataSpace(channels=2, name="combined", shape=shape),
             data_space_out=output_space,
+            skip_connection=skip_connection,
         ),
         loss_weights=loss_weights,
+        skip_anchor=skip_anchor,
         hemisphere="north",
         input_spaces=[sic.to_dict()],
         loss=cfg_loss,
@@ -969,9 +993,11 @@ class TestPredictionLoss:
         decoded_shapes: list[tuple[bool, torch.Size]] = []
         rollout = model.decoder.rollout
 
-        def spy(x: TensorNTCHW, persistence: TensorNTCHW | None) -> TensorNTCHW:
+        def spy(
+            x: TensorNTCHW, persistence: TensorNTCHW | None, **kwargs: Any
+        ) -> TensorNTCHW:
             decoded_shapes.append((torch.is_grad_enabled(), x.shape))
-            return rollout(x, persistence)
+            return rollout(x, persistence, **kwargs)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(model.decoder, "rollout", spy)
@@ -1133,3 +1159,168 @@ class TestPredictionLoss:
 
         with pytest.raises(ValueError, match="returns a prediction without gradients"):
             model.training_step(_oracle_batch(), 0)
+
+
+class TestSkipAnchor:
+    """`skip_anchor` sets the skip-connection anchor wherever the latent rollout decodes.
+
+    The decoder adds 0.1 * the target channel of each latent step to its anchor, so:
+        initial   ->  output_k = clamp(observation + delta_k)
+        previous  ->  output_k = clamp(output_{k-1} + delta_k)
+    """
+
+    SCALE = 0.1
+
+    def _model(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str | None,
+        **kwargs: Any,
+    ) -> EncodeProcessDecode:
+        kwargs.setdefault(
+            "processor",
+            DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
+        )
+        return _oracle_model(
+            cfg_loss=cfg_loss,
+            cfg_metrics=cfg_metrics,
+            decoder_scale=self.SCALE,
+            skip_connection={"method": "additive"},
+            skip_anchor=skip_anchor,
+            **kwargs,
+        )
+
+    def _expected(
+        self, observation: TensorNTCHW, deltas: TensorNTCHW, skip_anchor: str | None
+    ) -> TensorNTCHW:
+        """Apply the additive skip connection by hand for each forecast step."""
+        anchor = observation[:, -1, 1:2]
+        outputs = []
+        for delta in (self.SCALE * deltas[:, :, 1:2]).unbind(dim=1):
+            output = (anchor + delta).clamp(0.0, 1.0)
+            outputs.append(output)
+            if skip_anchor == "previous":
+                anchor = output
+        return torch.stack(outputs, dim=1)
+
+    @pytest.mark.parametrize("skip_anchor", [None, "initial", "previous"])
+    def test_training_step_matches_forward(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str | None,
+    ) -> None:
+        """The latent-loss metrics decode uses the same anchor as the forward pass."""
+        model = self._model(cfg_loss, cfg_metrics, skip_anchor)
+        model.train()
+        batch = _oracle_batch()
+        # The processor repeats the last history latent at every forecast step
+        expected = self._expected(
+            batch["sic"],
+            batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
+            skip_anchor,
+        )
+
+        result, _ = _training_step(model, batch)
+        model.eval()
+        with torch.no_grad():
+            forward = model(batch)
+
+        torch.testing.assert_close(result.prediction, expected)
+        torch.testing.assert_close(forward, expected)
+
+    @pytest.mark.parametrize("skip_anchor", ["initial", "previous"])
+    def test_prediction_loss_uses_skip_anchor(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str,
+    ) -> None:
+        """The prediction loss decodes the processor output with the same anchor."""
+        model = self._model(
+            cfg_loss,
+            cfg_metrics,
+            skip_anchor,
+            loss_weights={"reconstruction": 0.0, "prediction": 1.0},
+            processor=DictConfig(
+                {
+                    "_target_": f"{__name__}.{_PredictionProcessor.__name__}",
+                    "use_autoregressive": False,
+                }
+            ),
+        )
+        model.train()
+        batch = _oracle_batch()
+        # The processor returns the last n_forecast_steps history latents
+        expected = model.loss(
+            self._expected(batch["sic"], batch["sic"], skip_anchor), batch["target"]
+        )
+
+        _, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(logged["train_prediction_loss"], expected)
+
+    @pytest.mark.parametrize(
+        ("rollout_space", "expected"),
+        [
+            (RolloutSpace.LATENT, SkipAnchorType.INITIAL),
+            (RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
+        ],
+        ids=["latent", "physical"],
+    )
+    def test_checkpoint_without_skip_anchor_keeps_old_behaviour(
+        self,
+        cfg_decoder: DictConfig,
+        cfg_encoders: DictConfig,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        cfg_processor: DictConfig,
+        tmp_path: Path,
+        rollout_space: RolloutSpace,
+        expected: SkipAnchorType,
+    ) -> None:
+        """Checkpoints saved before `skip_anchor` existed load with the old anchor."""
+        model = EncodeProcessDecode(
+            name="old-hparams",
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            hemisphere=Hemisphere.NORTH,
+            input_spaces=[cfg_input_space],
+            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+            metrics=[],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            # A physical rollout needs the prediction target to be a model input
+            output_space={**cfg_output_space, "name": cfg_input_space["name"]},
+            optimizer=DictConfig({"_target_": "torch.optim.Adam", "lr": 1e-3}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            rollout_space=rollout_space,
+            target_variable_indices=[0],
+        )
+        # Leave out the key, as in a checkpoint saved before the option existed
+        assert model.hparams["skip_anchor"] is None
+        checkpoint_file = tmp_path / "model.ckpt"
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                "hyper_parameters": {
+                    k: v for k, v in model.hparams.items() if k != "skip_anchor"
+                },
+                "pytorch-lightning_version": lightning.__version__,
+            },
+            checkpoint_file,
+        )
+
+        loaded = EncodeProcessDecode.load_from_checkpoint(
+            checkpoint_file,
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            metrics=[],
+            weights_only=False,
+        )
+        assert loaded.rollout_space is rollout_space
+        assert loaded.skip_anchor is expected
