@@ -85,7 +85,16 @@ class ProcessorOutput:
 
 @dataclass(frozen=True, kw_only=True)
 class ProcessorOutputDiffusion(ProcessorOutput):
-    """Output of a diffusion processor training step."""
+    """Output of a diffusion processor training step.
+
+    Attributes:
+        pred_x0: Estimate of the clean latent x_0, of shape (B, T, C, H, W).
+            T is 1 in autoregressive mode and n_forecast_steps in parallel mode.
+            Gradients flow back to the network, but not to the latent target.
+        pred_x0_mask: Boolean mask of shape (B,). True for the samples whose
+            diffusion timestep is low enough for a loss on ``pred_x0``.
+
+    """
 
     pred_x0: TensorNTCHW
-    pred_x0_weight: Tensor
+    pred_x0_mask: Tensor

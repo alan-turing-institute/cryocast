@@ -1,6 +1,7 @@
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -362,6 +363,7 @@ class TestDDPMProcessor:
         n_history_steps: int,
         use_autoregressive: bool,
         loss: DictConfig | torch.nn.Module | None = None,
+        **kwargs: Any,
     ) -> DiffusionProcessor:
         combined = DataSpace(
             name="combined", channels=self.LATENT_CHW[0], shape=self.LATENT_CHW[1:]
@@ -376,6 +378,7 @@ class TestDDPMProcessor:
             dropout_rate=0.0,
             use_autoregressive=use_autoregressive,
             loss=torch.nn.MSELoss() if loss is None else loss,
+            **kwargs,
         )
 
     @pytest.mark.parametrize("test_batch_size", [1, 2], ids=lambda b: f"batch{b}")
@@ -480,7 +483,7 @@ class TestDDPMProcessor:
         assert isinstance(result, ProcessorOutputDiffusion)
         n_steps = 1 if test_use_autoregressive else n_forecast_steps
         assert result.pred_x0.shape == (2, n_steps, *self.LATENT_CHW)
-        assert result.pred_x0_weight.shape == (2,)
+        assert result.pred_x0_mask.shape == (2,)
         assert result.pred_x0.requires_grad
 
         # Backpropagate through pred_x0 only (the loss also depends on y).
@@ -526,9 +529,42 @@ class TestDDPMProcessor:
         assert not result.prediction.requires_grad
         torch.testing.assert_close(result.prediction, expected)
         torch.testing.assert_close(result.pred_x0.detach(), pred_x0)
-        torch.testing.assert_close(
-            result.pred_x0_weight, processor.diffusion.alphas_cumprod[t]
+        assert torch.equal(result.pred_x0_mask, t < processor.timesteps)
+
+    def test_training_pred_x0_mask_uses_max_timestep(self) -> None:
+        processor = self._make_processor(
+            n_forecast_steps=1,
+            n_history_steps=1,
+            use_autoregressive=True,
+            pred_x0_max_timestep=1,
         )
+        batch_size = 16
+        x = torch.randn(batch_size, 1, *self.LATENT_CHW)
+        y = torch.randn(batch_size, 1, *self.LATENT_CHW)
+
+        torch.manual_seed(0)
+        result = processor.rollout(x, y)
+        torch.manual_seed(0)
+        t = torch.randint(0, processor.timesteps, (batch_size,))
+
+        assert isinstance(result, ProcessorOutputDiffusion)
+        assert result.pred_x0_mask.dtype == torch.bool
+        assert torch.equal(result.pred_x0_mask, t < 1)
+        # The seed gives timesteps on both sides of the threshold
+        assert result.pred_x0_mask.any()
+        assert not result.pred_x0_mask.all()
+
+    @pytest.mark.parametrize("test_max_timestep", [0, 3], ids=["zero", "too-large"])
+    def test_rejects_pred_x0_max_timestep_out_of_range(
+        self, test_max_timestep: int
+    ) -> None:
+        with pytest.raises(ValueError, match="pred_x0_max_timestep"):
+            self._make_processor(
+                n_forecast_steps=1,
+                n_history_steps=1,
+                use_autoregressive=True,
+                pred_x0_max_timestep=test_max_timestep,
+            )
 
     # n_forecast_steps=3 differs from the 4 latent channels so a swapped (C, T) unflatten
     # changes the number of lead times seen by the wrapped loss

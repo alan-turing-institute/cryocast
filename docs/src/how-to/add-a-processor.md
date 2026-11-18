@@ -118,8 +118,49 @@ auxiliary_loss_weights:
 ```
 
 The weight must not be negative.
-If the weight is `0`, the model does not calculate the autoencoder loss, and it freezes the decoder.
+If the weight is `0`, the model does not calculate the autoencoder loss.
 The processor stage of [multistage training](./train-multistage.md) always sets the weight to `0`, because its encoders and decoder are frozen.
+If the weight is `0` and the encoders or the decoder are trainable, the model logs a warning.
+Without the autoencoder loss, the latent space can drift away from what the decoder expects.
+
+### `pred_x0` loss
+
+A diffusion processor can also return an estimate of the clean latent x_0 from each training step.
+To do this, its `rollout` returns a `ProcessorOutputDiffusion`, which adds two fields to `ProcessorOutput`:
+
+- `pred_x0`: the x_0 estimate, with gradients back to the processor.
+  It holds one forecast step in autoregressive mode, and all the forecast steps in parallel mode.
+- `pred_x0_mask`: a boolean mask with one value for each sample.
+  It is `True` for the samples whose diffusion timestep is below `pred_x0_max_timestep`.
+
+If the weight `auxiliary_loss_weights.pred_x0` is greater than `0` (default `0`), the model does these steps:
+
+1. It decodes `pred_x0` and compares it to the target.
+   In autoregressive mode, it compares only the first forecast step.
+   In parallel mode, it compares all the forecast steps.
+2. It uses only the samples in `pred_x0_mask`.
+   At high timesteps, the x_0 estimate is mostly noise.
+   If no sample is in the mask, this loss is `0`.
+3. It adds this loss to the total loss, with the weight `auxiliary_loss_weights.pred_x0`.
+   It logs this loss as `train_pred_x0_loss`.
+
+This loss trains the processor, the decoder and the encoders against the target in physical space.
+The weight must not be negative.
+If the processor does not return a `ProcessorOutputDiffusion`, training raises a `TypeError`.
+
+```yaml
+auxiliary_loss_weights:
+  autoencoder: 1.0
+  pred_x0: 0.5
+
+processor:
+  _target_: cryocast.models.processors.DiffusionProcessor
+  timesteps: 250
+  pred_x0_max_timestep: 50  # default: timesteps (all samples count)
+```
+
+The model freezes the decoder only if both weights are `0`.
+In this case, the training loss does not use the decoder.
 
 !!! warning
     The `future_<input>` keys contain ground-truth data for the forecast steps.

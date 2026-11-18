@@ -260,7 +260,7 @@ class TestProcessorStage:
         self, processor_stage: ProcessorStage
     ) -> None:
         """The encoders and the decoder are frozen, so the autoencoder loss is off."""
-        assert processor_stage.autoencoder_loss_weight == 0
+        assert processor_stage.weight_autoencoder == 0
 
     def test_train_keeps_frozen_modules_in_eval_mode(
         self, processor_stage: ProcessorStage

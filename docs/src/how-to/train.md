@@ -5,9 +5,9 @@ Single-stage training trains the full model end-to-end in one pass.
 It is the default and works for all model architectures.
 
 Some processors calculate their loss in latent space, for example `DiffusionProcessor`.
-In single-stage training, the autoencoder loss trains the encoders and the decoder together with the processor.
-If you set `auxiliary_loss_weights.autoencoder` to `0`, the model freezes the decoder before it is trained.
-Thus, single-stage training with this weight raises a `ValueError`.
+In single-stage training, the autoencoder loss and the `pred_x0` loss train the encoders and the decoder together with the processor.
+If you set both `auxiliary_loss_weights.autoencoder` and `auxiliary_loss_weights.pred_x0` to `0`, the model freezes the decoder before it is trained.
+Thus, single-stage training with these weights raises a `ValueError`.
 See [Loss in latent space](./add-a-processor.md#loss-in-latent-space).
 
 ## Prerequisites

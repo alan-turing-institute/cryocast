@@ -522,20 +522,23 @@ class ModelService:
 
         Raises:
             ValueError: If the processor computes its loss in latent space while
-                autoencoder loss is disabled. This would otherwise freeze a decoder
-                that was never trained.
+                the autoencoder and pred_x0 losses are both disabled. This
+                would otherwise freeze a decoder that was never trained.
 
         """
         if (
             isinstance(self.model, EncodeProcessDecode)
             and self.model.processor.computes_loss_in_latent_space
             and self.model.autoencoder_loss_weight == 0
+            and self.model.pred_x0_loss_weight == 0
         ):
             msg = (
                 f"Processor {type(self.model.processor).__name__} computes its loss "
                 "in latent space, so single-stage training needs the autoencoder loss "
-                "to train the decoder. Set auxiliary_loss_weights.autoencoder to a "
-                "value greater than 0, or use `cryocast train --multistage`."
+                "or the pred_x0 loss to train the decoder. Either set "
+                "auxiliary_loss_weights.autoencoder or "
+                "auxiliary_loss_weights.pred_x0 to a value greater than 0, "
+                "or train with `--multistage`."
             )
             raise ValueError(msg)
         if self.checkpoint_file:

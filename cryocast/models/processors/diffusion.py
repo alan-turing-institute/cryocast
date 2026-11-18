@@ -89,6 +89,7 @@ class DiffusionProcessor(BaseProcessor):
         normalization: str = "groupnorm",
         activation: str = "SiLU",
         use_autoregressive: bool = True,
+        pred_x0_max_timestep: int | None = None,
         loss: DictConfig | nn.Module,
         **kwargs: Any,
     ) -> None:
@@ -113,6 +114,12 @@ class DiffusionProcessor(BaseProcessor):
             activation (str): Activation function used throughout the network (e.g., "SiLU").
             use_autoregressive (bool): Whether to use autoregressive sampling and
                 one-step training. Default is True.
+            pred_x0_max_timestep (int | None): Only samples with a
+                diffusion timestep below this value count towards the
+                ``pred_x0`` loss in ``EncodeProcessDecode``. At high
+                timesteps the x_0 estimate is mostly noise. Must satisfy
+                ``1 <= pred_x0_max_timestep <= timesteps``. ``None``
+                means ``timesteps`` (all samples count). Default is None.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
@@ -133,6 +140,16 @@ class DiffusionProcessor(BaseProcessor):
 
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+
+        if pred_x0_max_timestep is None:
+            pred_x0_max_timestep = timesteps
+        if not 1 <= pred_x0_max_timestep <= timesteps:
+            msg = (
+                f"pred_x0_max_timestep={pred_x0_max_timestep} "
+                f"must be in the range [1, timesteps={timesteps}]."
+            )
+            raise ValueError(msg)
+        self.pred_x0_max_timestep = pred_x0_max_timestep
 
         # Autoregressive training only optimises one forecast step at a time
         if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
@@ -228,7 +245,8 @@ class DiffusionProcessor(BaseProcessor):
             - pred_x0: (B, T, n_latent_channels_total, H, W) predicted x_0,
                 with T=1 in autoregressive mode and T=n_forecast_steps in
                 parallel mode.
-            - pred_x0_weight: (B,) weight for a loss on ``pred_x0``.
+            - pred_x0_mask: (B,) True where ``t`` is below
+                ``pred_x0_max_timestep``.
 
         Notes:
             - In autoregressive mode, the model is trained on forecast step 0
@@ -287,12 +305,11 @@ class DiffusionProcessor(BaseProcessor):
         # single predicted step is repeated over all forecast steps.
         prediction = pred_x0.detach().expand(-1, self.n_forecast_steps, -1, -1, -1)
 
-        # Timestep weight ranges from 0 for noisy timesteps to 1 for clean timesteps
         return ProcessorOutputDiffusion(
             prediction=prediction,
             loss=loss,
             pred_x0=pred_x0,
-            pred_x0_weight=self.diffusion.alphas_cumprod.to(t.device)[t],
+            pred_x0_mask=t < self.pred_x0_max_timestep,
         )
 
     def _run_ddim_reverse_diffusion(

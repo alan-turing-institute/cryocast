@@ -35,7 +35,8 @@ Some processors calculate their loss in latent space, for example `DiffusionProc
 This latent loss does not go through the decoder.
 Thus, the model also adds an autoencoder loss, which trains the encoders and the decoder.
 This loss also keeps the latent space compatible with the decoder.
-To disable it and keep the decoder frozen in this stage, set `auxiliary_loss_weights.autoencoder` to `0`.
+To disable it, set `auxiliary_loss_weights.autoencoder` to `0`.
+The decoder stays frozen in this stage only if `auxiliary_loss_weights.pred_x0` is also `0` (the default).
 See [Loss in latent space](./add-a-processor.md#loss-in-latent-space).
 The processor stage does not use the autoencoder loss, because its encoders and decoder are frozen.
 
