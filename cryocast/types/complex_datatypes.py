@@ -9,7 +9,7 @@ from torch import Tensor
 
 from .annotations import TensorNTCHW
 from .constants import SEA_ICE_THRESHOLD
-from .enums import DiffMode, Hemisphere
+from .enums import DiffMode, Hemisphere, RolloutSpace, SkipAnchorType
 from .protocols import SupportsMetadataFromDataset
 
 
@@ -255,6 +255,70 @@ class PlotSpec:
         else:
             dict_other = dict(other)
         return PlotSpec(**(asdict(self) | dict_other))
+
+
+@dataclass(frozen=True)
+class RolloutStrategy:
+    """Describe how EncodeProcessDecode advances its forecast loop.
+
+    Attributes:
+        space: Where the forecast loop runs: in latent space, or in physical space
+            where each step is decoded and re-encoded.
+        anchor: The frame that a decoder skip connection adds to each forecast step:
+            the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
+
+    A physical rollout feeds each decoded step back into the next one, so it must
+    anchor each step on the previous output. This class rejects PHYSICAL with INITIAL.
+
+    """
+
+    space: RolloutSpace
+    anchor: SkipAnchorType
+
+    def __post_init__(self) -> None:
+        """Convert strings to enums and reject combinations that cannot work."""
+        object.__setattr__(self, "space", RolloutSpace(self.space))
+        object.__setattr__(self, "anchor", SkipAnchorType(self.anchor))
+        if self.is_physical and self.anchor == SkipAnchorType.INITIAL:
+            msg = (
+                "skip_anchor='initial' is not supported with rollout_space='physical'. "
+                "Use skip_anchor='previous' or leave it unset."
+            )
+            raise ValueError(msg)
+
+    @classmethod
+    def from_options(
+        cls,
+        space: RolloutSpace | str = RolloutSpace.LATENT,
+        anchor: SkipAnchorType | str | None = None,
+    ) -> Self:
+        """Create a RolloutStrategy, using the default anchor for the space if unset."""
+        space = RolloutSpace(space)
+        return cls(
+            space=space,
+            anchor=SkipAnchorType(anchor) if anchor else cls.default_anchor(space),
+        )
+
+    @staticmethod
+    def default_anchor(space: RolloutSpace) -> SkipAnchorType:
+        """Return the default anchor for a rollout space.
+
+        A latent rollout anchors every step on the last observed frame. A physical
+        rollout anchors each step on the previous forecast step.
+        """
+        if space == RolloutSpace.PHYSICAL:
+            return SkipAnchorType.PREVIOUS
+        return SkipAnchorType.INITIAL
+
+    @property
+    def is_physical(self) -> bool:
+        """Return True if the forecast loop runs in physical space."""
+        return self.space == RolloutSpace.PHYSICAL
+
+    @property
+    def uses_default_anchor(self) -> bool:
+        """Return True if the anchor is the default for the rollout space."""
+        return self.anchor == self.default_anchor(self.space)
 
 
 class Timespan:

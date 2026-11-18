@@ -14,6 +14,7 @@ from cryocast.types import (
     DataSpace,
     ModelStepOutput,
     RolloutSpace,
+    RolloutStrategy,
     SkipAnchorType,
     TensorNCHW,
     TensorNTCHW,
@@ -169,9 +170,12 @@ class EncodeProcessDecode(BaseModel):
         # Validate the auxiliary loss weights, and freeze the decoder if needed
         self._configure_losses(loss_weights or {})
 
-        # Validate rollout options
-        self.rollout_space = RolloutSpace(rollout_space)
-        if self.rollout_space == RolloutSpace.PHYSICAL:
+        # Resolve the rollout strategy. This rejects invalid combinations of rollout
+        # space and skip anchor, and uses the default anchor for the space if unset.
+        self.rollout_strategy = RolloutStrategy.from_options(rollout_space, skip_anchor)
+
+        # Check that the rollout strategy is compatible with the other components
+        if self.rollout_strategy.is_physical:
             # Physical rollout needs an observed physical state to advance
             input_names = {input_space.name for input_space in self.input_spaces}
             if self.output_space.name not in input_names:
@@ -191,23 +195,14 @@ class EncodeProcessDecode(BaseModel):
                     f"latent space."
                 )
                 raise ValueError(msg)
-
-        # Resolve the skip-connection anchor. If it is unset, use the default for the
-        # rollout space.
-        is_physical = self.rollout_space == RolloutSpace.PHYSICAL
-        default = SkipAnchorType.PREVIOUS if is_physical else SkipAnchorType.INITIAL
-        self.skip_anchor = SkipAnchorType(skip_anchor or default)
-        if is_physical and self.skip_anchor == SkipAnchorType.INITIAL:
-            msg = (
-                "skip_anchor='initial' is not supported with rollout_space='physical'. "
-                "Use skip_anchor='previous' or leave it unset."
-            )
-            raise ValueError(msg)
-        if self.skip_anchor != default and self.decoder.skip_connection is None:
+        if (
+            self.decoder.skip_connection is None
+            and not self.rollout_strategy.uses_default_anchor
+        ):
             log.warning(
                 "skip_anchor='%s' has no effect because the decoder has no skip "
                 "connection.",
-                self.skip_anchor.value,
+                self.rollout_strategy.anchor.value,
             )
 
     @override
@@ -389,7 +384,9 @@ class EncodeProcessDecode(BaseModel):
         anchor = self._anchor_ntchw(inputs[self.output_space.name])
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
-        return self.decoder.rollout(latent_output, anchor, anchor_type=self.skip_anchor)
+        return self.decoder.rollout(
+            latent_output, anchor, anchor_type=self.rollout_strategy.anchor
+        )
 
     def _forward_rollout_physical(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in physical space.
@@ -402,6 +399,10 @@ class EncodeProcessDecode(BaseModel):
         When the decoder has an additive skip connection, it emits a tendency and the
         state advances as `x_{k+1} = clamp(x_k + delta_k, 0, 1)`, so a zero-output
         network reproduces persistence exactly.
+
+        The skip connection anchor is always the most recent frame in the target window,
+        corresponding to the previous forecast step. This is equivalent to
+        `SkipAnchorType.PREVIOUS`.
 
         Non-target input groups hold their most recent OBSERVED frame for every forecast
         step. No future information enters: only the input groups, which hold the
@@ -507,17 +508,10 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg)
 
-        # Without a mask, all samples count
-        if mask is None:
-            return self.loss(
-                self.decoder.rollout(prediction, anchor, anchor_type=self.skip_anchor),
-                target[:, : prediction.shape[1]],
-            )
-
         # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
         # in the graph without decoding anything: with DDP, a parameter that has no
         # gradient on one process stops training.
-        if not mask.any():
+        if mask is not None and not mask.any():
             return (
                 sum(
                     (p.sum() for p in self.decoder.parameters() if p.requires_grad),
@@ -526,21 +520,22 @@ class EncodeProcessDecode(BaseModel):
                 * 0.0
             )
 
-        # Decode only the samples in the mask
+        # Decode only the samples in the mask. Without a mask, all samples count.
+        samples = slice(None) if mask is None else mask
         decoded = self.decoder.rollout(
-            prediction[mask],
-            None if anchor is None else anchor[mask],
-            anchor_type=self.skip_anchor,
+            prediction[samples],
+            None if anchor is None else anchor[samples],
+            anchor_type=self.rollout_strategy.anchor,
         )
-        return self.loss(decoded, target[mask, : prediction.shape[1]])
+        return self.loss(decoded, target[samples, : prediction.shape[1]])
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Forward step of the model (used for inference).
 
         Delegates to either the latent-space or physical-space path depending on the
-        `rollout_space` setting.
+        `rollout_strategy` setting.
         """
-        if self.rollout_space == RolloutSpace.PHYSICAL:
+        if self.rollout_strategy.is_physical:
             return self._forward_rollout_physical(inputs)
         return self._forward_rollout_latent(inputs)
 
@@ -624,7 +619,7 @@ class EncodeProcessDecode(BaseModel):
                 # Decode the encoded forecast-step inputs and compare them to the target
                 losses["reconstruction"] = self.loss(
                     self.decoder.rollout(
-                        future_latent, anchor, anchor_type=self.skip_anchor
+                        future_latent, anchor, anchor_type=self.rollout_strategy.anchor
                     ),
                     target,
                 )
@@ -654,7 +649,9 @@ class EncodeProcessDecode(BaseModel):
             self.decoder.eval()
             with torch.no_grad():
                 prediction = self.decoder.rollout(
-                    processor_output.prediction, anchor, anchor_type=self.skip_anchor
+                    processor_output.prediction,
+                    anchor,
+                    anchor_type=self.rollout_strategy.anchor,
                 )
             self.decoder.train(training_mode)
             # If the latent prediction has fewer forecast steps than the target, repeat

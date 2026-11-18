@@ -10,6 +10,7 @@ from cryocast.types import (
     DataSpace,
     ProcessorOutput,
     RolloutSpace,
+    RolloutStrategy,
     SkipAnchorType,
     TensorNTCHW,
 )
@@ -203,18 +204,34 @@ class TestProcessorStage:
         assert capture.target.shape[2] == processor_stage.processor.data_space.channels
 
     @pytest.mark.parametrize(
-        "rollout_space",
-        [RolloutSpace.LATENT, RolloutSpace.PHYSICAL],
-        ids=["latent", "physical"],
+        ("rollout_strategy", "expected"),
+        [
+            pytest.param(
+                None,
+                RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.INITIAL),
+                id="default",
+            ),
+            pytest.param(
+                RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.PREVIOUS),
+                RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.PREVIOUS),
+                id="latent-previous",
+            ),
+            pytest.param(
+                RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
+                RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
+                id="physical-previous",
+            ),
+        ],
     )
-    def test_from_template_forwards_rollout_space(
+    def test_from_template_forwards_rollout_strategy(
         self,
         encoder_stage: EncoderStage,
         *,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_processor: DictConfig,
-        rollout_space: RolloutSpace,
+        rollout_strategy: RolloutStrategy | None,
+        expected: RolloutStrategy,
     ) -> None:
         # Physical rollout requires the target dataset to also be a model input
         decoder_stage = DecoderStage.from_template(
@@ -229,35 +246,13 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            rollout_space=rollout_space,
+            rollout_strategy=rollout_strategy,
         )
 
-        assert processor_stage.rollout_space is rollout_space
-        assert processor_stage.hparams["rollout_space"] == rollout_space
-
-    @pytest.mark.parametrize(
-        ("skip_anchor", "expected"),
-        [
-            pytest.param(None, SkipAnchorType.INITIAL, id="default"),
-            pytest.param("previous", SkipAnchorType.PREVIOUS, id="previous"),
-        ],
-    )
-    def test_from_template_forwards_skip_anchor(
-        self,
-        skip_decoder_stage: DecoderStage,
-        *,
-        cfg_processor: DictConfig,
-        skip_anchor: str | None,
-        expected: SkipAnchorType,
-    ) -> None:
-        processor_stage = ProcessorStage.from_template(
-            processor=cfg_processor,
-            decoder_model=skip_decoder_stage,
-            skip_anchor=skip_anchor,
-        )
-
-        assert processor_stage.skip_anchor is expected
-        assert processor_stage.hparams["skip_anchor"] == skip_anchor
+        assert processor_stage.rollout_strategy == expected
+        # The resolved options are saved, so that a checkpoint reloads the same strategy
+        assert processor_stage.hparams["rollout_space"] == expected.space
+        assert processor_stage.hparams["skip_anchor"] == expected.anchor
 
     def test_anchor_nchw_returns_tensor_when_decoder_has_skip_connection(
         self,

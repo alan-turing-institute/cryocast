@@ -71,10 +71,12 @@ def _build_model(
     extra_inputs: list[DictConfig] | None = None,
     target_variable_indices: list[int] | None = None,
     seed: int = SEED,
+    target_is_input: bool = True,
 ) -> EncodeProcessDecode:
+    input_name = TARGET_GROUP if target_is_input else "not_the_target"
     input_spaces = [
         DictConfig(
-            {"channels": input_channels, "name": TARGET_GROUP, "shape": (grid, grid)}
+            {"channels": input_channels, "name": input_name, "shape": (grid, grid)}
         ),
         *(extra_inputs or []),
     ]
@@ -180,7 +182,7 @@ class TestDefaultsOff:
 
     def test_off_is_identical_to_absent(self) -> None:
         absent = _build_model()
-        assert absent.rollout_space == "latent"
+        assert absent.rollout_strategy.space == "latent"
         explicit = _build_model(rollout_space="latent")
         inputs = _inputs(absent)
         absent.eval()
@@ -419,16 +421,27 @@ class TestNoFutureLeak:
 
 
 class TestConfigValidation:
-    def test_bad_skip_anchor(self) -> None:
-        with pytest.raises(ValueError, match="sideways"):
-            _build_model(skip_anchor="sideways")
-
     def test_physical_rollout_rejects_initial_anchor(self) -> None:
+        """The model validates its options through RolloutStrategy."""
         with pytest.raises(ValueError, match="skip_anchor='initial'"):
             _build_model(
                 rollout_space="physical",
                 skip_anchor="initial",
                 decoder_extra=ADDITIVE_SKIP_DECODER,
+            )
+
+    def test_physical_rollout_requires_target_as_input(self) -> None:
+        with pytest.raises(ValueError, match="to also be a model input"):
+            _build_model(rollout_space="physical", target_is_input=False)
+
+    def test_physical_rollout_rejects_latent_loss_processor(self) -> None:
+        with pytest.raises(ValueError, match="computes its loss in latent space"):
+            _build_model(
+                rollout_space="physical",
+                processor={
+                    "_target_": "cryocast.models.processors.NullProcessor",
+                    "computes_loss_in_latent_space": True,
+                },
             )
 
     @pytest.mark.parametrize(
@@ -447,12 +460,8 @@ class TestConfigValidation:
         """Warn only if the anchor differs from the latent default, initial."""
         with caplog.at_level(logging.WARNING):
             model = _build_model(skip_anchor=skip_anchor)
-        assert model.skip_anchor == skip_anchor
+        assert model.rollout_strategy.anchor == skip_anchor
         assert ("has no effect" in caplog.text) is warns
-
-    def test_bad_rollout_space(self) -> None:
-        with pytest.raises(ValueError, match="not a valid RolloutSpace"):
-            _build_model(rollout_space="nonsense")
 
     def test_residual_accepts_a_bounded_decoder(self) -> None:
         """A bounded decoder works for a residual (additive-skip) physical model.
@@ -555,7 +564,7 @@ class TestAnchorSemantics:
         model = _build_model(
             rollout_space=rollout_space, decoder_extra=ADDITIVE_SKIP_DECODER
         )
-        assert model.skip_anchor is expected
+        assert model.rollout_strategy.anchor is expected
         # The unresolved value is saved, so that the default can follow the rollout
         # space when the checkpoint is loaded
         assert model.hparams["skip_anchor"] is None

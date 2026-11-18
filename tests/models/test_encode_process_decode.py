@@ -798,7 +798,7 @@ class TestEncodeProcessDecode:
             weights_only=True,
         )
         assert loaded.hemisphere is Hemisphere.NORTH
-        assert loaded.rollout_space is RolloutSpace.LATENT
+        assert loaded.rollout_strategy.space is RolloutSpace.LATENT
 
     def test_load_state_dict_ignores_removed_target_encoder(
         self,
@@ -1322,5 +1322,5 @@ class TestSkipAnchor:
             metrics=[],
             weights_only=False,
         )
-        assert loaded.rollout_space is rollout_space
-        assert loaded.skip_anchor is expected
+        assert loaded.rollout_strategy.space is rollout_space
+        assert loaded.rollout_strategy.anchor is expected

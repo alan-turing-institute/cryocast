@@ -14,6 +14,7 @@ from .complex_datatypes import (
     Metadata,
     ModelStepOutput,
     PlotSpec,
+    RolloutStrategy,
     Timespan,
 )
 from .constants import (
@@ -83,6 +84,7 @@ __all__ = [
     "ProcessorOutput",
     "RangeRestriction",
     "RolloutSpace",
+    "RolloutStrategy",
     "SkipAnchorType",
     "SkipConnectionType",
     "SupportsImageLogging",

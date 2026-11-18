@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import datetime, timedelta
 
 import pytest
@@ -10,6 +11,9 @@ from cryocast.types import (
     Hemisphere,
     ModelStepOutput,
     PlotSpec,
+    RolloutSpace,
+    RolloutStrategy,
+    SkipAnchorType,
     Timespan,
 )
 
@@ -209,6 +213,93 @@ class TestModelStepOutput:
     def test_len_returns_three(self) -> None:
         """ModelStepOutput always reports a length of three."""
         assert len(self._make_output()) == 3
+
+
+class TestRolloutStrategy:
+    """Tests for RolloutStrategy."""
+
+    @pytest.mark.parametrize(
+        ("space", "anchor"),
+        [
+            pytest.param("latent", "initial", id="latent-initial"),
+            pytest.param("latent", "previous", id="latent-previous"),
+            pytest.param("physical", "previous", id="physical-previous"),
+        ],
+    )
+    def test_converts_strings_to_enums(self, space: str, anchor: str) -> None:
+        """Accept strings and store them as enums."""
+        strategy = RolloutStrategy(space=space, anchor=anchor)  # type: ignore[arg-type]
+
+        assert strategy.space is RolloutSpace(space)
+        assert strategy.anchor is SkipAnchorType(anchor)
+
+    def test_rejects_physical_with_initial_anchor(self) -> None:
+        """A physical rollout cannot anchor every step on the last observed frame."""
+        with pytest.raises(ValueError, match="skip_anchor='initial'"):
+            RolloutStrategy(space=RolloutSpace.PHYSICAL, anchor=SkipAnchorType.INITIAL)
+
+    @pytest.mark.parametrize(
+        ("space", "anchor"),
+        [
+            pytest.param("sideways", "initial", id="bad-space"),
+            pytest.param("latent", "sideways", id="bad-anchor"),
+        ],
+    )
+    def test_rejects_unknown_values(self, space: str, anchor: str) -> None:
+        """Reject values that are not valid enum members."""
+        with pytest.raises(ValueError, match="sideways"):
+            RolloutStrategy(space=space, anchor=anchor)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        ("space", "expected"),
+        [
+            pytest.param(RolloutSpace.LATENT, SkipAnchorType.INITIAL, id="latent"),
+            pytest.param(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS, id="physical"),
+        ],
+    )
+    def test_from_options_uses_default_anchor(
+        self, space: RolloutSpace, expected: SkipAnchorType
+    ) -> None:
+        """Use the default anchor for the rollout space if the anchor is unset."""
+        strategy = RolloutStrategy.from_options(space)
+
+        assert strategy.anchor is expected
+        assert strategy.uses_default_anchor
+
+    def test_from_options_defaults_to_latent(self) -> None:
+        """With no options, roll out in latent space anchored on the initial frame."""
+        assert RolloutStrategy.from_options() == RolloutStrategy(
+            space=RolloutSpace.LATENT, anchor=SkipAnchorType.INITIAL
+        )
+
+    def test_from_options_keeps_explicit_anchor(self) -> None:
+        """Keep an explicit anchor, and report that it is not the default."""
+        strategy = RolloutStrategy.from_options("latent", "previous")
+
+        assert strategy.anchor is SkipAnchorType.PREVIOUS
+        assert not strategy.uses_default_anchor
+
+    def test_from_options_rejects_physical_with_initial_anchor(self) -> None:
+        """Validate explicit anchors through the same check as the constructor."""
+        with pytest.raises(ValueError, match="skip_anchor='initial'"):
+            RolloutStrategy.from_options("physical", "initial")
+
+    @pytest.mark.parametrize(
+        ("space", "expected"),
+        [
+            pytest.param(RolloutSpace.LATENT, False, id="latent"),
+            pytest.param(RolloutSpace.PHYSICAL, True, id="physical"),
+        ],
+    )
+    def test_is_physical(self, space: RolloutSpace, *, expected: bool) -> None:
+        """Report whether the forecast loop runs in physical space."""
+        assert RolloutStrategy.from_options(space).is_physical is expected
+
+    def test_immutable(self) -> None:
+        """Prevent changes after creation, which could bypass validation."""
+        strategy = RolloutStrategy.from_options(RolloutSpace.PHYSICAL)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            strategy.anchor = SkipAnchorType.INITIAL  # type: ignore[misc]
 
 
 class TestTimespan:
