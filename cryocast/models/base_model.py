@@ -347,6 +347,10 @@ class BaseModel(LightningModule, ABC):
         if self.training_metadata is not None:
             checkpoint["training_metadata"] = asdict(self.training_metadata)
 
+    def log_per_epoch(self, name: str, value: torch.Tensor, **kwargs: Any) -> None:
+        """Log a value once per epoch, averaged over steps and processes."""
+        self.log(name, value, on_step=False, on_epoch=True, sync_dist=True, **kwargs)
+
     def loss(self, prediction: TensorNTCHW, target: TensorNTCHW) -> torch.Tensor:
         """Calculate the loss given a prediction and target."""
         return self.loss_fn(prediction, target)
@@ -401,14 +405,7 @@ class BaseModel(LightningModule, ABC):
         loss = self.loss(prediction, target)
 
         # Log metrics; computation will be done at epoch end
-        self.log(
-            "test_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("test_loss", loss, prog_bar=True)
         self.test_metrics.update(prediction, target)
         if "climatology" in batch:
             self.climatology_metrics.update(batch["climatology"], target)
@@ -441,14 +438,7 @@ class BaseModel(LightningModule, ABC):
         loss = self.loss(prediction, target)
 
         # Log metrics; computation will be done at epoch end
-        self.log(
-            "train_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("train_loss", loss, prog_bar=True)
         self.train_metrics.update(prediction, target)
 
         return ModelStepOutput(prediction, target, loss)
@@ -482,14 +472,7 @@ class BaseModel(LightningModule, ABC):
         loss = self.loss(prediction, target)
 
         # Log metrics; computation will be done at epoch end
-        self.log(
-            "validation_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("validation_loss", loss, prog_bar=True)
         self.validation_metrics.update(prediction, target)
 
         return ModelStepOutput(prediction, target, loss)

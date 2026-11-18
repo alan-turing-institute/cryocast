@@ -608,14 +608,7 @@ class EncodeProcessDecode(BaseModel):
             loss = self.loss(prediction, target)
 
         # Log metrics; computation will be done at epoch end
-        self.log(
-            "train_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_per_epoch("train_loss", loss, prog_bar=True)
         self.train_metrics.update(prediction, target)
 
         return ModelStepOutput(prediction, target, loss)
