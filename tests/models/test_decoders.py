@@ -14,7 +14,7 @@ from cryocast.models.decoders import (
     NaiveLinearDecoder,
     PiecewiseDecoder,
 )
-from cryocast.types import DataSpace
+from cryocast.types import DataSpace, SkipAnchorType
 
 
 class TestDecoders:
@@ -263,10 +263,14 @@ class _SkipConnectionBase:
         restrict_range_min: float | None = None,
         restrict_range_max: float | None = None,
         bias: float = -20.0,
+        mask_dir: str | None = None,
+        mask_type: str | None = None,
     ) -> NaiveLinearDecoder:
         decoder = NaiveLinearDecoder(
             data_space_in=cls._LATENT_SPACE,
             data_space_out=cls._OUTPUT_SPACE,
+            mask_dir=mask_dir,
+            mask_type=mask_type,
             restrict_range=restrict_range,
             restrict_range_min=restrict_range_min,
             restrict_range_max=restrict_range_max,
@@ -278,6 +282,14 @@ class _SkipConnectionBase:
             conv.weight.zero_()
             conv.bias.fill_(bias)
         return decoder
+
+    @staticmethod
+    def _zero(conv_module: nn.Module) -> None:
+        conv = cast("nn.Conv2d", conv_module)
+        assert conv.bias is not None
+        with torch.no_grad():
+            conv.weight.zero_()
+            conv.bias.zero_()
 
     @classmethod
     def _latent(cls, n_forecast_steps: int = 1) -> torch.Tensor:
@@ -297,14 +309,6 @@ class _SkipConnectionBase:
 
 class TestDecoderSkipConnection(_SkipConnectionBase):
     """Ensure the skip-connection order in BaseDecoder.rollout() is correct."""
-
-    @staticmethod
-    def _zero(conv_module: nn.Module) -> None:
-        conv = cast("nn.Conv2d", conv_module)
-        assert conv.bias is not None
-        with torch.no_grad():
-            conv.weight.zero_()
-            conv.bias.zero_()
 
     def test_additive_skip_recovers_persistence(self) -> None:
         decoder = self._decoder(method="additive", bias=0.0)
@@ -358,6 +362,151 @@ class TestDecoderSkipConnection(_SkipConnectionBase):
         decoder = self._decoder(method="additive")
         with pytest.raises(ValueError, match="no persistence input was provided"):
             decoder.rollout(self._latent(), None)
+
+
+class TestDecoderSkipAnchor(_SkipConnectionBase):
+    """The anchor_type argument to BaseDecoder.rollout()."""
+
+    _N_FORECAST_STEPS = 4
+
+    @classmethod
+    def _steps(cls) -> torch.Tensor:
+        """The step number k = 1...N, shaped to broadcast over [B, T, C, H, W]."""
+        return torch.arange(1, cls._N_FORECAST_STEPS + 1).view(1, -1, 1, 1, 1)
+
+    def test_initial_is_the_default_and_reuses_the_same_anchor(self) -> None:
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.1)
+        persistence = self._persistence()
+
+        out = decoder.rollout(self._latent(self._N_FORECAST_STEPS), persistence)
+
+        expected = (persistence + 0.1).clamp(0, 1).expand_as(out)
+        assert torch.allclose(out, expected, atol=1e-6)
+
+    def test_previous_accumulates_a_constant_tendency(self) -> None:
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.1)
+        persistence = self._persistence()
+
+        out = decoder.rollout(
+            self._latent(self._N_FORECAST_STEPS),
+            persistence,
+            anchor_type=SkipAnchorType.PREVIOUS,
+        )
+
+        # Each step adds 0.1 to the clamped output of the step before it. Values only
+        # increase, so clamping at an intermediate step gives the same result as
+        # clamping only at the end.
+        expected = (persistence + 0.1 * self._steps()).clamp(0, 1)
+        assert torch.allclose(out, expected, atol=1e-6)
+
+    def test_previous_anchor_is_the_clamped_output(self) -> None:
+        # Make the decoder output equal to latent channel 0, so that the latent sets a
+        # different tendency for each step.
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.0)
+        conv = cast("nn.Conv2d", decoder.model[0])
+        with torch.no_grad():
+            conv.weight[:, 0] = 1.0
+        latent = torch.zeros(1, 2, *self._LATENT_SPACE.chw)
+        latent[:, 0, 0] = 2.0
+        latent[:, 1, 0] = -0.25
+
+        out = decoder.rollout(
+            latent, self._persistence(), anchor_type=SkipAnchorType.PREVIOUS
+        )
+
+        # The first step pushes every cell above 1, so it is clamped to 1. The second
+        # step subtracts from the clamped value (1), not from the unclamped value.
+        assert torch.allclose(out[:, 0], torch.ones_like(out[:, 0]))
+        assert torch.allclose(out[:, 1], torch.full_like(out[:, 1], 0.75))
+
+    def test_gated_previous_compounds_the_gate(self) -> None:
+        # With a zeroed gate (0.5) and main output ~0, each step halves its anchor.
+        decoder = self._decoder(method="gated")
+        assert decoder.skip_connection is not None
+        self._zero(decoder.skip_connection.gate.block[0])
+        persistence = self._persistence()
+
+        out = decoder.rollout(
+            self._latent(self._N_FORECAST_STEPS),
+            persistence,
+            anchor_type=SkipAnchorType.PREVIOUS,
+        )
+
+        expected = persistence * 0.5 ** self._steps()
+        assert torch.allclose(out, expected, atol=1e-4)
+
+    @pytest.mark.parametrize("method", ["additive", "gated", "convolutional"])
+    def test_previous_matches_a_manual_finalise_loop(self, method: str) -> None:
+        decoder = self._decoder(method=method)
+        latent = self._latent(self._N_FORECAST_STEPS)
+        persistence = self._persistence()
+
+        out = decoder.rollout(latent, persistence, anchor_type=SkipAnchorType.PREVIOUS)
+
+        anchor = persistence[:, 0]
+        for t in range(self._N_FORECAST_STEPS):
+            anchor = decoder.finalise(decoder(latent[:, t]), anchor)
+            assert torch.allclose(out[:, t], anchor, atol=1e-6)
+
+    def test_previous_without_skip_connection_matches_initial(self) -> None:
+        decoder = self._decoder(method="none")
+        latent = self._latent(self._N_FORECAST_STEPS)
+
+        initial = decoder.rollout(latent, None, anchor_type=SkipAnchorType.INITIAL)
+        previous = decoder.rollout(latent, None, anchor_type=SkipAnchorType.PREVIOUS)
+
+        assert torch.equal(initial, previous)
+
+    def test_previous_keeps_masked_cells_at_zero(self, tmp_path: Path) -> None:
+        # Mask the top half (0), keep the bottom half (1 = active/sea).
+        mask = np.ones(self._OUTPUT_SPACE.shape, dtype=np.uint8)
+        mask[:4, :] = 0
+        np.save(tmp_path / "active_mask.npy", mask)
+        decoder = self._decoder(
+            method="additive",
+            restrict_range="none",
+            bias=0.1,
+            mask_dir=str(tmp_path),
+            mask_type="active",
+        )
+        persistence = self._persistence()
+
+        out = decoder.rollout(
+            self._latent(self._N_FORECAST_STEPS),
+            persistence,
+            anchor_type=SkipAnchorType.PREVIOUS,
+        )
+
+        # Masked cells are 0 at every step, although each anchor adds a tendency...
+        assert torch.all(out[..., :4, :] == 0).item()
+        # ...and active cells still accumulate the tendency.
+        expected = (persistence + 0.1 * self._steps()).clamp(0, 1)
+        assert torch.allclose(out[..., 4:, :], expected[..., 4:, :], atol=1e-6)
+
+    def test_previous_without_persistence_raises(self) -> None:
+        decoder = self._decoder(method="additive")
+        with pytest.raises(ValueError, match="no persistence input was provided"):
+            decoder.rollout(self._latent(), None, anchor_type=SkipAnchorType.PREVIOUS)
+
+    def test_unknown_anchor_type_raises(self) -> None:
+        decoder = self._decoder(method="additive")
+        with pytest.raises(ValueError, match="not a valid SkipAnchorType"):
+            decoder.rollout(self._latent(), self._persistence(), anchor_type="prev")
+
+    def test_previous_gradients_flow_through_every_step(self) -> None:
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.0)
+        persistence = self._persistence().requires_grad_()
+
+        out = decoder.rollout(
+            self._latent(self._N_FORECAST_STEPS),
+            persistence,
+            anchor_type=SkipAnchorType.PREVIOUS,
+        )
+        out[:, -1].sum().backward()
+
+        # The last step depends on the initial anchor through the chain of steps.
+        assert persistence.grad is not None
+        assert torch.all(persistence.grad != 0).item()
 
 
 class TestDecoderCustomOutputRange(_SkipConnectionBase):
