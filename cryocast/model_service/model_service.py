@@ -521,22 +521,17 @@ class ModelService:
         If this ModelService was loaded from a checkpoint, training resumes from it.
 
         Raises:
-            ValueError: If the processor computes its loss in latent space while the
-                reconstruction and prediction losses are both disabled. This would
-                otherwise freeze a decoder that was never trained.
+            ValueError: If the model has a frozen decoder, which single-stage training
+                cannot train.
 
         """
-        if (
-            isinstance(self.model, EncodeProcessDecode)
-            and self.model.processor.computes_loss_in_latent_space
-            and not any(self.model.loss_weights.values())
-        ):
+        if isinstance(self.model, EncodeProcessDecode) and self.model.decoder.frozen:
             msg = (
-                f"Processor {type(self.model.processor).__name__} computes its loss in "
-                "latent space, so single-stage training needs the reconstruction loss "
-                "or the prediction loss to train the decoder. Either set "
-                "loss_weights.prediction or loss_weights.reconstruction to a value "
-                "greater than 0, or train with `--multistage`."
+                "The decoder is frozen, so single-stage training cannot train it. "
+                "This happens if the processor computes its loss in latent space and "
+                "loss_weights.reconstruction and loss_weights.prediction are both 0. "
+                "Either set one of these weights to a value greater than 0, or train "
+                "with `--multistage`."
             )
             raise ValueError(msg)
         if self.checkpoint_file:

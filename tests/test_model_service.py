@@ -836,35 +836,10 @@ class TestModelService:
 
         assert calls_before_fit == [call(include=expected)]
 
-    @pytest.mark.parametrize(
-        (
-            "computes_loss_in_latent_space",
-            "weight_reconstruction",
-            "weight_prediction",
-        ),
-        [(False, 0.0, 0.0), (True, 1.0, 0.0), (True, 0.0, 1.0)],
-        ids=[
-            "physical-loss",
-            "latent-loss-with-reconstruction",
-            "latent-loss-with-prediction",
-        ],
-    )
-    def test_train_single_stage_encode_process_decode(
-        self,
-        *,
-        computes_loss_in_latent_space: bool,
-        weight_reconstruction: float,
-        weight_prediction: float,
-    ) -> None:
+    def test_train_single_stage_encode_process_decode(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.model_.processor = MagicMock(
-            computes_loss_in_latent_space=computes_loss_in_latent_space
-        )
-        service.model_.loss_weights = {
-            "reconstruction": weight_reconstruction,
-            "prediction": weight_prediction,
-        }
+        service.model_.decoder = MagicMock(frozen=False)
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -875,17 +850,20 @@ class TestModelService:
 
         mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
 
-    def test_train_single_stage_rejects_latent_loss_without_reconstruction(
-        self,
-    ) -> None:
+    def test_train_single_stage_rejects_frozen_decoder(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.model_.processor = MagicMock(computes_loss_in_latent_space=True)
-        service.model_.loss_weights = {"reconstruction": 0.0, "prediction": 0.0}
+        service.model_.decoder = MagicMock(frozen=True)
+        service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
-        with pytest.raises(ValueError, match="reconstruction loss"):
-            service.train()
+        with pytest.MonkeyPatch.context() as mp:
+            mock_fit = MagicMock()
+            mp.setattr(service, "_fit", mock_fit)
+            with pytest.raises(ValueError, match="decoder is frozen"):
+                service.train()
+
+        mock_fit.assert_not_called()
 
     def test_train_single_stage(self) -> None:
         service = ModelService.__new__(ModelService)
