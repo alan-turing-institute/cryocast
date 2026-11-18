@@ -67,12 +67,12 @@ class _OracleProcessor(BaseProcessor):
         return ProcessorOutput(prediction=y.clone(), loss=torch.zeros(()))
 
 
-class _X0Processor(BaseProcessor):
-    """Processor that returns a zero latent loss and the x_0 estimate gain * x.
+class _PredictionProcessor(BaseProcessor):
+    """Processor that returns a zero latent loss and the prediction gain * x.
 
-    The x_0 estimate is the last history latents times a trainable gain: one step in
+    The prediction is the last history latents times a trainable gain: one step in
     autoregressive mode, or n_forecast_steps steps in parallel mode. Set `sample_mask`
-    to choose the samples in `pred_x0_mask` (default: all samples).
+    to choose the samples in `sample_mask` (default: all samples).
     """
 
     def __init__(self, *, use_autoregressive: bool = True, **kwargs: Any) -> None:
@@ -92,8 +92,8 @@ class _X0Processor(BaseProcessor):
         return ProcessorOutputDiffusion(
             prediction=y.clone(),
             loss=torch.zeros(()),
-            pred_x0=self.gain * x[:, -n_steps:],
-            pred_x0_mask=mask,
+            differentiable_prediction=self.gain * x[:, -n_steps:],
+            sample_mask=mask,
         )
 
 
@@ -113,12 +113,12 @@ def _oracle_model(
     *,
     cfg_loss: DictConfig,
     cfg_metrics: list[dict[str, Any]],
-    auxiliary_loss_weights: dict[str, float] | None = None,
+    loss_weights: dict[str, float] | None = None,
     processor: DictConfig | None = None,
 ) -> EncodeProcessDecode:
     """Build a latent-loss model with a trainable encoder and a trainable decoder.
 
-    The decoder doubles the target channel, so the autoencoder loss is not zero. The
+    The decoder doubles the target channel, so the reconstruction loss is not zero. The
     latent loss from the processor (default _OracleProcessor) is always zero.
     """
     shape = (8, 8)
@@ -135,7 +135,7 @@ def _oracle_model(
             data_space_in=DataSpace(channels=2, name="combined", shape=shape),
             data_space_out=output_space,
         ),
-        auxiliary_loss_weights=auxiliary_loss_weights,
+        loss_weights=loss_weights,
         hemisphere="north",
         input_spaces=[sic.to_dict()],
         loss=cfg_loss,
@@ -565,44 +565,55 @@ class TestEncodeProcessDecode:
         assert all(p.requires_grad for e in model.encoders for p in e.parameters())
         assert not processor.target.requires_grad
 
-    def test_init_rejects_negative_weight_autoencoder(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    @pytest.mark.parametrize("test_key", ["reconstruction", "prediction"])
+    def test_init_rejects_negative_loss_weight(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]], test_key: str
     ) -> None:
-        with pytest.raises(ValueError, match="must not be negative"):
+        with pytest.raises(ValueError, match=f"{test_key} must not be negative"):
             _oracle_model(
                 cfg_loss=cfg_loss,
                 cfg_metrics=cfg_metrics,
-                auxiliary_loss_weights={"autoencoder": -1.0},
+                loss_weights={test_key: -1.0},
+            )
+
+    def test_init_rejects_unknown_loss_weight(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        with pytest.raises(ValueError, match="Unknown loss_weights"):
+            _oracle_model(
+                cfg_loss=cfg_loss,
+                cfg_metrics=cfg_metrics,
+                loss_weights={"autoencodr": 1.0},
             )
 
     @pytest.mark.parametrize(
-        ("test_weights", "expected_weight"),
+        ("test_weights", "expected_weights"),
         [
-            (None, 1.0),
-            ({}, 1.0),
-            ({"autoencoder": 0}, 0.0),
-            ({"autoencoder": 0.5}, 0.5),
+            (None, {"reconstruction": 1.0, "prediction": 0.0}),
+            ({}, {"reconstruction": 1.0, "prediction": 0.0}),
+            ({"reconstruction": 0}, {"reconstruction": 0.0, "prediction": 0.0}),
+            ({"prediction": 0.5}, {"reconstruction": 1.0, "prediction": 0.5}),
         ],
-        ids=["none", "empty", "zero", "half"],
+        ids=["none", "empty", "reconstruction-zero", "prediction-half"],
     )
-    def test_init_weight_autoencoder(
+    def test_init_loss_weights(
         self,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
         test_weights: dict[str, float] | None,
-        expected_weight: float,
+        expected_weights: dict[str, float],
     ) -> None:
         model = _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,
-            auxiliary_loss_weights=test_weights,
+            loss_weights=test_weights,
         )
-        assert model.weight_autoencoder == expected_weight
+        assert model.loss_weights == expected_weights
 
-    def test_autoencoder_loss_zero_weight_matches_main(
+    def test_reconstruction_loss_zero_weight_matches_main(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """Weight 0 gives the behaviour from before the autoencoder loss.
+        """Weight 0 gives the behaviour from before the reconstruction loss.
 
         The decoder is frozen and stays in eval mode, and the loss is only the latent
         loss, which does not go through the encoders or the decoder.
@@ -610,7 +621,7 @@ class TestEncodeProcessDecode:
         model = _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,
-            auxiliary_loss_weights={"autoencoder": 0.0},
+            loss_weights={"reconstruction": 0.0},
         )
         model.train()
 
@@ -635,21 +646,21 @@ class TestEncodeProcessDecode:
         assert processor.target is not None
         assert not processor.target.requires_grad
 
-    def test_autoencoder_loss_trains_encoders_and_decoder(
+    def test_reconstruction_loss_trains_encoders_and_decoder(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """The autoencoder loss trains the decoder and the encoders.
+        """The reconstruction loss trains the decoder and the encoders.
 
-        The latent loss is zero, so all of the loss comes from the autoencoder loss.
+        The latent loss is zero, so all of the loss comes from the reconstruction loss.
         """
         model = _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,
-            auxiliary_loss_weights={"autoencoder": 0.5},
+            loss_weights={"reconstruction": 0.5},
         )
         model.train()
         batch = _oracle_batch()
-        autoencoder_loss = model.loss(2.0 * batch["target"], batch["target"])
+        reconstruction_loss = model.loss(2.0 * batch["target"], batch["target"])
 
         with pytest.MonkeyPatch.context() as mp:
             mock_log = MagicMock()
@@ -657,10 +668,12 @@ class TestEncodeProcessDecode:
             result = model.training_step(batch, 0)
         result.loss.backward()
 
-        torch.testing.assert_close(result.loss, 0.5 * autoencoder_loss)
+        torch.testing.assert_close(result.loss, 0.5 * reconstruction_loss)
         logged = {c.args[0]: c.args[1] for c in mock_log.call_args_list}
         assert logged["train_latent_loss"].item() == 0.0
-        torch.testing.assert_close(logged["train_autoencoder_loss"], autoencoder_loss)
+        torch.testing.assert_close(
+            logged["train_reconstruction_loss"], reconstruction_loss
+        )
 
         # The decoder is trainable, and the gradient reaches it and the encoder
         decoder, encoder = model.decoder, model.encoders[0]
@@ -783,28 +796,28 @@ class TestEncodeProcessDecode:
         assert "target_encoder" not in dict(model.named_children())
 
 
-class TestPredX0Loss:
-    """The pred_x0 loss compares the decoded x_0 estimate to the target.
+class TestPredictionLoss:
+    """The prediction loss compares the decoded differentiable prediction to the target.
 
-    With _X0Processor, _ScaledEncoder (scale 1) and _ScaledDecoder (scale 2), the
-    decoded x_0 estimate is 2 * sic[:, -n_steps:, 1:2]. The latent loss is zero.
+    With _PredictionProcessor, _ScaledEncoder (scale 1) and _ScaledDecoder (scale 2), the
+    decoded prediction is 2 * sic[:, -n_steps:, 1:2]. The latent loss is zero.
     """
 
     @staticmethod
     def _model(
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
-        auxiliary_loss_weights: dict[str, float],
+        loss_weights: dict[str, float],
         *,
         use_autoregressive: bool = True,
     ) -> EncodeProcessDecode:
         model = _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,
-            auxiliary_loss_weights=auxiliary_loss_weights,
+            loss_weights=loss_weights,
             processor=DictConfig(
                 {
-                    "_target_": f"{__name__}.{_X0Processor.__name__}",
+                    "_target_": f"{__name__}.{_PredictionProcessor.__name__}",
                     "use_autoregressive": use_autoregressive,
                 }
             ),
@@ -823,29 +836,13 @@ class TestPredX0Loss:
             result = model.training_step(batch, 0)
         return result.loss, {c.args[0]: c.args[1] for c in mock_log.call_args_list}
 
-    def test_init_weight_pred_x0_defaults_to_zero(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        model = _oracle_model(cfg_loss=cfg_loss, cfg_metrics=cfg_metrics)
-        assert model.weight_pred_x0 == 0.0
-
-    def test_init_rejects_negative_weight_pred_x0(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        with pytest.raises(ValueError, match="pred_x0 must not be negative"):
-            _oracle_model(
-                cfg_loss=cfg_loss,
-                cfg_metrics=cfg_metrics,
-                auxiliary_loss_weights={"pred_x0": -1.0},
-            )
-
     def test_autoregressive_compares_first_step_only(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
         model = self._model(
             cfg_loss,
             cfg_metrics,
-            {"autoencoder": 0.0, "pred_x0": 0.5},
+            {"reconstruction": 0.0, "prediction": 0.5},
             use_autoregressive=True,
         )
         batch = _oracle_batch()
@@ -853,7 +850,7 @@ class TestPredX0Loss:
 
         loss, logged = self._training_step(model, batch)
 
-        torch.testing.assert_close(logged["train_pred_x0_loss"], expected)
+        torch.testing.assert_close(logged["train_prediction_loss"], expected)
         torch.testing.assert_close(loss, 0.5 * expected)
 
         # Changing the later forecast steps of the target does not change the loss
@@ -867,7 +864,7 @@ class TestPredX0Loss:
         model = self._model(
             cfg_loss,
             cfg_metrics,
-            {"autoencoder": 0.0, "pred_x0": 0.5},
+            {"reconstruction": 0.0, "prediction": 0.5},
             use_autoregressive=False,
         )
         batch = _oracle_batch()
@@ -875,28 +872,32 @@ class TestPredX0Loss:
 
         loss, logged = self._training_step(model, batch)
 
-        torch.testing.assert_close(logged["train_pred_x0_loss"], expected)
+        torch.testing.assert_close(logged["train_prediction_loss"], expected)
         torch.testing.assert_close(loss, 0.5 * expected)
 
     def test_zero_weight_gives_same_loss_as_before(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """With weight 0, the loss is the latent loss plus the autoencoder loss only."""
-        model = self._model(cfg_loss, cfg_metrics, {"autoencoder": 0.5, "pred_x0": 0.0})
+        """With weight 0, the loss is the latent loss plus the reconstruction loss only."""
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.5, "prediction": 0.0}
+        )
         batch = _oracle_batch()
-        autoencoder_loss = model.loss(2.0 * batch["target"], batch["target"])
+        reconstruction_loss = model.loss(2.0 * batch["target"], batch["target"])
 
         loss, logged = self._training_step(model, batch)
 
-        torch.testing.assert_close(loss, 0.5 * autoencoder_loss)
-        assert "train_pred_x0_loss" not in logged
+        torch.testing.assert_close(loss, 0.5 * reconstruction_loss)
+        assert "train_prediction_loss" not in logged
 
     def test_mask_selects_samples(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        model = self._model(cfg_loss, cfg_metrics, {"autoencoder": 0.0, "pred_x0": 1.0})
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
         processor = model.processor
-        assert isinstance(processor, _X0Processor)
+        assert isinstance(processor, _PredictionProcessor)
         processor.sample_mask = torch.tensor([True, False])
         batch = _oracle_batch()
         expected = model.loss(2.0 * batch["sic"][:1, -1:, 1:2], batch["target"][:1, :1])
@@ -908,15 +909,17 @@ class TestPredX0Loss:
     def test_empty_mask_gives_zero_not_nan(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        model = self._model(cfg_loss, cfg_metrics, {"autoencoder": 0.0, "pred_x0": 1.0})
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
         processor = model.processor
-        assert isinstance(processor, _X0Processor)
+        assert isinstance(processor, _PredictionProcessor)
         processor.sample_mask = torch.tensor([False, False])
 
         loss, logged = self._training_step(model, _oracle_batch())
         loss.backward()
 
-        assert logged["train_pred_x0_loss"].item() == 0.0
+        assert logged["train_prediction_loss"].item() == 0.0
         assert loss.item() == 0.0
         decoder = model.decoder
         assert isinstance(decoder, _ScaledDecoder)
@@ -926,14 +929,16 @@ class TestPredX0Loss:
     def test_gradient_reaches_processor_decoder_and_encoders(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
-        """All the loss comes from the pred_x0 loss, which trains every part."""
-        model = self._model(cfg_loss, cfg_metrics, {"autoencoder": 0.0, "pred_x0": 1.0})
+        """All the loss comes from the prediction loss, which trains every part."""
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
 
         loss, _ = self._training_step(model, _oracle_batch())
         loss.backward()
 
         processor, decoder, encoder = model.processor, model.decoder, model.encoders[0]
-        assert isinstance(processor, _X0Processor)
+        assert isinstance(processor, _PredictionProcessor)
         assert isinstance(decoder, _ScaledDecoder)
         assert isinstance(encoder, _ScaledEncoder)
         for parameter in (processor.gain, decoder.scale, encoder.scale):
@@ -943,11 +948,11 @@ class TestPredX0Loss:
     @pytest.mark.parametrize(
         ("test_weights", "expected_frozen", "expected_warning"),
         [
-            ({"autoencoder": 0.0, "pred_x0": 0.0}, True, True),
-            ({"autoencoder": 0.0, "pred_x0": 1.0}, False, True),
-            ({"autoencoder": 1.0, "pred_x0": 0.0}, False, False),
+            ({"reconstruction": 0.0, "prediction": 0.0}, True, True),
+            ({"reconstruction": 0.0, "prediction": 1.0}, False, True),
+            ({"reconstruction": 1.0, "prediction": 0.0}, False, False),
         ],
-        ids=["both-zero", "pred-x0-only", "autoencoder-only"],
+        ids=["both-zero", "prediction-only", "reconstruction-only"],
     )
     def test_freezes_decoder_and_warns(
         self,
@@ -961,7 +966,7 @@ class TestPredX0Loss:
     ) -> None:
         """Freeze the decoder only if both weights are 0.
 
-        Warn if the autoencoder weight is 0 while the encoders or decoder are trainable.
+        Warn if the reconstruction weight is 0 while the encoders or decoder are trainable.
         The encoders are always trainable here.
         """
         with caplog.at_level(logging.WARNING):
@@ -971,14 +976,16 @@ class TestPredX0Loss:
         assert model.decoder.training is not expected_frozen
         assert ("latent space can drift" in caplog.text) is expected_warning
 
-    def test_rejects_processor_without_x0_estimate(
+    def test_rejects_processor_without_differentiable_prediction(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
         model = _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,
-            auxiliary_loss_weights={"pred_x0": 1.0},
+            loss_weights={"prediction": 1.0},
         )
 
-        with pytest.raises(TypeError, match="does not return an x_0 estimate"):
+        with pytest.raises(
+            TypeError, match="does not return a differentiable prediction"
+        ):
             model.training_step(_oracle_batch(), 0)

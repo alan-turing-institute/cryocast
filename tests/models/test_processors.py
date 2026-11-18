@@ -466,7 +466,7 @@ class TestDDPMProcessor:
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    def test_training_pred_x0_gradient_reaches_unet_not_target(
+    def test_training_differentiable_prediction_gradient_reaches_unet_not_target(
         self, *, test_use_autoregressive: bool
     ) -> None:
         n_forecast_steps = 3
@@ -482,12 +482,12 @@ class TestDDPMProcessor:
 
         assert isinstance(result, ProcessorOutputDiffusion)
         n_steps = 1 if test_use_autoregressive else n_forecast_steps
-        assert result.pred_x0.shape == (2, n_steps, *self.LATENT_CHW)
-        assert result.pred_x0_mask.shape == (2,)
-        assert result.pred_x0.requires_grad
+        assert result.differentiable_prediction.shape == (2, n_steps, *self.LATENT_CHW)
+        assert result.sample_mask.shape == (2,)
+        assert result.differentiable_prediction.requires_grad
 
-        # Backpropagate through pred_x0 only (the loss also depends on y).
-        result.pred_x0.sum().backward()
+        # Backpropagate through the prediction only (the loss also depends on y).
+        result.differentiable_prediction.sum().backward()
         assert any(
             p.grad is not None and p.grad.abs().sum() > 0
             for p in processor.model.parameters()
@@ -528,15 +528,15 @@ class TestDDPMProcessor:
         assert isinstance(result, ProcessorOutputDiffusion)
         assert not result.prediction.requires_grad
         torch.testing.assert_close(result.prediction, expected)
-        torch.testing.assert_close(result.pred_x0.detach(), pred_x0)
-        assert torch.equal(result.pred_x0_mask, t < processor.timesteps)
+        torch.testing.assert_close(result.differentiable_prediction.detach(), pred_x0)
+        assert torch.equal(result.sample_mask, t < processor.timesteps)
 
-    def test_training_pred_x0_mask_uses_max_timestep(self) -> None:
+    def test_training_sample_mask_uses_max_timestep(self) -> None:
         processor = self._make_processor(
             n_forecast_steps=1,
             n_history_steps=1,
             use_autoregressive=True,
-            pred_x0_max_timestep=1,
+            prediction_loss_max_timestep=1,
         )
         batch_size = 16
         x = torch.randn(batch_size, 1, *self.LATENT_CHW)
@@ -548,22 +548,22 @@ class TestDDPMProcessor:
         t = torch.randint(0, processor.timesteps, (batch_size,))
 
         assert isinstance(result, ProcessorOutputDiffusion)
-        assert result.pred_x0_mask.dtype == torch.bool
-        assert torch.equal(result.pred_x0_mask, t < 1)
+        assert result.sample_mask.dtype == torch.bool
+        assert torch.equal(result.sample_mask, t < 1)
         # The seed gives timesteps on both sides of the threshold
-        assert result.pred_x0_mask.any()
-        assert not result.pred_x0_mask.all()
+        assert result.sample_mask.any()
+        assert not result.sample_mask.all()
 
     @pytest.mark.parametrize("test_max_timestep", [0, 3], ids=["zero", "too-large"])
-    def test_rejects_pred_x0_max_timestep_out_of_range(
+    def test_rejects_prediction_loss_max_timestep_out_of_range(
         self, test_max_timestep: int
     ) -> None:
-        with pytest.raises(ValueError, match="pred_x0_max_timestep"):
+        with pytest.raises(ValueError, match="prediction_loss_max_timestep"):
             self._make_processor(
                 n_forecast_steps=1,
                 n_history_steps=1,
                 use_autoregressive=True,
-                pred_x0_max_timestep=test_max_timestep,
+                prediction_loss_max_timestep=test_max_timestep,
             )
 
     # n_forecast_steps=3 differs from the 4 latent channels so a swapped (C, T) unflatten

@@ -88,13 +88,15 @@ class ProcessorOutputDiffusion(ProcessorOutput):
     """Output of a diffusion processor training step.
 
     Attributes:
-        pred_x0: Estimate of the clean latent x_0, of shape (B, T, C, H, W).
-            T is 1 in autoregressive mode and n_forecast_steps in parallel mode.
-            Gradients flow back to the network, but not to the latent target.
-        pred_x0_mask: Boolean mask of shape (B,). True for the samples whose
-            diffusion timestep is low enough for a loss on ``pred_x0``.
+        differentiable_prediction: Latent prediction with gradients back to the
+            network (but not to the latent target), of shape (B, T, C, H, W). For
+            diffusion, this is the estimate of the clean latent x_0. T is 1 in
+            autoregressive mode and n_forecast_steps in parallel mode.
+        sample_mask: Boolean mask of shape (B,). True for the samples to use in a
+            loss on ``differentiable_prediction``. For diffusion, these are the
+            samples whose timestep is low enough.
 
     """
 
-    pred_x0: TensorNTCHW
-    pred_x0_mask: Tensor
+    differentiable_prediction: TensorNTCHW
+    sample_mask: Tensor

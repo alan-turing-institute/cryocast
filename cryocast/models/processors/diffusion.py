@@ -78,51 +78,51 @@ class DiffusionProcessor(BaseProcessor):
     def __init__(  # noqa: PLR0913
         self,
         *,
-        timesteps: int = 1000,
-        ddim_steps: int | None = None,
-        eta: float = 1.0,
+        activation: str = "SiLU",
         beta_schedule: str = "cosine",
+        ddim_steps: int | None = None,
+        dropout_rate: float = 0.1,
+        eta: float = 1.0,
         kernel_size: int = 3,
+        loss: DictConfig | nn.Module,
+        normalization: str = "groupnorm",
+        prediction_loss_max_timestep: int | None = None,
         start_out_channels: int = 64,
         time_embed_dim: int = 256,
-        dropout_rate: float = 0.1,
-        normalization: str = "groupnorm",
-        activation: str = "SiLU",
+        timesteps: int = 1000,
         use_autoregressive: bool = True,
-        pred_x0_max_timestep: int | None = None,
-        loss: DictConfig | nn.Module,
         **kwargs: Any,
     ) -> None:
         """Initialize the diffusion processor.
 
         Args:
-            timesteps (int): Number of diffusion timesteps. Default is 1000.
+            activation (str): Activation function used throughout the network (e.g., "SiLU").
+            beta_schedule (str): Beta schedule used by ``GaussianDiffusion``:
+                ``"cosine"`` or ``"linear"``. Default is ``"cosine"``.
             ddim_steps (int | None): Number of timesteps visited when sampling.
                 Must satisfy ``1 <= ddim_steps <= timesteps``. ``None`` means
                 ``timesteps`` (visit every trained timestep). Default is None.
+            dropout_rate (float): Dropout probability applied inside the UNet blocks.
             eta (float): Sampling stochasticity in ``[0, 1]``. ``eta=0`` gives
                 deterministic DDIM sampling; ``eta=1`` matches DDPM's per-step
                 noise. With ``ddim_steps == timesteps`` and ``eta=1`` the
                 processor uses ancestral DDPM sampling. Default is 1.0.
-            beta_schedule (str): Beta schedule used by ``GaussianDiffusion``:
-                ``"cosine"`` or ``"linear"``. Default is ``"cosine"``.
             kernel_size (int): Convolution kernel size used in the conditional UNet.
-            start_out_channels (int): Base number of channels in the first UNet block.
-            time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
-            dropout_rate (float): Dropout probability applied inside the UNet blocks.
-            normalization (str): Normalization layer type (e.g., "groupnorm").
-            activation (str): Activation function used throughout the network (e.g., "SiLU").
-            use_autoregressive (bool): Whether to use autoregressive sampling and
-                one-step training. Default is True.
-            pred_x0_max_timestep (int | None): Only samples with a
-                diffusion timestep below this value count towards the
-                ``pred_x0`` loss in ``EncodeProcessDecode``. At high
-                timesteps the x_0 estimate is mostly noise. Must satisfy
-                ``1 <= pred_x0_max_timestep <= timesteps``. ``None``
-                means ``timesteps`` (all samples count). Default is None.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
+            normalization (str): Normalization layer type (e.g., "groupnorm").
+            prediction_loss_max_timestep (int | None): Only samples with a
+                diffusion timestep below this value count towards the
+                prediction loss in ``EncodeProcessDecode``. At high
+                timesteps the x_0 estimate is mostly noise. Must satisfy
+                ``1 <= prediction_loss_max_timestep <= timesteps``. ``None``
+                means ``timesteps`` (all samples count). Default is None.
+            start_out_channels (int): Base number of channels in the first UNet block.
+            time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
+            timesteps (int): Number of diffusion timesteps. Default is 1000.
+            use_autoregressive (bool): Whether to use autoregressive sampling and
+                one-step training. Default is True.
             **kwargs: Additional arguments passed to ``BaseProcessor``.
 
         """
@@ -141,15 +141,15 @@ class DiffusionProcessor(BaseProcessor):
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
 
-        if pred_x0_max_timestep is None:
-            pred_x0_max_timestep = timesteps
-        if not 1 <= pred_x0_max_timestep <= timesteps:
+        if prediction_loss_max_timestep is None:
+            prediction_loss_max_timestep = timesteps
+        if not 1 <= prediction_loss_max_timestep <= timesteps:
             msg = (
-                f"pred_x0_max_timestep={pred_x0_max_timestep} "
+                f"prediction_loss_max_timestep={prediction_loss_max_timestep} "
                 f"must be in the range [1, timesteps={timesteps}]."
             )
             raise ValueError(msg)
-        self.pred_x0_max_timestep = pred_x0_max_timestep
+        self.prediction_loss_max_timestep = prediction_loss_max_timestep
 
         # Autoregressive training only optimises one forecast step at a time
         if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
@@ -242,11 +242,12 @@ class DiffusionProcessor(BaseProcessor):
                 Combined-latent tensor built from the detached predicted x_0.
                 Used only for metrics/callbacks.
             - loss: v-prediction loss value computed by ``self.loss_fn``.
-            - pred_x0: (B, T, n_latent_channels_total, H, W) predicted x_0,
+            - differentiable_prediction: (B, T, n_latent_channels_total, H, W)
+                predicted x_0,
                 with T=1 in autoregressive mode and T=n_forecast_steps in
                 parallel mode.
-            - pred_x0_mask: (B,) True where ``t`` is below
-                ``pred_x0_max_timestep``.
+            - sample_mask: (B,) True where ``t`` is below
+                ``prediction_loss_max_timestep``.
 
         Notes:
             - In autoregressive mode, the model is trained on forecast step 0
@@ -308,8 +309,8 @@ class DiffusionProcessor(BaseProcessor):
         return ProcessorOutputDiffusion(
             prediction=prediction,
             loss=loss,
-            pred_x0=pred_x0,
-            pred_x0_mask=t < self.pred_x0_max_timestep,
+            differentiable_prediction=pred_x0,
+            sample_mask=t < self.prediction_loss_max_timestep,
         )
 
     def _run_ddim_reverse_diffusion(

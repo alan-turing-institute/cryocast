@@ -256,11 +256,11 @@ class TestProcessorStage:
             for param in module.parameters()
         )
 
-    def test_autoencoder_loss_is_disabled(
+    def test_reconstruction_loss_is_disabled(
         self, processor_stage: ProcessorStage
     ) -> None:
-        """The encoders and the decoder are frozen, so the autoencoder loss is off."""
-        assert processor_stage.weight_autoencoder == 0
+        """The encoders and the decoder are frozen, so the reconstruction loss is off."""
+        assert processor_stage.loss_weights["reconstruction"] == 0
 
     def test_train_keeps_frozen_modules_in_eval_mode(
         self, processor_stage: ProcessorStage

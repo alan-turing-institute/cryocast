@@ -839,30 +839,32 @@ class TestModelService:
     @pytest.mark.parametrize(
         (
             "computes_loss_in_latent_space",
-            "weight_autoencoder",
-            "weight_pred_x0",
+            "weight_reconstruction",
+            "weight_prediction",
         ),
         [(False, 0.0, 0.0), (True, 1.0, 0.0), (True, 0.0, 1.0)],
         ids=[
             "physical-loss",
-            "latent-loss-with-autoencoder",
-            "latent-loss-with-pred-x0",
+            "latent-loss-with-reconstruction",
+            "latent-loss-with-prediction",
         ],
     )
     def test_train_single_stage_encode_process_decode(
         self,
         *,
         computes_loss_in_latent_space: bool,
-        weight_autoencoder: float,
-        weight_pred_x0: float,
+        weight_reconstruction: float,
+        weight_prediction: float,
     ) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
         service.model_.processor = MagicMock(
             computes_loss_in_latent_space=computes_loss_in_latent_space
         )
-        service.model_.weight_autoencoder = weight_autoencoder
-        service.model_.weight_pred_x0 = weight_pred_x0
+        service.model_.loss_weights = {
+            "reconstruction": weight_reconstruction,
+            "prediction": weight_prediction,
+        }
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -873,17 +875,16 @@ class TestModelService:
 
         mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
 
-    def test_train_single_stage_rejects_latent_loss_without_autoencoder(
+    def test_train_single_stage_rejects_latent_loss_without_reconstruction(
         self,
     ) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
         service.model_.processor = MagicMock(computes_loss_in_latent_space=True)
-        service.model_.weight_autoencoder = 0.0
-        service.model_.weight_pred_x0 = 0.0
+        service.model_.loss_weights = {"reconstruction": 0.0, "prediction": 0.0}
         service.checkpoint_file = None
 
-        with pytest.raises(ValueError, match="autoencoder loss"):
+        with pytest.raises(ValueError, match="reconstruction loss"):
             service.train()
 
     def test_train_single_stage(self) -> None:
@@ -1378,10 +1379,10 @@ class TestModelService:
                 train_cfg=DictConfig({}), processor_model=pretrained
             )
 
-        # The finetune loss also has an autoencoder term, which the processor stage
+        # The finetune loss also has an reconstruction term, which the processor stage
         # disables. Compare only the latent loss.
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(model, "weight_autoencoder", 0.0)
+            mp.setitem(model.loss_weights, "reconstruction", 0.0)
             finetune_loss = loss(model)
 
         assert torch.isfinite(expected)

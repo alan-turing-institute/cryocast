@@ -48,7 +48,7 @@ During training, it adds noise to the ground truth and predicts that noise.
 During inference, it starts from random noise and removes the noise step by step.
 
 These processors can be trained in single-stage or multistage mode.
-In single-stage training, the autoencoder loss trains the encoders and the decoder together with the processor.
+In single-stage training, the reconstruction loss trains the encoders and the decoder together with the processor.
 In multistage training, CryoCast trains the encoders and the decoder before the processor.
 CryoCast then trains the processor on a fixed latent space.
 
@@ -105,58 +105,59 @@ CryoCast then does these steps automatically:
 2. The model encodes these inputs and gives the result to `rollout` as `y`.
    The model detaches `y` from the computation graph. Thus, the loss cannot change its own target.
 3. The model decodes the encoded inputs and compares them to the target.
-   This autoencoder loss trains the encoders and the decoder, because the latent loss does not go through the decoder.
-   The model adds it to the latent loss, with the weight `auxiliary_loss_weights.autoencoder` (default `1.0`).
-   The model logs the two parts as `train_latent_loss` and `train_autoencoder_loss`.
+   This reconstruction loss trains the encoders and the decoder, because the latent loss does not go through the decoder.
+   The model adds it to the latent loss, with the weight `loss_weights.reconstruction` (default `1.0`).
+   The model logs the two parts as `train_latent_loss` and `train_reconstruction_loss`.
 
 You do not set a configuration key for steps 1 and 2.
-To change the weight of the autoencoder loss, set it at the top level of the model config:
+To change the weight of the reconstruction loss, set it at the top level of the model config:
 
 ```yaml
-auxiliary_loss_weights:
-  autoencoder: 0.5
+loss_weights:
+  reconstruction: 0.5
 ```
 
 The weight must not be negative.
-If the weight is `0`, the model does not calculate the autoencoder loss.
+If the weight is `0`, the model does not calculate the reconstruction loss.
 The processor stage of [multistage training](./train-multistage.md) always sets the weight to `0`, because its encoders and decoder are frozen.
 If the weight is `0` and the encoders or the decoder are trainable, the model logs a warning.
-Without the autoencoder loss, the latent space can drift away from what the decoder expects.
+Without the reconstruction loss, the latent space can drift away from what the decoder expects.
 
-### `pred_x0` loss
+### Prediction loss
 
-A diffusion processor can also return an estimate of the clean latent x_0 from each training step.
+A processor can also return a differentiable prediction from each training step.
+For example, a diffusion processor returns its estimate of the clean latent x_0.
 To do this, its `rollout` returns a `ProcessorOutputDiffusion`, which adds two fields to `ProcessorOutput`:
 
-- `pred_x0`: the x_0 estimate, with gradients back to the processor.
+- `differentiable_prediction`: the latent prediction, with gradients back to the processor.
   It holds one forecast step in autoregressive mode, and all the forecast steps in parallel mode.
-- `pred_x0_mask`: a boolean mask with one value for each sample.
-  It is `True` for the samples whose diffusion timestep is below `pred_x0_max_timestep`.
+- `sample_mask`: a boolean mask with one value for each sample.
+  It is `True` for the samples whose diffusion timestep is below `prediction_loss_max_timestep`.
 
-If the weight `auxiliary_loss_weights.pred_x0` is greater than `0` (default `0`), the model does these steps:
+If the weight `loss_weights.prediction` is greater than `0` (default `0`), the model does these steps:
 
-1. It decodes `pred_x0` and compares it to the target.
+1. It decodes `differentiable_prediction` and compares it to the target.
    In autoregressive mode, it compares only the first forecast step.
    In parallel mode, it compares all the forecast steps.
-2. It uses only the samples in `pred_x0_mask`.
-   At high timesteps, the x_0 estimate is mostly noise.
+2. It uses only the samples in `sample_mask`.
+   For a diffusion processor, these are the samples with a low timestep: at high timesteps, the x_0 estimate is mostly noise.
    If no sample is in the mask, this loss is `0`.
-3. It adds this loss to the total loss, with the weight `auxiliary_loss_weights.pred_x0`.
-   It logs this loss as `train_pred_x0_loss`.
+3. It adds this loss to the total loss, with the weight `loss_weights.prediction`.
+   It logs this loss as `train_prediction_loss`.
 
 This loss trains the processor, the decoder and the encoders against the target in physical space.
 The weight must not be negative.
 If the processor does not return a `ProcessorOutputDiffusion`, training raises a `TypeError`.
 
 ```yaml
-auxiliary_loss_weights:
-  autoencoder: 1.0
-  pred_x0: 0.5
+loss_weights:
+  reconstruction: 1.0
+  prediction: 0.5
 
 processor:
   _target_: cryocast.models.processors.DiffusionProcessor
   timesteps: 250
-  pred_x0_max_timestep: 50  # default: timesteps (all samples count)
+  prediction_loss_max_timestep: 50  # default: timesteps (all samples count)
 ```
 
 The model freezes the decoder only if both weights are `0`.

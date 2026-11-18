@@ -4,9 +4,10 @@ name: dc-ddim-dc
 
 # By combining multiple terms in a single loss function, we can train all parts
 # of the model even when the processor is computing loss in latent space.
-# loss = latent_loss + w_autoencoder * autoencoder_loss
-auxiliary_loss_weights:
-  autoencoder: 1.0
+# loss = latent_loss + w_prediction * prediction_loss + w_reconstruction * reconstruction_loss
+loss_weights:
+  prediction: 1.0
+  reconstruction: 1.0
 
 encoders:
   latent_space: [144, 144]
