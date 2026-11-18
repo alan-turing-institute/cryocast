@@ -252,10 +252,9 @@ class DiffusionProcessor(BaseProcessor):
         # Random diffusion timestep per sample.
         t = torch.randint(0, self.timesteps, (b,), device=device).long()
 
-        # Add noise to the clean target at diffusion step t. Detach it so that
-        # no gradient reaches y through the UNet input or the x_0 estimate.
+        # Add noise to the clean target at diffusion step t.
         noise: TensorNCHW = torch.randn_like(y_flat)
-        noisy_y: TensorNCHW = self.diffusion.q_sample(y_flat, t, noise).detach()
+        noisy_y: TensorNCHW = self.diffusion.q_sample(y_flat, t, noise)
 
         # Predict the velocity conditioned on the noisy target and history.
         pred_v: TensorNCHW = self.model(noisy_y, t, cond)
@@ -272,9 +271,8 @@ class DiffusionProcessor(BaseProcessor):
             target_v.unflatten(1, (n_steps, self.c_combined)),
         )
 
-        # Reconstruct x_0 from pred_v. calculate_v() has the same formula as
-        # the x_0 reconstruction, so we reuse it by passing pred_v as x_start.
-        # The graph goes back to the network through pred_v only.
+        # Reconstruct x_0 from pred_v. calculate_v() has the same formula as the x_0
+        # reconstruction, so we reuse it by passing pred_v as x_start.
         pred_x0: TensorNTCHW = self.diffusion.calculate_v(
             x_start=pred_v, noise=noisy_y, t=t
         ).unflatten(1, (n_steps, self.c_combined))

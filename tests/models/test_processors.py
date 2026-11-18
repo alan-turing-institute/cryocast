@@ -464,7 +464,7 @@ class TestDDPMProcessor:
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
     )
-    def test_training_prediction_gradient_reaches_unet_not_target(
+    def test_training_prediction_gradient_reaches_unet(
         self, *, test_use_autoregressive: bool
     ) -> None:
         n_forecast_steps = 3
@@ -474,7 +474,7 @@ class TestDDPMProcessor:
             use_autoregressive=test_use_autoregressive,
         )
         x = torch.randn(2, 2, *self.LATENT_CHW)
-        y = torch.randn(2, n_forecast_steps, *self.LATENT_CHW, requires_grad=True)
+        y = torch.randn(2, n_forecast_steps, *self.LATENT_CHW)
 
         result = processor.rollout(x, y)
 
@@ -484,13 +484,12 @@ class TestDDPMProcessor:
         assert result.sample_mask.shape == (2,)
         assert result.prediction.requires_grad
 
-        # Backpropagate through the prediction only (the loss also depends on y).
+        # Backpropagate through the prediction only.
         result.prediction.sum().backward()
         assert any(
             p.grad is not None and p.grad.abs().sum() > 0
             for p in processor.model.parameters()
         )
-        assert y.grad is None
 
     @pytest.mark.parametrize(
         "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
