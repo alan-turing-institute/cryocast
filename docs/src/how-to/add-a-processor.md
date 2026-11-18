@@ -120,7 +120,6 @@ loss_weights:
 
 The weight must not be negative.
 If the weight is `0`, the model does not calculate the reconstruction loss.
-The processor stage of [multistage training](./train-multistage.md) always sets the weight to `0`, because its encoders and decoder are frozen.
 If the weight is `0` and the encoders or the decoder are trainable, the model logs a warning.
 Without the reconstruction loss, the latent space can drift away from what the decoder expects.
 

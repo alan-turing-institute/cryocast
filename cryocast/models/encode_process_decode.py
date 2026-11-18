@@ -531,7 +531,7 @@ class EncodeProcessDecode(BaseModel):
         - Reconstruction loss, weighted by `loss_weights.reconstruction`: we decode the
           encoded forecast-step inputs and compare them to the target. This loss trains
           the encoders and the decoder, and keeps the latent space compatible with the
-          decoder. The processor stage always sets this weight to zero.
+          decoder.
         - Prediction loss, weighted by `loss_weights.prediction`: we decode the latent
           prediction from the processor, with gradients, and compare it to the target.
           Only the samples in `sample_mask` count. This loss trains the processor, the
