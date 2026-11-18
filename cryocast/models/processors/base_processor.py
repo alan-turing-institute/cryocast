@@ -66,7 +66,7 @@ class BaseProcessor(nn.Module):
         Override this method to use the NTCHW tensors directly. A processor with
         `computes_loss_in_latent_space=True` also overrides it to calculate its loss
         against `y` during training. During training, the `prediction` of such a
-        processor might have gradients, and it might only have one forecast step (for
+        processor might have gradients, and it might have fewer forecast steps (for
         example, for an autoregressive diffusion processor).
 
         Args:

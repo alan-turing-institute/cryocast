@@ -71,19 +71,29 @@ class _PredictionProcessor(BaseProcessor):
     """Processor that returns a zero latent loss and the prediction gain * x.
 
     The prediction is the last history latents times a trainable gain: one step in
-    autoregressive mode, or n_forecast_steps steps in parallel mode. Set `sample_mask`
-    to choose the samples for the prediction loss (default: None, i.e. all samples).
+    autoregressive mode, n_forecast_steps steps in parallel mode, or `n_steps` steps if
+    set. Set `sample_mask` to choose the samples for the prediction loss (default: None,
+    i.e. all samples).
     """
 
-    def __init__(self, *, use_autoregressive: bool = True, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        use_autoregressive: bool = True,
+        n_steps: int | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
         self.use_autoregressive = use_autoregressive
+        self.n_steps = n_steps
         self.gain = nn.Parameter(torch.tensor(1.0))
         self.sample_mask: torch.Tensor | None = None
 
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
         assert y is not None
-        n_steps = 1 if self.use_autoregressive else self.n_forecast_steps
+        n_steps = self.n_steps or (
+            1 if self.use_autoregressive else self.n_forecast_steps
+        )
         return ProcessorOutput(
             prediction=self.gain * x[:, -n_steps:],
             loss=torch.zeros(()),
@@ -103,11 +113,23 @@ class _ScaledDecoder(BaseDecoder):
         return x[:, self.channel : self.channel + 1] * self.scale
 
 
+class _BatchNormDecoder(_ScaledDecoder):
+    """_ScaledDecoder followed by BatchNorm, to track the running statistics."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.norm = nn.BatchNorm2d(1)
+
+    def forward(self, x: TensorNCHW) -> TensorNCHW:
+        return self.norm(super().forward(x))
+
+
 def _oracle_model(
     *,
     cfg_loss: DictConfig,
     cfg_metrics: list[dict[str, Any]],
     loss_weights: dict[str, float] | None = None,
+    n_forecast_steps: int = 2,
     processor: DictConfig | None = None,
 ) -> EncodeProcessDecode:
     """Build a latent-loss model with a trainable encoder and a trainable decoder.
@@ -134,7 +156,7 @@ def _oracle_model(
         input_spaces=[sic.to_dict()],
         loss=cfg_loss,
         metrics=cfg_metrics,
-        n_forecast_steps=2,
+        n_forecast_steps=n_forecast_steps,
         n_history_steps=2,
         output_space=output_space.to_dict(),
         optimizer=DictConfig({}),
@@ -144,9 +166,9 @@ def _oracle_model(
     )
 
 
-def _oracle_batch() -> dict[str, TensorNTCHW]:
+def _oracle_batch(n_forecast_steps: int = 2) -> dict[str, TensorNTCHW]:
     """Build a batch for the model from `_oracle_model`."""
-    future_sic = torch.rand(2, 2, 2, 8, 8)
+    future_sic = torch.rand(2, n_forecast_steps, 2, 8, 8)
     return {
         "sic": torch.rand(2, 2, 2, 8, 8),
         "future_sic": future_sic,
@@ -808,15 +830,19 @@ class TestPredictionLoss:
         loss_weights: dict[str, float],
         *,
         use_autoregressive: bool = True,
+        n_steps: int | None = None,
+        n_forecast_steps: int = 2,
     ) -> EncodeProcessDecode:
         model = _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,
             loss_weights=loss_weights,
+            n_forecast_steps=n_forecast_steps,
             processor=DictConfig(
                 {
                     "_target_": f"{__name__}.{_PredictionProcessor.__name__}",
                     "use_autoregressive": use_autoregressive,
+                    "n_steps": n_steps,
                 }
             ),
         )
@@ -972,6 +998,79 @@ class TestPredictionLoss:
         torch.testing.assert_close(result.prediction, expected)
         assert result.prediction.is_contiguous()
         assert not result.prediction.requires_grad
+
+    def test_metrics_pad_intermediate_length_prediction(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """Keep the predicted steps, then repeat the last one over the other steps."""
+        model = self._model(
+            cfg_loss,
+            cfg_metrics,
+            {"reconstruction": 0.0, "prediction": 1.0},
+            n_steps=2,
+            n_forecast_steps=4,
+        )
+        batch = _oracle_batch(n_forecast_steps=4)
+        decoded = 2.0 * batch["sic"][:, -2:, 1:2]
+        expected = torch.cat([decoded, decoded[:, -1:].expand(-1, 2, -1, -1, -1)], 1)
+
+        result, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(
+            logged["train_prediction_loss"],
+            model.loss(decoded, batch["target"][:, :2]),
+        )
+        torch.testing.assert_close(result.prediction, expected)
+        assert result.prediction.is_contiguous()
+        assert not result.prediction.requires_grad
+
+    def test_metrics_decode_keeps_batchnorm_statistics(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        """The metrics-only decode does not update the BatchNorm running statistics."""
+        model = self._model(
+            cfg_loss, cfg_metrics, {"reconstruction": 0.0, "prediction": 1.0}
+        )
+        shape = (8, 8)
+        model.decoder = _BatchNormDecoder(
+            channel=1,
+            scale=2.0,
+            data_space_in=DataSpace(channels=2, name="combined", shape=shape),
+            data_space_out=DataSpace(channels=1, name="sic", shape=shape),
+        )
+        model.train()
+        processor = model.processor
+        assert isinstance(processor, _PredictionProcessor)
+        processor.sample_mask = torch.tensor([False, False])
+        decoder = model.decoder
+        assert isinstance(decoder, _BatchNormDecoder)
+        norm = decoder.norm
+        assert norm.running_mean is not None
+        assert norm.running_var is not None
+        assert norm.num_batches_tracked is not None
+        running_mean = norm.running_mean.clone()
+        running_var = norm.running_var.clone()
+
+        _training_step(model, _oracle_batch())
+
+        assert decoder.training
+        torch.testing.assert_close(norm.running_mean, running_mean)
+        torch.testing.assert_close(norm.running_var, running_var)
+        assert norm.num_batches_tracked.item() == 0
+
+    def test_rejects_prediction_longer_than_forecast(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        model = self._model(
+            cfg_loss,
+            cfg_metrics,
+            {"reconstruction": 0.0, "prediction": 1.0},
+            n_steps=2,
+            n_forecast_steps=1,
+        )
+
+        with pytest.raises(ValueError, match="between 1 and 1"):
+            _training_step(model, _oracle_batch(n_forecast_steps=1))
 
     def test_gradient_reaches_processor_decoder_and_encoders(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]

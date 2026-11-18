@@ -567,16 +567,25 @@ class EncodeProcessDecode(BaseModel):
                 batch, with_grad=self.loss_weights["reconstruction"] > 0
             )
 
-            # Process in latent space. Detach the target so that the latent loss
+            # Process in latent space, detaching future inputs so that the latent loss
             # cannot decrease by changing its own target.
             processor_output = self.processor.rollout(
                 history_latent, future_latent.detach()
             )
-            latent_loss = processor_output.loss
-            if latent_loss is None:
+            # Check that the processor returned a loss
+            if (latent_loss := processor_output.loss) is None:
                 msg = (
                     f"Processor {type(self.processor).__name__} promises to compute "
                     "loss in latent space, but did not return one."
+                )
+                raise ValueError(msg)
+            # Check the number of forecast steps is in the expected range
+            n_steps = processor_output.prediction.shape[1]
+            if not 1 <= n_steps <= self.n_forecast_steps:
+                msg = (
+                    f"Processor {type(self.processor).__name__} returned a prediction "
+                    f"with {n_steps} forecast steps, but it must have between 1 and "
+                    f"{self.n_forecast_steps}."
                 )
                 raise ValueError(msg)
 
@@ -610,15 +619,17 @@ class EncodeProcessDecode(BaseModel):
                 for name, value in {"latent": latent_loss, **losses}.items():
                     self.log_per_epoch(f"train_{name}_loss", value)
 
-            # Decode the prediction without gradients, for metrics and callbacks only.
-            # If the latent prediction has only one forecast step, we decode that step
-            # once, then repeat it over all the forecast steps.
+            # Decode the prediction in evaluation mode and without gradients, so that
+            # we do not affect BatchNorm running statistics.
+            training_mode = self.decoder.training
+            self.decoder.eval()
             with torch.no_grad():
-                prediction = (
-                    self.decoder.rollout(processor_output.prediction.detach(), anchor)
-                    .expand(-1, self.n_forecast_steps, -1, -1, -1)
-                    .contiguous()
-                )
+                prediction = self.decoder.rollout(processor_output.prediction, anchor)
+            self.decoder.train(training_mode)
+            # If the latent prediction has fewer forecast steps than the target, repeat
+            # the last one until we have the correct number
+            steps = torch.arange(self.n_forecast_steps, device=prediction.device)
+            prediction = prediction[:, steps.clamp(max=n_steps - 1)]
 
         # Standard path: calculate loss by comparing decoded output to target.
         else:
