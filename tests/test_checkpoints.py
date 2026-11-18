@@ -246,6 +246,57 @@ class TestMergeConfig:
 
         assert combined["variables"] == ckpt_config["variables"]
 
+    def test_allow_missing_from_checkpoint(
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Groups that allow missing days and their fill come from the checkpoint."""
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["data"]["allow_missing"] = {
+            "groups": ["float-argo"],
+            "fill_value": -2.0,
+        }
+        config = cfg_model_service.copy()
+        config["data"]["allow_missing"] = {"groups": [], "fill_value": 0.0}
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoints"
+        ):
+            combined = checkpoint_file.merge_config(config)
+
+        assert combined["data"]["allow_missing"]["groups"] == ["float-argo"]
+        assert combined["data"]["allow_missing"]["fill_value"] == -2.0
+        assert "data.allow_missing.groups=['float-argo'] (config has [])" in caplog.text
+        assert "data.allow_missing.fill_value=-2.0 (config has 0.0)" in caplog.text
+
+    def test_older_checkpoint_allows_no_missing(
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A checkpoint saved before allow_missing existed gets no groups, with a warning."""
+        ckpt_config = cfg_model_service.copy()
+        ckpt_config["data"].pop("allow_missing", None)
+        config = cfg_model_service.copy()
+        config["data"]["allow_missing"] = {"groups": ["float-argo"], "fill_value": -1.0}
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoints"
+        ):
+            combined = checkpoint_file.merge_config(config)
+
+        assert combined["data"]["allow_missing"]["groups"] == []
+        assert combined["data"]["allow_missing"]["fill_value"] == -1.0
+        assert "data.allow_missing.groups=[] (config has ['float-argo'])" in caplog.text
+        assert "data.allow_missing.fill_value" not in caplog.text
+
     def test_batch_size_from_config(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:

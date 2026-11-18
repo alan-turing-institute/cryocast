@@ -1,4 +1,5 @@
 defaults:
+  - allow_missing: default
   - datasets:
     - samp_sicglobal_synthetic_5p625_2021_2024_24h_v2
   - split: synthetic
