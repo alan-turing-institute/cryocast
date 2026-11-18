@@ -31,6 +31,7 @@ from .enums import (
     MaskType,
     RangeRestriction,
     RolloutSpace,
+    SkipAnchorType,
     SkipConnectionType,
 )
 from .protocols import (
@@ -82,6 +83,7 @@ __all__ = [
     "ProcessorOutput",
     "RangeRestriction",
     "RolloutSpace",
+    "SkipAnchorType",
     "SkipConnectionType",
     "SupportsImageLogging",
     "SupportsMetadataFromDataset",
