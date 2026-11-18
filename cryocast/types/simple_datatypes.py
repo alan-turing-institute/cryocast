@@ -82,12 +82,14 @@ class ProcessorOutput:
     Attributes:
         prediction: Latent prediction of shape (N, T, C, H, W). At inference, T is
             n_forecast_steps. During training, a processor that computes its loss in
-            latent space can return a prediction with gradients back to the network,
-            and T can be 1. For example, an autoregressive diffusion processor
-            predicts only the first forecast step.
-        loss: Optional processor-specific loss.
-        sample_mask: Optional boolean mask of shape (N,). True for the samples to use
-            in the prediction loss. None means that all samples are used.
+            latent space can return a prediction with gradients back to the network, and
+            T can be 1. For example, an autoregressive diffusion processor predicts only
+            the first forecast step.
+        loss: Latent loss for the backward pass. A processor must set it during training
+            if `computes_loss_in_latent_space=True`. For other processors, this is
+            ignored.
+        sample_mask: Optional boolean mask of shape (N,). True for the samples to use in
+            the prediction loss. None means that all samples are used.
 
     """
 
