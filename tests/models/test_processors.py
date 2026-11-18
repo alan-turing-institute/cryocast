@@ -363,6 +363,7 @@ class TestDDPMProcessor:
         n_history_steps: int,
         use_autoregressive: bool,
         loss: DictConfig | torch.nn.Module | None = None,
+        timesteps: int = 2,
         **kwargs: Any,
     ) -> DiffusionProcessor:
         combined = DataSpace(
@@ -372,7 +373,7 @@ class TestDDPMProcessor:
             data_space=combined,
             n_forecast_steps=n_forecast_steps,
             n_history_steps=n_history_steps,
-            timesteps=2,
+            timesteps=timesteps,
             start_out_channels=8,
             time_embed_dim=256,
             dropout_rate=0.0,
@@ -529,14 +530,15 @@ class TestDDPMProcessor:
         assert not result.prediction.requires_grad
         torch.testing.assert_close(result.prediction, expected)
         torch.testing.assert_close(result.differentiable_prediction.detach(), pred_x0)
-        assert torch.equal(result.sample_mask, t < processor.timesteps)
+        # Default fraction 0.5 of timesteps=2: only t=0 counts
+        assert torch.equal(result.sample_mask, t < 1)
 
-    def test_training_sample_mask_uses_max_timestep(self) -> None:
+    def test_training_sample_mask_keeps_lower_half_of_timesteps(self) -> None:
         processor = self._make_processor(
             n_forecast_steps=1,
             n_history_steps=1,
             use_autoregressive=True,
-            prediction_loss_max_timestep=1,
+            timesteps=4,
         )
         batch_size = 16
         x = torch.randn(batch_size, 1, *self.LATENT_CHW)
@@ -549,22 +551,11 @@ class TestDDPMProcessor:
 
         assert isinstance(result, ProcessorOutputDiffusion)
         assert result.sample_mask.dtype == torch.bool
-        assert torch.equal(result.sample_mask, t < 1)
-        # The seed gives timesteps on both sides of the threshold
+        # With timesteps=4, only t in {0, 1} counts
+        assert torch.equal(result.sample_mask, t < 2)
+        # The seed gives timesteps on both sides of the cutoff
         assert result.sample_mask.any()
         assert not result.sample_mask.all()
-
-    @pytest.mark.parametrize("test_max_timestep", [0, 3], ids=["zero", "too-large"])
-    def test_rejects_prediction_loss_max_timestep_out_of_range(
-        self, test_max_timestep: int
-    ) -> None:
-        with pytest.raises(ValueError, match="prediction_loss_max_timestep"):
-            self._make_processor(
-                n_forecast_steps=1,
-                n_history_steps=1,
-                use_autoregressive=True,
-                prediction_loss_max_timestep=test_max_timestep,
-            )
 
     # n_forecast_steps=3 differs from the 4 latent channels so a swapped (C, T) unflatten
     # changes the number of lead times seen by the wrapped loss

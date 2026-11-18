@@ -86,7 +86,6 @@ class DiffusionProcessor(BaseProcessor):
         kernel_size: int = 3,
         loss: DictConfig | nn.Module,
         normalization: str = "groupnorm",
-        prediction_loss_max_timestep: int | None = None,
         start_out_channels: int = 64,
         time_embed_dim: int = 256,
         timesteps: int = 1000,
@@ -112,12 +111,6 @@ class DiffusionProcessor(BaseProcessor):
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
             normalization (str): Normalization layer type (e.g., "groupnorm").
-            prediction_loss_max_timestep (int | None): Only samples with a
-                diffusion timestep below this value count towards the
-                prediction loss in ``EncodeProcessDecode``. At high
-                timesteps the x_0 estimate is mostly noise. Must satisfy
-                ``1 <= prediction_loss_max_timestep <= timesteps``. ``None``
-                means ``timesteps`` (all samples count). Default is None.
             start_out_channels (int): Base number of channels in the first UNet block.
             time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
             timesteps (int): Number of diffusion timesteps. Default is 1000.
@@ -138,18 +131,9 @@ class DiffusionProcessor(BaseProcessor):
         c_combined = self.data_space.channels
         self.c_combined = c_combined
 
+        self.prediction_loss_cutoff = 0.5  # earlier timesteps are too noisy
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
-
-        if prediction_loss_max_timestep is None:
-            prediction_loss_max_timestep = timesteps
-        if not 1 <= prediction_loss_max_timestep <= timesteps:
-            msg = (
-                f"prediction_loss_max_timestep={prediction_loss_max_timestep} "
-                f"must be in the range [1, timesteps={timesteps}]."
-            )
-            raise ValueError(msg)
-        self.prediction_loss_max_timestep = prediction_loss_max_timestep
 
         # Autoregressive training only optimises one forecast step at a time
         if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
@@ -246,8 +230,8 @@ class DiffusionProcessor(BaseProcessor):
                 predicted x_0,
                 with T=1 in autoregressive mode and T=n_forecast_steps in
                 parallel mode.
-            - sample_mask: (B,) True where ``t`` is below
-                ``prediction_loss_max_timestep``.
+            - sample_mask: (B,) True where ``t`` is below ``self.prediction_loss_cutoff
+                * timesteps``.
 
         Notes:
             - In autoregressive mode, the model is trained on forecast step 0
@@ -310,7 +294,7 @@ class DiffusionProcessor(BaseProcessor):
             prediction=prediction,
             loss=loss,
             differentiable_prediction=pred_x0,
-            sample_mask=t < self.prediction_loss_max_timestep,
+            sample_mask=t < self.prediction_loss_cutoff * self.timesteps,
         )
 
     def _run_ddim_reverse_diffusion(
@@ -443,7 +427,6 @@ class DiffusionProcessor(BaseProcessor):
 
             # Iteratively denoise from the final diffusion timestep to zero.
             y = self._run_reverse_diffusion(y, cond)
-
             all_predictions.append(y)
 
             # Slide the history window forward: drop the oldest frame and
@@ -476,10 +459,8 @@ class DiffusionProcessor(BaseProcessor):
 
         """
         cond = x.flatten(start_dim=1, end_dim=2)
-
         b, _, h, w = cond.shape
         device = cond.device
-
         y = torch.randn(
             (b, self.n_forecast_steps * self.c_combined, h, w), device=device
         )

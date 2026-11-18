@@ -132,7 +132,7 @@ To do this, its `rollout` returns a `ProcessorOutputDiffusion`, which adds two f
 - `differentiable_prediction`: the latent prediction, with gradients back to the processor.
   It holds one forecast step in autoregressive mode, and all the forecast steps in parallel mode.
 - `sample_mask`: a boolean mask with one value for each sample.
-  It is `True` for the samples whose diffusion timestep is below `prediction_loss_max_timestep`.
+  For `DiffusionProcessor`, it is `True` for the samples whose diffusion timestep is below `0.5` of `timesteps`.
 
 If the weight `loss_weights.prediction` is greater than `0` (default `0`), the model does these steps:
 
@@ -157,7 +157,6 @@ loss_weights:
 processor:
   _target_: cryocast.models.processors.DiffusionProcessor
   timesteps: 250
-  prediction_loss_max_timestep: 50  # default: timesteps (all samples count)
 ```
 
 The model freezes the decoder only if both weights are `0`.
