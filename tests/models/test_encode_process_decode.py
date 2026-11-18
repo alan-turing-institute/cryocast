@@ -589,12 +589,12 @@ class TestEncodeProcessDecode:
     @pytest.mark.parametrize(
         ("test_weights", "expected_weights"),
         [
-            (None, {"reconstruction": 1.0, "prediction": 0.0}),
-            ({}, {"reconstruction": 1.0, "prediction": 0.0}),
-            ({"reconstruction": 0}, {"reconstruction": 0.0, "prediction": 0.0}),
-            ({"prediction": 0.5}, {"reconstruction": 1.0, "prediction": 0.5}),
+            (None, {"reconstruction": 0.0, "prediction": 0.0}),
+            ({}, {"reconstruction": 0.0, "prediction": 0.0}),
+            ({"reconstruction": 0.5}, {"reconstruction": 0.5, "prediction": 0.0}),
+            ({"prediction": 0.5}, {"reconstruction": 0.0, "prediction": 0.5}),
         ],
-        ids=["none", "empty", "reconstruction-zero", "prediction-half"],
+        ids=["none", "empty", "reconstruction-half", "prediction-half"],
     )
     def test_init_loss_weights(
         self,

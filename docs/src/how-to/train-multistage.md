@@ -33,10 +33,10 @@ Pretrained weights are loaded into the full `EncodeProcessDecode` model and the 
 
 Some processors calculate their loss in latent space, for example `DiffusionProcessor`.
 This latent loss does not go through the decoder.
-Thus, the model also adds a reconstruction loss, which trains the encoders and the decoder.
+Thus, the model can also add a reconstruction loss, which trains the encoders and the decoder.
 This loss also keeps the latent space compatible with the decoder.
-To disable it, set `loss_weights.reconstruction` to `0`.
-The decoder stays frozen in this stage only if `loss_weights.prediction` is also `0` (the default).
+To enable it, set `loss_weights.reconstruction` to a value greater than `0` (default `0`).
+If `loss_weights.reconstruction` and `loss_weights.prediction` are both `0` (the default), the decoder stays frozen in this stage.
 See [Loss in latent space](./add-a-processor.md#loss-in-latent-space).
 The processor stage does not use the reconstruction loss, because its encoders and decoder are frozen.
 

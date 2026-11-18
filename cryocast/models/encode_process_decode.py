@@ -67,7 +67,7 @@ class EncodeProcessDecode(BaseModel):
             loss_weights: weights for auxiliary loss terms. These apply only to
                 processors that compute their loss in latent space. Weights must not be
                 negative. Supported keys:
-                - `reconstruction` (default 1.0): loss on the decoded encoded future
+                - `reconstruction` (default 0.0): loss on the decoded encoded future
                   inputs.
                 - `prediction` (default 0.0): loss on the decoded differentiable
                   prediction from the processor.
@@ -199,7 +199,7 @@ class EncodeProcessDecode(BaseModel):
             ValueError: If a key is unknown or a weight is negative.
 
         """
-        defaults = {"reconstruction": 1.0, "prediction": 0.0}
+        defaults = {"reconstruction": 0.0, "prediction": 0.0}
         for key, weight in weights.items():
             if key not in defaults:
                 msg = (

@@ -1379,11 +1379,8 @@ class TestModelService:
                 train_cfg=DictConfig({}), processor_model=pretrained
             )
 
-        # The finetune loss also has an reconstruction term, which the processor stage
-        # disables. Compare only the latent loss.
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setitem(model.loss_weights, "reconstruction", 0.0)
-            finetune_loss = loss(model)
+        # The auxiliary losses are off by default, so both losses are the latent loss
+        finetune_loss = loss(model)
 
         assert torch.isfinite(expected)
         torch.testing.assert_close(finetune_loss, expected, rtol=0, atol=0)

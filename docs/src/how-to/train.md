@@ -6,7 +6,8 @@ It is the default and works for all model architectures.
 
 Some processors calculate their loss in latent space, for example `DiffusionProcessor`.
 In single-stage training, the reconstruction loss and the prediction loss train the encoders and the decoder together with the processor.
-If you set both `loss_weights.reconstruction` and `loss_weights.prediction` to `0`, the model freezes the decoder before it is trained.
+Both losses are off by default.
+If `loss_weights.reconstruction` and `loss_weights.prediction` are both `0`, the model freezes the decoder before it is trained.
 Thus, single-stage training with these weights raises a `ValueError`.
 See [Loss in latent space](./add-a-processor.md#loss-in-latent-space).
 

@@ -48,7 +48,8 @@ During training, it adds noise to the ground truth and predicts that noise.
 During inference, it starts from random noise and removes the noise step by step.
 
 These processors can be trained in single-stage or multistage mode.
-In single-stage training, the reconstruction loss trains the encoders and the decoder together with the processor.
+In single-stage training, the reconstruction loss and the prediction loss train the encoders and the decoder together with the processor.
+You must enable at least one of them, see [Loss in latent space](#loss-in-latent-space).
 In multistage training, CryoCast trains the encoders and the decoder before the processor.
 CryoCast then trains the processor on a fixed latent space.
 
@@ -104,13 +105,13 @@ CryoCast then does these steps automatically:
    Each batch gets one `future_<input>` key for each input group.
 2. The model encodes these inputs and gives the result to `rollout` as `y`.
    The model detaches `y` from the computation graph. Thus, the loss cannot change its own target.
-3. The model decodes the encoded inputs and compares them to the target.
+3. If the weight `loss_weights.reconstruction` is greater than `0` (default `0`), the model decodes the encoded inputs and compares them to the target.
    This reconstruction loss trains the encoders and the decoder, because the latent loss does not go through the decoder.
-   The model adds it to the latent loss, with the weight `loss_weights.reconstruction` (default `1.0`).
+   The model adds it to the latent loss, with the weight `loss_weights.reconstruction`.
    The model logs the two parts as `train_latent_loss` and `train_reconstruction_loss`.
 
 You do not set a configuration key for steps 1 and 2.
-To change the weight of the reconstruction loss, set it at the top level of the model config:
+To enable the reconstruction loss, set its weight at the top level of the model config:
 
 ```yaml
 loss_weights:
