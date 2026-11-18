@@ -221,6 +221,11 @@ class TestProcessorStage:
                 RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
                 id="physical-previous",
             ),
+            pytest.param(
+                RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.INITIAL),
+                RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.INITIAL),
+                id="physical-initial",
+            ),
         ],
     )
     def test_from_template_forwards_rollout_strategy(

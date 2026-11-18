@@ -223,6 +223,7 @@ class TestRolloutStrategy:
         [
             pytest.param("latent", "initial", id="latent-initial"),
             pytest.param("latent", "previous", id="latent-previous"),
+            pytest.param("physical", "initial", id="physical-initial"),
             pytest.param("physical", "previous", id="physical-previous"),
         ],
     )
@@ -233,10 +234,14 @@ class TestRolloutStrategy:
         assert strategy.space is RolloutSpace(space)
         assert strategy.anchor is SkipAnchorType(anchor)
 
-    def test_rejects_physical_with_initial_anchor(self) -> None:
-        """A physical rollout cannot anchor every step on the last observed frame."""
-        with pytest.raises(ValueError, match="skip_anchor='initial'"):
-            RolloutStrategy(space=RolloutSpace.PHYSICAL, anchor=SkipAnchorType.INITIAL)
+    def test_accepts_physical_with_initial_anchor(self) -> None:
+        """A physical rollout can anchor every step on the last observed frame."""
+        strategy = RolloutStrategy(
+            space=RolloutSpace.PHYSICAL, anchor=SkipAnchorType.INITIAL
+        )
+
+        assert strategy.is_physical
+        assert not strategy.uses_default_anchor
 
     @pytest.mark.parametrize(
         ("space", "anchor"),
@@ -272,17 +277,19 @@ class TestRolloutStrategy:
             space=RolloutSpace.LATENT, anchor=SkipAnchorType.INITIAL
         )
 
-    def test_from_options_keeps_explicit_anchor(self) -> None:
+    @pytest.mark.parametrize(
+        ("space", "anchor"),
+        [
+            pytest.param("latent", "previous", id="latent-previous"),
+            pytest.param("physical", "initial", id="physical-initial"),
+        ],
+    )
+    def test_from_options_keeps_explicit_anchor(self, space: str, anchor: str) -> None:
         """Keep an explicit anchor, and report that it is not the default."""
-        strategy = RolloutStrategy.from_options("latent", "previous")
+        strategy = RolloutStrategy.from_options(space, anchor)
 
-        assert strategy.anchor is SkipAnchorType.PREVIOUS
+        assert strategy.anchor is SkipAnchorType(anchor)
         assert not strategy.uses_default_anchor
-
-    def test_from_options_rejects_physical_with_initial_anchor(self) -> None:
-        """Validate explicit anchors through the same check as the constructor."""
-        with pytest.raises(ValueError, match="skip_anchor='initial'"):
-            RolloutStrategy.from_options("physical", "initial")
 
     @pytest.mark.parametrize(
         ("space", "expected"),
