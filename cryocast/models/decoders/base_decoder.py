@@ -1,9 +1,12 @@
 from typing import Any
 
+import torch
+
 from cryocast.models.common import Freezable, Mask, RestrictRange, SkipConnection
 from cryocast.types import (
     DataSpace,
     RangeRestriction,
+    SkipAnchorType,
     SkipConnectionType,
     TensorNCHW,
     TensorNTCHW,
@@ -84,8 +87,8 @@ class BaseDecoder(Freezable):
         cells are at the same scale as the persistence and the mask. Without this, some
         masking methods would convert zeros into non-zero values (e.g. sigmoid(0)=0.5).
 
-        This function is called once by `rollout` after the per-frame `forward`, so
-        every decoder gets it automatically without having to call it themselves.
+        This function is called by `rollout` after `forward`, so every decoder gets it
+        automatically without having to call it themselves.
 
         RangeRestriction choices are: none/sigmoid/tanh/clamp
         """
@@ -123,7 +126,13 @@ class BaseDecoder(Freezable):
         msg = "If you are using the default rollout method, you must implement forward."
         raise NotImplementedError(msg)
 
-    def rollout(self, x: TensorNTCHW, persistence: TensorNTCHW | None) -> TensorNTCHW:
+    def rollout(
+        self,
+        x: TensorNTCHW,
+        persistence: TensorNTCHW | None,
+        *,
+        anchor_type: SkipAnchorType | str = SkipAnchorType.INITIAL,
+    ) -> TensorNTCHW:
         """Decode latent space into output space across multiple timesteps.
 
         The default implementation simply calls `self.forward` on each time slice
@@ -134,30 +143,52 @@ class BaseDecoder(Freezable):
         Note that this (rollout method) also increases the effective batch size for any
         batch normalisation layers in the encoder.
 
+        The anchor type sets which frame the skip connection combines with each step:
+
+        - initial: every step uses `persistence` as its anchor.
+        - previous: the first step uses `persistence` as its anchor. Each later step
+            uses the finalised output of the step before it. The `forward` call is still
+            batched over all timesteps. Only `finalise` runs once per step.
+
+        The anchor type has no effect when the decoder has no skip connection.
+
         Args:
             x: TensorNTCHW with (batch_size, n_timeslices, n_latent_channels_total, latent_height, latent_width)
-            persistence: TensorNTCHW with (batch_size, 1, output_channels, output_height, output_width) to add to every forecast step
+            persistence: TensorNTCHW with (batch_size, 1, output_channels, output_height, output_width) to use as the anchor for the skip connection
+            anchor_type: SkipAnchorType (or its string value) that sets the anchor for each step after the first
 
         Returns:
             TensorNTCHW with (batch_size, n_timeslices, output_channels, output_height, output_width)
 
         """
-        # Although this should only be called with n_forecast_steps timeslices, we can
-        # make the decoder more generic by simply reading the number of timeslices from
-        # the input.
-        batch_size, n_timeslices = x.shape[0], x.shape[1]
+        # Pass the latents through the decoder to return to output space, combining the
+        # batch and time dimensions for the decoder and then splitting them again.
+        # Reading the shape from the input means that this works for any number of
+        # timeslices, not only n_forecast_steps.
+        batch_and_time = x.shape[:2]
+        unbounded_ntchw: TensorNTCHW = self(x.flatten(0, 1)).unflatten(
+            0, batch_and_time
+        )
 
-        # Pass the latents through the decoder to return to output space
-        unbounded_output_nchw: TensorNCHW = self(x.reshape(-1, *self.data_space_in.chw))
+        # If we are anchoring each step on the output of the previous step we need to
+        # loop over the timesteps.
+        anchor_type = SkipAnchorType(anchor_type)
+        if self.skip_connection is not None and anchor_type == SkipAnchorType.PREVIOUS:
+            anchor = None if persistence is None else persistence[:, 0]
+            outputs: list[TensorNCHW] = []
+            for t in range(unbounded_ntchw.shape[1]):
+                anchor = self.finalise(unbounded_ntchw[:, t], anchor)
+                outputs.append(anchor)
+            return torch.stack(outputs, dim=1)
 
-        # Repeat the persistence timeslice until we match the decoder output shape
-        if persistence is not None:
-            persistence = persistence.expand(-1, n_timeslices, -1, -1, -1).reshape(
-                *unbounded_output_nchw.shape
-            )
-
-        # Apply the shared finalisation steps (range restriction, skip connection, masking)
-        output = self.finalise(unbounded_output_nchw, persistence)
-
-        # Reshape back to [batch, n_timeslices, C_out, H_out, W_out]
-        return output.reshape(batch_size, n_timeslices, *self.data_space_out.chw)
+        # Otherwise, repeat the persistence timeslice across every step and apply the
+        # shared finalisation steps (range restriction, skip connection, masking) to all
+        # timesteps at once.
+        anchor = (
+            None
+            if persistence is None
+            else persistence.expand_as(unbounded_ntchw).flatten(0, 1)
+        )
+        return self.finalise(unbounded_ntchw.flatten(0, 1), anchor).unflatten(
+            0, batch_and_time
+        )
