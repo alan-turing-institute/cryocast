@@ -115,6 +115,9 @@ finaliser:
 
 By default, `restrict_range: sigmoid` is used, however `clamp`, `tanh` or `none` are also available.
 
+To change how the model advances the forecast over lead times, see [Forecast rollout](../user-guide/forecast-rollout.md).
+The options there control the rollout space, the skip connection anchor and the relaxation towards climatology.
+
 ## Checkpoints
 
 A checkpoint is saved after each epoch to:
