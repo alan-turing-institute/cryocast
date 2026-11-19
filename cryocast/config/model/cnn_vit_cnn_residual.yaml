@@ -11,6 +11,9 @@ name: cnn-vit-cnn-residual
 # and rolls the updated PHYSICAL field into the window (re-encoded next step)
 # instead of feeding the processor raw latent back into its own input
 rollout_space: physical
+# A physical rollout anchors the skip connection on the previous forecast step by
+# default, so only relaxation is needed to enable rollout stabilisation here. See
+# the commented options at the end of cnn_vit_cnn.yaml.
 
 processor:
   depth: 4

@@ -262,8 +262,7 @@ class RelaxationOptions:
     """Options for relaxing each forecast step towards climatology.
 
     Attributes:
-        tau: The e-folding time of the anomaly from climatology, in forecast steps.
-            See ExponentialRelaxation.
+        tau: The folding time of the anomaly from climatology, in forecast steps.
         apply_in_training: Whether to relax during training. If False, relax only in
             evaluation mode.
 
