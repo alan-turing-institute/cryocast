@@ -21,9 +21,9 @@ class RestrictRange(nn.Module):
         try:
             diff = max_val - min_val
             self.restrict_fn = {
-                RangeRestriction.CLAMP: lambda x: x.clamp_(min=min_val, max=max_val),
-                RangeRestriction.SIGMOID: lambda x: min_val + diff * x.sigmoid_(),
-                RangeRestriction.TANH: lambda x: min_val + diff * (x.tanh_() + 1) / 2,
+                RangeRestriction.CLAMP: lambda x: x.clamp(min=min_val, max=max_val),
+                RangeRestriction.SIGMOID: lambda x: min_val + diff * x.sigmoid(),
+                RangeRestriction.TANH: lambda x: min_val + diff * (x.tanh() + 1) / 2,
             }[method]
         except KeyError:
             self.restrict_fn = lambda x: x

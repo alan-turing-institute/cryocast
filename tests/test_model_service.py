@@ -136,6 +136,7 @@ def _build_stages(
     processor_stage = ProcessorStage.from_template(
         processor=processor,
         decoder_model=decoder_stage,
+        full_model=model,
     )
     return model, input_stage, decoder_stage, processor_stage
 
@@ -1054,6 +1055,7 @@ class TestModelService:
 
         mock_from_template.assert_called_once_with(
             decoder=service.config_["model"]["decoder"],
+            finaliser=None,
             encoders=encoder_models,
             output_space=service.data_module_.output_space,
             target_dataset_name="target",
@@ -1097,6 +1099,7 @@ class TestModelService:
             metrics=[MAE_METRIC_CFG],
             weights_only=True,
             decoder=service.config_["model"]["decoder"],
+            finaliser=None,
             encoders=encoder_models,
             target_dataset_name="target",
             target_variable_indices=[0],
@@ -1239,6 +1242,7 @@ class TestModelService:
         service.model_.encoders = [encoder]
         service.model_.processor = MagicMock()
         service.model_.decoder = MagicMock()
+        service.model_.finaliser = MagicMock()
 
         pretrained_encoder = MagicMock()
         pretrained_encoder.name = "era5"
@@ -1247,6 +1251,7 @@ class TestModelService:
         processor_model.encoders = [pretrained_encoder]
         processor_model.processor.state_dict.return_value = "processor_state"
         processor_model.decoder.state_dict.return_value = "decoder_state"
+        processor_model.finaliser.state_dict.return_value = "output_finaliser_state"
 
         trainer = MagicMock()
 
@@ -1265,6 +1270,9 @@ class TestModelService:
             "processor_state"
         )
         service.model_.decoder.load_state_dict.assert_called_once_with("decoder_state")
+        service.model_.finaliser.load_state_dict.assert_called_once_with(
+            "output_finaliser_state"
+        )
         mock_fit.assert_called_once_with(
             config=DictConfig({"lr": 1}), job_stage="finetune"
         )
@@ -1400,8 +1408,8 @@ class TestModelService:
         mock_from_template.assert_called_once_with(
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
+            full_model=service.model_,
             mask_dir=str(tmp_path),
-            rollout_strategy=rollout_strategy,
         )
         processor_model.load_state_dict.assert_called_once_with("processor_state")
         assert result is processor_model

@@ -96,20 +96,20 @@ train:
     accelerator: auto
 ```
 
-By default, the models use an active grid cell mask in the decoder, which sets all grid cells where ice is never found (either because they are on land, or because they are too warm) to zero.
-This is controlled by `mask_type`, set in the `decoder` section of the model config (at the top level for `ddpm`, which has no separate decoder):
+By default, the models apply an active grid cell mask to the decoder output, which sets all grid cells where ice is never found (either because they are on land, or because they are too warm) to zero.
+This is controlled by `mask_type`, set in the `finaliser` section of the model config (at the top level for `ddpm`, which has no separate decoder):
 
 ```yaml
-decoder:
+finaliser:
   mask_type: active # active (active+land) | land (land only) | none to disable
 ```
 
 `active` masks land and cells where sea ice has never been observed; `land` masks only land; `none` (or omitting `mask_type`, or `null`) disables masking entirely. Unlike `restrict_range` below, an unrecognised `mask_type` raises a `ValueError` rather than silently disabling masking. You don't need to point at mask files yourself: they're generated automatically by `datasets create` (currently for SSMIS datasets) and located from `base_path`, so requesting `active`/`land` for a target dataset without generated masks fails loudly at model build with a `FileNotFoundError`.
 
-The models can also restrict the output data to the range 0-1, controlled by `restrict_range` in the same `decoder` section:
+The models can also restrict the output data to the range 0-1, controlled by `restrict_range` in the same `finaliser` section:
 
 ```yaml
-decoder:
+finaliser:
   restrict_range: sigmoid # none/sigmoid/clamp/tanh
 ```
 

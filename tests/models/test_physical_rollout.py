@@ -7,7 +7,7 @@ Background — the two defects these options exist to fix, both in the historica
    requires pushing it through a downsampling CNN, a patch-embedding ViT and an
    upsampling CNN, so persistence is not representable. Measured on the toy: the
    model scores active-cell MAE 0.093 at lead 1 where copying the input scores
-   0.034. An additive decoder skip connection during a physical rollout makes
+   0.034. An additive finaliser skip connection during a physical rollout makes
    delta=0 exactly persistence.
 
 2. UNCONSTRAINED LATENT FEEDBACK. `BaseProcessor.rollout` appends the processor's
@@ -40,9 +40,9 @@ from cryocast.types import SkipAnchorType
 
 TARGET_GROUP = "sic-ssmis"
 SEED = 1234
-# Residual (tendency) decoder: unbounded output plus an additive skip connection.
+# Residual (tendency) finaliser: unbounded output plus an additive skip connection.
 # _build_model copies this into a fresh payload, so sharing it between tests is safe.
-ADDITIVE_SKIP_DECODER: dict[str, Any] = {
+ADDITIVE_SKIP_FINALISER: dict[str, Any] = {
     "restrict_range": "none",
     "skip_connection": {"method": "additive"},
 }
@@ -64,6 +64,7 @@ def _build_model(
     skip_anchor: str | None = None,
     relaxation: dict[str, Any] | None = None,
     decoder_extra: dict[str, Any] | None = None,
+    finaliser: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
     latent: int = 16,
@@ -114,6 +115,7 @@ def _build_model(
             processor or {"_target_": "cryocast.models.processors.NullProcessor"}
         ),
         decoder=decoder,
+        finaliser=DictConfig(dict(finaliser or {})),
         hemisphere="north",
         input_spaces=input_spaces,
         n_forecast_steps=n_forecast_steps,
@@ -216,7 +218,7 @@ class TestDefaultsOff:
         latent = _build_model()
         physical = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         assert set(latent.state_dict()) == set(physical.state_dict())
         assert sum(p.numel() for p in latent.parameters()) == sum(
@@ -230,7 +232,7 @@ class TestResidualIsExactlyPersistence:
     def test_zero_tendency_reproduces_persistence_at_every_lead(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _zero_decoder_output(model)
         inputs = _inputs(model)
@@ -262,7 +264,7 @@ class TestResidualIsExactlyPersistence:
     def test_residual_output_is_bounded(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         # a large positive bias would drive the sum far above 1 without the clamp
         bias = _final_conv(model).bias
@@ -297,7 +299,7 @@ class TestPhysicalRolloutAdvancesTheState:
         """A non-zero tendency must produce a moving trajectory, not one field."""
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
         )
         _small_tendency(model)
@@ -318,7 +320,7 @@ class TestPhysicalRolloutAdvancesTheState:
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
         )
         _small_tendency(model)
@@ -341,7 +343,7 @@ class TestPhysicalRolloutAdvancesTheState:
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
             extra_inputs=[extra],
         )
@@ -372,7 +374,7 @@ class TestPhysicalRolloutAdvancesTheState:
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             input_channels=3,
             output_channels=len(target_variable_indices),
             target_variable_indices=target_variable_indices,
@@ -406,7 +408,7 @@ class TestNoFutureLeak:
         model = _build_model(
             rollout_space="physical",
             relaxation=relaxation,
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         model.eval()
         inputs = {**_inputs(model), "climatology": _climatology(model, 0.5)}
@@ -416,12 +418,12 @@ class TestNoFutureLeak:
             assert torch.equal(model(inputs), model(with_truth))
 
     @pytest.mark.parametrize(
-        ("rollout_space", "decoder_extra"),
-        [("latent", None), ("physical", ADDITIVE_SKIP_DECODER)],
+        ("rollout_space", "finaliser"),
+        [("latent", None), ("physical", ADDITIVE_SKIP_FINALISER)],
         ids=["latent", "physical"],
     )
     def test_future_inputs_are_not_read(
-        self, rollout_space: str, decoder_extra: dict[str, Any] | None
+        self, rollout_space: str, finaliser: dict[str, Any] | None
     ) -> None:
         """The future_<input> keys are ground truth for latent losses, never forward().
 
@@ -432,7 +434,7 @@ class TestNoFutureLeak:
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space=rollout_space,
-            decoder_extra=decoder_extra,
+            finaliser=finaliser,
             processor=VIT_PROCESSOR,
             extra_inputs=[extra],
         )
@@ -469,7 +471,7 @@ class TestNoFutureLeak:
             rollout_space=rollout_space,
             skip_anchor="previous",
             relaxation=relaxation,
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _zero_decoder_output(model)
         model.eval()
@@ -486,7 +488,7 @@ class TestConfigValidation:
         model = _build_model(
             rollout_space="physical",
             skip_anchor="initial",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         assert model.rollout_strategy.is_physical
         assert model.rollout_strategy.anchor is SkipAnchorType.INITIAL
@@ -530,15 +532,15 @@ class TestConfigValidation:
         assert ("has no effect" in caplog.text) is warns
 
     def test_residual_accepts_a_bounded_decoder(self) -> None:
-        """A bounded decoder works for a residual (additive-skip) physical model.
+        """A bounded output works for a residual (additive-skip) physical model.
 
-        With an additive skip connection BaseDecoder bounds SIGNED values
+        With an additive skip connection the Finaliser bounds SIGNED values
         symmetrically, so the tendency is never squashed into [0, 1]: a negative
         tendency must lower the forecast below persistence.
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={**ADDITIVE_SKIP_DECODER, "restrict_range": "clamp"},
+            finaliser={**ADDITIVE_SKIP_FINALISER, "restrict_range": "clamp"},
         )
         # Force a constant tendency of -0.1 everywhere
         _zero_decoder_output(model)
@@ -607,7 +609,7 @@ class TestAnchorSemantics:
         model = _build_model(
             rollout_space=rollout_space,
             skip_anchor=skip_anchor,
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         step = 0.05
         self._constant_tendency(model, step)
@@ -632,7 +634,7 @@ class TestAnchorSemantics:
         self, rollout_space: str, expected: SkipAnchorType
     ) -> None:
         model = _build_model(
-            rollout_space=rollout_space, decoder_extra=ADDITIVE_SKIP_DECODER
+            rollout_space=rollout_space, finaliser=ADDITIVE_SKIP_FINALISER
         )
         assert model.rollout_strategy.anchor is expected
         # The unresolved value is saved, so that the default can follow the rollout
@@ -652,13 +654,13 @@ class TestAnchorSemantics:
         latent = _build_model(
             rollout_space="latent",
             skip_anchor="initial",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
         )
         physical = _build_model(
             rollout_space="physical",
             skip_anchor="initial",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
         )
         _small_tendency(latent)
@@ -711,7 +713,7 @@ class TestTrainEvalParity:
         model = _build_model(
             rollout_space="physical",
             skip_anchor=skip_anchor,
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _small_tendency(model)
         model.eval()  # kill dropout so the two passes are deterministic
@@ -740,7 +742,8 @@ class TestDecoderZeroInitOutput:
     def test_zero_init_output_makes_residual_exactly_persistence(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={**ADDITIVE_SKIP_DECODER, "zero_init_output": True},
+            decoder_extra={"zero_init_output": True},
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         inputs = _inputs(model)
         persistence = inputs[TARGET_GROUP][:, -1]
@@ -753,7 +756,7 @@ class TestDecoderZeroInitOutput:
     def test_default_is_off(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         final = _final_conv(model)
         assert final.weight.abs().max() > 0
@@ -775,7 +778,7 @@ class TestClimatologyRelaxation:
         zero_tendency: bool = True,
         **kwargs: Any,
     ) -> EncodeProcessDecode:
-        kwargs.setdefault("decoder_extra", ADDITIVE_SKIP_DECODER)
+        kwargs.setdefault("finaliser", ADDITIVE_SKIP_FINALISER)
         model = _build_model(
             rollout_space=rollout_space,
             skip_anchor="previous",
@@ -824,7 +827,7 @@ class TestClimatologyRelaxation:
         model = self._model(
             rollout_space,
             {"tau": 1.0},
-            decoder_extra={**ADDITIVE_SKIP_DECODER, "mask_type": "active"},
+            finaliser={**ADDITIVE_SKIP_FINALISER, "mask_type": "active"},
             mask_dir=str(tmp_path),
         )
         model.eval()
