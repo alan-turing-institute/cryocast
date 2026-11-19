@@ -7,6 +7,7 @@ from omegaconf import DictConfig
 
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
+from cryocast.models.objectives import LatentObjective
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
@@ -160,8 +161,8 @@ class TestProcessorStage:
         cfg_output_space: DictConfig,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # training_step only honours ProcessorOutput.loss for a processor that declares
-        # computes_loss_in_latent_space=True; otherwise it goes through self(batch).
+        # training_step only honours ProcessorOutput.loss with a LatentObjective;
+        # otherwise it goes through self(batch).
         fixed_loss = torch.tensor(0.5)
         processor = processor_stage.processor
         n_forecast_steps = processor_stage.n_forecast_steps
@@ -172,7 +173,9 @@ class TestProcessorStage:
         ) -> ProcessorOutput:
             return ProcessorOutput(prediction=x[:, -n_forecast_steps:], loss=fixed_loss)
 
-        monkeypatch.setattr(processor, "computes_loss_in_latent_space", True)
+        monkeypatch.setattr(
+            processor_stage, "objective", LatentObjective(processor_stage)
+        )
         monkeypatch.setattr(processor, "rollout", fixed_loss_rollout)
         batch_size = 2
         batch = {

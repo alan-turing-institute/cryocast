@@ -15,6 +15,11 @@ from cryocast.losses import LeadTimeWeightedLoss
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
+from cryocast.models.objectives import (
+    LatentObjective,
+    PhysicalObjective,
+    TrainingObjective,
+)
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
@@ -257,11 +262,15 @@ class TestEncodeProcessDecode:
         assert model.output_space == DataSpace.from_dict(cfg_output_space)
 
     @pytest.mark.parametrize(
-        ("test_computes_loss_in_latent_space", "expected_needs_future_inputs"),
-        [(False, False), (True, True)],
+        (
+            "test_computes_loss_in_latent_space",
+            "expected_objective",
+            "expected_needs_future_inputs",
+        ),
+        [(False, PhysicalObjective, False), (True, LatentObjective, True)],
         ids=["default", "latent-loss"],
     )
-    def test_init_needs_future_inputs(
+    def test_init_training_objective(
         self,
         cfg_decoder: DictConfig,
         cfg_encoders: DictConfig,
@@ -270,34 +279,43 @@ class TestEncodeProcessDecode:
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
         *,
         test_computes_loss_in_latent_space: bool,
+        expected_objective: type[TrainingObjective],
         expected_needs_future_inputs: bool,
     ) -> None:
+        """The processor flag selects the objective. Only a LatentObjective uses weights."""
         cfg_processor = DictConfig(
             {
                 **cfg_processor,
                 "computes_loss_in_latent_space": test_computes_loss_in_latent_space,
             }
         )
-        model = EncodeProcessDecode(
-            name="encode-null-decode",
-            encoders=cfg_encoders,
-            processor=cfg_processor,
-            decoder=cfg_decoder,
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-            n_forecast_steps=1,
-            n_history_steps=1,
-            output_space=cfg_output_space,
-            optimizer=DictConfig({}),
-            scheduler=DictConfig({}),
-            lr_scheduler=DictConfig({}),
-            target_variable_indices=[0],
-        )
+        with caplog.at_level(logging.WARNING):
+            model = EncodeProcessDecode(
+                name="encode-null-decode",
+                encoders=cfg_encoders,
+                processor=cfg_processor,
+                decoder=cfg_decoder,
+                hemisphere="north",
+                input_spaces=[cfg_input_space],
+                loss=cfg_loss,
+                metrics=cfg_metrics,
+                n_forecast_steps=1,
+                n_history_steps=1,
+                output_space=cfg_output_space,
+                optimizer=DictConfig({}),
+                scheduler=DictConfig({}),
+                lr_scheduler=DictConfig({}),
+                target_variable_indices=[0],
+                loss_weights={"reconstruction": 1.0},
+            )
+        assert isinstance(model.objective, expected_objective)
         assert model.needs_future_inputs is expected_needs_future_inputs
+        assert ("loss_weights has no effect" in caplog.text) is (
+            not test_computes_loss_in_latent_space
+        )
 
     def test_init_processor_builds_its_own_loss(
         self,
@@ -538,8 +556,9 @@ class TestEncodeProcessDecode:
         future = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
 
         expected = model._encode_inputs({name: future})
-        actual = model._encode_future_inputs(
-            {name: history, f"future_{name}": future, "target": future[:, :, 2:3]}
+        actual = LatentObjective._encode_future_inputs(
+            model,
+            {name: history, f"future_{name}": future, "target": future[:, :, 2:3]},
         )
 
         torch.testing.assert_close(actual, expected)
@@ -661,7 +680,8 @@ class TestEncodeProcessDecode:
             cfg_metrics=cfg_metrics,
             loss_weights=test_weights,
         )
-        assert model.loss_weights == expected_weights
+        assert isinstance(model.objective, LatentObjective)
+        assert model.objective.loss_weights == expected_weights
 
     def test_zero_weights_freeze_decoder_and_use_latent_loss_only(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
@@ -1139,7 +1159,8 @@ class TestPredictionLoss:
         """Freeze the decoder only if both weights are 0.
 
         Warn if the reconstruction weight is 0 while the encoders or decoder are trainable.
-        The encoders are always trainable here.
+        The encoders are always trainable here. Single-stage training rejects a model
+        with a frozen decoder.
         """
         with caplog.at_level(logging.WARNING):
             model = self._model(cfg_loss, cfg_metrics, test_weights)
@@ -1148,6 +1169,11 @@ class TestPredictionLoss:
         assert model.decoder.training is not expected_frozen
         assert model.finaliser.frozen is expected_frozen
         assert ("latent space can drift" in caplog.text) is expected_warning
+        if expected_frozen:
+            with pytest.raises(ValueError, match="decoder is frozen"):
+                model.verify_single_stage_trainable()
+        else:
+            model.verify_single_stage_trainable()
 
     def test_rejects_prediction_without_gradients(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]

@@ -218,6 +218,14 @@ class BaseModel(LightningModule, ABC):
         """
         return False
 
+    def verify_single_stage_trainable(self) -> None:
+        """Check that single-stage training can train this model.
+
+        Raises:
+            ValueError: If single-stage training cannot train the model.
+
+        """
+
     def build_metrics(self, land_mask: torch.Tensor | None) -> MetricCollection:
         """Build a metric collection from the configured metrics.
 
