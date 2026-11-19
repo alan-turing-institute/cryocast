@@ -53,9 +53,14 @@ class LatentNormaliser(nn.Module):
         values = torch.cat(
             [latent.detach().transpose(0, 2).flatten(1) for latent in latents], dim=1
         ).float()  # (C, N * T * H * W)
+        # Average the mean and the mean of squares over batches, so the variance
+        # also includes the differences between batch means (e.g. seasons)
         weight = 1.0 / float(self.num_batches_tracked + 1)
-        self.running_mean.lerp_(values.mean(dim=1), weight)
-        self.running_var.lerp_(values.var(dim=1, unbiased=False), weight)
+        batch_mean = values.mean(dim=1)
+        batch_sq_mean = values.var(dim=1, unbiased=False) + batch_mean**2
+        sq_mean = (self.running_var + self.running_mean**2).lerp_(batch_sq_mean, weight)
+        self.running_mean.lerp_(batch_mean, weight)
+        self.running_var.copy_((sq_mean - self.running_mean**2).clamp_(min=0.0))
         self.num_batches_tracked += 1
 
     def _shape(self, stat: torch.Tensor, latent: torch.Tensor) -> torch.Tensor:

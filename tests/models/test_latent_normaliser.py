@@ -59,6 +59,21 @@ class TestLatentNormaliser:
         expected = (per_channel_stats(first)[0] + per_channel_stats(second)[0]) / 2
         torch.testing.assert_close(normaliser.running_mean, expected)
 
+    def test_variance_includes_differences_between_batch_means(
+        self,
+        make_latents: Callable[..., torch.Tensor],
+        per_channel_stats: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
+        # Two batches with the same spread but very different means, e.g. two seasons
+        normaliser = LatentNormaliser(CHANNELS)
+        first = make_latents(mean=(0.0, 0.0), std=(1.0, 1.0))
+        second = make_latents(mean=(20.0, -10.0), std=(1.0, 1.0), seed=1)
+        normaliser.update(first)
+        normaliser.update(second)
+        mean, std = per_channel_stats(torch.cat([first, second]))
+        torch.testing.assert_close(normaliser.running_mean, mean)
+        torch.testing.assert_close(normaliser.running_var, std**2)
+
     def test_statistics_are_fixed_after_n_batches(
         self, make_latents: Callable[..., torch.Tensor]
     ) -> None:
