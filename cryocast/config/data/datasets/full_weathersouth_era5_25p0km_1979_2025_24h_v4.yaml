@@ -1,0 +1,70 @@
+full-weathersouth-era5-25p0km-1979-2025-24h-v4:
+  name: full-weathersouth-era5-25p0km-1979-2025-24h-v4
+  group_as: era5
+  description: Weather from ERA5 for partial southern hemisphere
+  attribution: ECMWF/C3S
+  licence: CC-BY-4.0
+
+  dates:
+    start: '1979-01-01T12:00:00'
+    end: '2025-12-31T23:00:00'
+    frequency: 24h
+
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
+  input:
+    pipe:
+      - join:
+        - mars:
+            use_cdsapi_dataset: "reanalysis-era5-complete"
+            class: ea
+            expver: "0001"
+            grid: "0.25 / 0.25"
+            area: "-15/-180/-90/180"  # southern hemisphere
+            levtype: sfc
+            param:
+            - 2t # 2-metre air temperature
+            - sp # Surface pressure
+            - 10u # 10m eastward wind (rotated to grid x below)
+            - 10v # 10m northward wind (rotated to grid y below)
+            - msl # Sea level pressure
+        - mars:
+            use_cdsapi_dataset: "reanalysis-era5-complete"
+            class: ea
+            expver: "0001"
+            grid: "0.25 / 0.25"
+            area: "-15/-180/-90/180"  # southern hemisphere
+            level:
+            - 10 # hPa
+            - 250 # hPa
+            - 500 # hPa
+            - 1000 # hPa
+            levtype: pl # pressure level
+            param:
+            - z # geopotential height
+            - t # air temperature
+            - q # specific humidity
+            - u # eastward wind (rotated to grid x below)
+            - v # northward wind (rotated to grid y below)
+        - forcings:
+            param:
+            - cos_julian_day
+            - insolation
+            - sin_julian_day
+            template: \${input.pipe.0.join.0.mars}
+      # Reproject to EASE2 25km grid
+      - reproject:
+          crs: "EPSG:6932"
+          resolution: "25p0km"
+          shape: [432, 432]
+      # Rotate eastward/northward wind components onto the EASE2 grid x/y axes
+      - rotate-winds-polar:
+          x_wind: 10u
+          y_wind: 10v
+          crs: "EPSG:6932"
+      - rotate-winds-polar:
+          x_wind: u
+          y_wind: v
+          crs: "EPSG:6932"
