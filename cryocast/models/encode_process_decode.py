@@ -7,6 +7,7 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
+from cryocast.models.common import ExponentialRelaxation
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
 from cryocast.models.processors import BaseProcessor
@@ -50,6 +51,7 @@ class EncodeProcessDecode(BaseModel):
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
         skip_anchor: SkipAnchorType | str | None = None,
+        relaxation: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise an EncodeProcessDecode model.
@@ -79,6 +81,9 @@ class EncodeProcessDecode(BaseModel):
             skip_anchor: Whether to use the last, real observed frame or the most recent
                 forecast step as the skip connection anchor. If None, use the default
                 for the rollout space: INITIAL for latent and PREVIOUS for physical.
+            relaxation: Options to relax each forecast step towards climatology, or
+                None for no relaxation. See RelaxationOptions. Relaxation needs a
+                PREVIOUS skip anchor and a `climatology` entry in each batch.
             **kwargs: forwarded to ``BaseModel`` (spaces, masks, range, skip).
 
         """
@@ -170,9 +175,11 @@ class EncodeProcessDecode(BaseModel):
         # Validate the auxiliary loss weights, and freeze the decoder if needed
         self._configure_losses(loss_weights or {})
 
-        # Resolve the rollout strategy. This rejects invalid combinations of rollout
-        # space and skip anchor, and uses the default anchor for the space if unset.
-        self.rollout_strategy = RolloutStrategy.from_options(rollout_space, skip_anchor)
+        # Resolve the rollout strategy. This validates the options and uses the default
+        # anchor for the space if it is unset.
+        self.rollout_strategy = RolloutStrategy.from_options(
+            rollout_space, skip_anchor, relaxation
+        )
 
         # Check that the rollout strategy is compatible with the other components
         if self.rollout_strategy.is_physical:
@@ -204,6 +211,13 @@ class EncodeProcessDecode(BaseModel):
                 "connection.",
                 self.rollout_strategy.anchor.value,
             )
+
+        relaxation_options = self.rollout_strategy.relaxation
+        self.relaxation = (
+            None
+            if relaxation_options is None
+            else ExponentialRelaxation(tau=relaxation_options.tau)
+        )
 
     @override
     def load_state_dict(
@@ -301,6 +315,56 @@ class EncodeProcessDecode(BaseModel):
                     "space can drift away from what the decoder expects."
                 )
 
+    def _decode_forecast(
+        self,
+        latent: TensorNTCHW,
+        anchor: TensorNTCHW | None,
+        equilibrium: TensorNTCHW | None,
+    ) -> TensorNTCHW:
+        """Decode a latent forecast with the skip anchor and relaxation of the strategy.
+
+        Args:
+            latent: TensorNTCHW latent forecast.
+            anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
+            equilibrium: Climatology to relax towards, with shape (batch, T, C_out, H,
+                W), or None.
+
+        """
+        return self.decoder.rollout(
+            latent,
+            anchor,
+            anchor_type=self.rollout_strategy.anchor,
+            relaxation=self.relaxation,
+            equilibrium=equilibrium,
+        )
+
+    def _equilibrium(self, batch: Mapping[str, TensorNTCHW]) -> TensorNTCHW | None:
+        """Return the climatology to relax towards, or None if relaxation is inactive.
+
+        Relaxation is inactive if it is off, or if the model is training and
+        `apply_in_training` is False. Climatology comes from the training periods only,
+        so it does not leak future information.
+
+        Args:
+            batch: Dictionary that holds a `climatology` TensorNTCHW entry with shape
+                (batch, n_forecast_steps, n_output_channels, H_output, W_output).
+
+        Raises:
+            ValueError: If relaxation is active but the batch has no climatology.
+
+        """
+        options = self.rollout_strategy.relaxation
+        if options is None or (self.training and not options.apply_in_training):
+            return None
+        if (climatology := batch.get("climatology")) is None:
+            msg = (
+                "relaxation is on, but the batch has no 'climatology' entry. "
+                "Climatology is only available if the data module has a training "
+                "period that covers the target dataset."
+            )
+            raise ValueError(msg)
+        return climatology
+
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all inputs into latent space, concatenating on the channel dimension.
 
@@ -363,6 +427,7 @@ class EncodeProcessDecode(BaseModel):
         - decode back to `NTCHW` output space (batch, n_forecast_steps, n_output_channels, H_output, W_output)
         - add a skip connection to each forecast step. Its anchor is the most recent
           target value, or the previous forecast step if `skip_anchor` is PREVIOUS
+        - relax each forecast step towards climatology, if required
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -384,9 +449,7 @@ class EncodeProcessDecode(BaseModel):
         anchor = self._anchor_ntchw(inputs[self.output_space.name])
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
-        return self.decoder.rollout(
-            latent_output, anchor, anchor_type=self.rollout_strategy.anchor
-        )
+        return self._decode_forecast(latent_output, anchor, self._equilibrium(inputs))
 
     def _forward_rollout_physical(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in physical space.
@@ -406,11 +469,14 @@ class EncodeProcessDecode(BaseModel):
         - INITIAL: the last observed frame, for every forecast step. The target window
           still advances, so only the skip connection changes.
 
+        If relaxation is on, each step is relaxed towards climatology before it goes
+        into the window.
+
         Non-target input groups hold their most recent OBSERVED frame for every forecast
-        step. No future information enters: only the input groups, which hold the
-        n_history_steps frames ending at the forecast origin, are ever read. Information
-        from the n_forecast_steps future frames are held in the "target" and
-        "future_<input>" keys, which are not used here.
+        step. No future information enters. Only the input groups (the n_history_steps
+        frames that end at the forecast origin) and "climatology" (from the training
+        periods only) are read. The "target" and "future_<input>" keys hold the future
+        frames, and are never read.
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -437,8 +503,12 @@ class EncodeProcessDecode(BaseModel):
         # -> (B, C_out, H_out, W_out) or None
         initial_anchor = self._anchor_nchw(target_window)
 
+        # Relax each step towards climatology, if required
+        # -> (B, n_forecast, C_out, H_out, W_out) or None
+        equilibrium = self._equilibrium(inputs)
+
         outputs: list[TensorNCHW] = []
-        for _ in range(self.n_forecast_steps):
+        for step in range(self.n_forecast_steps):
             # Set target window to the most recent observation/prediction
             windows[target_name] = target_window
 
@@ -469,7 +539,12 @@ class EncodeProcessDecode(BaseModel):
                 if self.rollout_strategy.anchor == SkipAnchorType.INITIAL
                 else self._anchor_nchw(target_window)
             )
-            output = self.decoder.finalise(raw_output, anchor)
+            output = self.decoder.finalise(
+                raw_output,
+                anchor,
+                relaxation=self.relaxation,
+                equilibrium=None if equilibrium is None else equilibrium[:, step],
+            )
             outputs.append(output)
 
             # Drop the oldest target frame then append the newest with its target
@@ -488,6 +563,7 @@ class EncodeProcessDecode(BaseModel):
         mask: torch.Tensor | None,
         target: TensorNTCHW,
         anchor: TensorNTCHW | None,
+        equilibrium: TensorNTCHW | None,
     ) -> torch.Tensor:
         """Decode the processor's latent prediction and compare it to the target.
 
@@ -502,6 +578,8 @@ class EncodeProcessDecode(BaseModel):
             mask: Boolean mask of shape (batch,), or None to use all samples.
             target: TensorNTCHW with shape (batch, n_forecast_steps, C_out, H, W).
             anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
+            equilibrium: Climatology to relax towards, with shape (batch,
+                n_forecast_steps, C_out, H, W), or None.
 
         Returns:
             Scalar loss. It is 0 if no sample is in the mask.
@@ -533,10 +611,10 @@ class EncodeProcessDecode(BaseModel):
 
         # Decode only the samples in the mask. Without a mask, all samples count.
         samples = slice(None) if mask is None else mask
-        decoded = self.decoder.rollout(
+        decoded = self._decode_forecast(
             prediction[samples],
             None if anchor is None else anchor[samples],
-            anchor_type=self.rollout_strategy.anchor,
+            None if equilibrium is None else equilibrium[samples],
         )
         return self.loss(decoded, target[samples, : prediction.shape[1]])
 
@@ -624,14 +702,16 @@ class EncodeProcessDecode(BaseModel):
             # Use persistence as the skip-connection anchor, if required.
             anchor = self._anchor_ntchw(batch[self.output_space.name])
 
+            # Relax the forecast towards climatology, if required. The reconstruction
+            # loss decodes observations, not a forecast, so it is not relaxed.
+            equilibrium = self._equilibrium(batch)
+
             # Calculate each auxiliary loss that has a non-zero weight.
             losses: dict[str, torch.Tensor] = {}
             if self.loss_weights["reconstruction"] > 0:
                 # Decode the encoded forecast-step inputs and compare them to the target
                 losses["reconstruction"] = self.loss(
-                    self.decoder.rollout(
-                        future_latent, anchor, anchor_type=self.rollout_strategy.anchor
-                    ),
+                    self._decode_forecast(future_latent, anchor, None),
                     target,
                 )
             if self.loss_weights["prediction"] > 0:
@@ -641,6 +721,7 @@ class EncodeProcessDecode(BaseModel):
                     processor_output.sample_mask,
                     target,
                     anchor,
+                    equilibrium,
                 )
 
             # Add the weighted auxiliary losses to the latent loss
@@ -659,10 +740,8 @@ class EncodeProcessDecode(BaseModel):
             training_mode = self.decoder.training
             self.decoder.eval()
             with torch.no_grad():
-                prediction = self.decoder.rollout(
-                    processor_output.prediction,
-                    anchor,
-                    anchor_type=self.rollout_strategy.anchor,
+                prediction = self._decode_forecast(
+                    processor_output.prediction, anchor, equilibrium
                 )
             self.decoder.train(training_mode)
             # If the latent prediction has fewer forecast steps than the target, repeat

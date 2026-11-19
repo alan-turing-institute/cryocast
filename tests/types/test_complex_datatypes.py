@@ -11,6 +11,7 @@ from cryocast.types import (
     Hemisphere,
     ModelStepOutput,
     PlotSpec,
+    RelaxationOptions,
     RolloutSpace,
     RolloutStrategy,
     SkipAnchorType,
@@ -307,6 +308,45 @@ class TestRolloutStrategy:
         strategy = RolloutStrategy.from_options(RolloutSpace.PHYSICAL)
         with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.anchor = SkipAnchorType.INITIAL  # type: ignore[misc]
+
+    def test_from_options_parses_relaxation(self) -> None:
+        strategy = RolloutStrategy.from_options("physical", None, {"tau": 5.0})
+
+        assert strategy.relaxation == RelaxationOptions(tau=5.0)
+
+    @pytest.mark.parametrize(
+        ("space", "anchor"),
+        [
+            pytest.param("latent", None, id="latent-default"),
+            pytest.param("physical", "initial", id="physical-initial"),
+        ],
+    )
+    def test_relaxation_requires_previous_anchor(
+        self, space: str, anchor: str | None
+    ) -> None:
+        with pytest.raises(ValueError, match="requires skip_anchor='previous'"):
+            RolloutStrategy.from_options(space, anchor, {"tau": 5.0})
+
+
+class TestRelaxationOptions:
+    """Tests for RelaxationOptions."""
+
+    @pytest.mark.parametrize(
+        "options",
+        [None, {}, {"tau": None}, {"tau": None, "apply_in_training": False}],
+        ids=["none", "empty", "null-tau", "null-tau-with-options"],
+    )
+    def test_from_options_is_off(self, options: dict[str, object] | None) -> None:
+        assert RelaxationOptions.from_options(options) is None
+
+    def test_from_options_defaults_to_apply_in_training(self) -> None:
+        assert RelaxationOptions.from_options({"tau": 5.0}) == RelaxationOptions(
+            tau=5.0, apply_in_training=True
+        )
+
+    def test_from_options_rejects_unknown_key(self) -> None:
+        with pytest.raises(TypeError, match="unexpected keyword argument 'schedule'"):
+            RelaxationOptions.from_options({"tau": 5.0, "schedule": "ramp"})
 
 
 class TestTimespan:

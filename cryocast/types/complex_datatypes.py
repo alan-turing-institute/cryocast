@@ -258,6 +258,32 @@ class PlotSpec:
 
 
 @dataclass(frozen=True)
+class RelaxationOptions:
+    """Options for relaxing each forecast step towards climatology.
+
+    Attributes:
+        tau: The e-folding time of the anomaly from climatology, in forecast steps.
+            See ExponentialRelaxation.
+        apply_in_training: Whether to relax during training. If False, relax only in
+            evaluation mode.
+
+    """
+
+    tau: float
+    apply_in_training: bool = True
+
+    @classmethod
+    def from_options(cls, options: Mapping[str, Any] | None) -> Self | None:
+        """Create RelaxationOptions, or return None if relaxation is off.
+
+        Relaxation is off if `options` is None or empty, or if `tau` is None.
+        """
+        if not options or options.get("tau") is None:
+            return None
+        return cls(**options)
+
+
+@dataclass(frozen=True)
 class RolloutStrategy:
     """Describe how EncodeProcessDecode advances its forecast loop.
 
@@ -266,28 +292,43 @@ class RolloutStrategy:
             where each step is decoded and re-encoded.
         anchor: The frame that a decoder skip connection adds to each forecast step:
             the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
+        relaxation: Options to relax each forecast step towards climatology, or None.
+            Needs a PREVIOUS anchor, so that it carries over between steps.
 
     """
 
     space: RolloutSpace
     anchor: SkipAnchorType
+    relaxation: RelaxationOptions | None = None
 
     def __post_init__(self) -> None:
-        """Convert strings to enums."""
+        """Convert strings to enums and validate the relaxation."""
         object.__setattr__(self, "space", RolloutSpace(self.space))
         object.__setattr__(self, "anchor", SkipAnchorType(self.anchor))
+        if self.relaxation is not None and self.anchor != SkipAnchorType.PREVIOUS:
+            msg = (
+                f"relaxation requires skip_anchor='previous', but it is "
+                f"'{self.anchor.value}'. With a fixed anchor, the relaxation does not "
+                f"carry over from one step to the next."
+            )
+            raise ValueError(msg)
 
     @classmethod
     def from_options(
         cls,
         space: RolloutSpace | str = RolloutSpace.LATENT,
         anchor: SkipAnchorType | str | None = None,
+        relaxation: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Create a RolloutStrategy, using the default anchor for the space if unset."""
+        """Create a RolloutStrategy, using the default anchor for the space if unset.
+
+        See RelaxationOptions.from_options for the relaxation options.
+        """
         space = RolloutSpace(space)
         return cls(
             space=space,
             anchor=SkipAnchorType(anchor) if anchor else cls.default_anchor(space),
+            relaxation=RelaxationOptions.from_options(relaxation),
         )
 
     @staticmethod

@@ -762,13 +762,11 @@ class ModelService:
                     processor=self.config["model"]["processor"],
                     weights_only=True,
                 )
-
-        full_model = cast("EncodeProcessDecode", self.model)
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,
+            full_model=cast("EncodeProcessDecode", self.model),
             mask_dir=str(self.data_module.mask_directory),
-            rollout_strategy=full_model.rollout_strategy,
         )
         log.info(
             "Training processor: history (%d, %d, %d, %d) -> forecast (%d, %d, %d, %d)",

@@ -7,6 +7,7 @@ import pytest
 import torch
 from torch import nn
 
+from cryocast.models.common import ExponentialRelaxation
 from cryocast.models.decoders import (
     BaseDecoder,
     CNNDecoder,
@@ -381,9 +382,7 @@ class TestDecoderSkipAnchor(_SkipConnectionBase):
             pytest.param({"anchor_type": SkipAnchorType.INITIAL}, id="explicit"),
         ],
     )
-    def test_initial_reuses_the_same_anchor(
-        self, kwargs: dict[str, SkipAnchorType]
-    ) -> None:
+    def test_initial_reuses_the_same_anchor(self, kwargs: dict[str, Any]) -> None:
         decoder = self._decoder(method="additive", restrict_range="none", bias=0.1)
         persistence = self._persistence()
 
@@ -513,6 +512,94 @@ class TestDecoderSkipAnchor(_SkipConnectionBase):
         # The last step depends on the initial anchor through the chain of steps.
         assert persistence.grad is not None
         assert torch.all(persistence.grad != 0).item()
+
+
+class TestDecoderRelaxation(_SkipConnectionBase):
+    """The relaxation and equilibrium arguments to BaseDecoder.rollout()."""
+
+    _N_FORECAST_STEPS = 4
+    _EQUILIBRIUM = 0.3
+    _RELAXATION = ExponentialRelaxation(tau=2.0)
+
+    @classmethod
+    def _steps(cls) -> torch.Tensor:
+        """The step number k = 1...N, shaped to broadcast over [B, T, C, H, W]."""
+        return torch.arange(1, cls._N_FORECAST_STEPS + 1).view(1, -1, 1, 1, 1)
+
+    def _equilibrium(self, persistence: torch.Tensor) -> torch.Tensor:
+        return torch.full_like(
+            persistence.expand(-1, self._N_FORECAST_STEPS, -1, -1, -1),
+            self._EQUILIBRIUM,
+        )
+
+    def _rollout(
+        self, decoder: BaseDecoder, anchor_type: SkipAnchorType
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        persistence = self._persistence()
+        out = decoder.rollout(
+            self._latent(self._N_FORECAST_STEPS),
+            persistence,
+            anchor_type=anchor_type,
+            relaxation=self._RELAXATION,
+            equilibrium=self._equilibrium(persistence),
+        )
+        return out, persistence
+
+    def test_previous_with_zero_tendency_is_damped_anomaly_persistence(self) -> None:
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.0)
+
+        out, persistence = self._rollout(decoder, SkipAnchorType.PREVIOUS)
+
+        decay = (1.0 - self._RELAXATION.rate) ** self._steps()
+        expected = self._EQUILIBRIUM + decay * (persistence - self._EQUILIBRIUM)
+        assert torch.allclose(out, expected, atol=1e-6)
+
+    def test_initial_relaxes_every_step_from_the_same_anchor(self) -> None:
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.0)
+
+        out, persistence = self._rollout(decoder, SkipAnchorType.INITIAL)
+
+        # Each step is one relaxation step away from the observation
+        expected = persistence + self._RELAXATION.rate * (
+            self._EQUILIBRIUM - persistence
+        )
+        assert torch.allclose(out, expected.expand_as(out), atol=1e-6)
+
+    def test_masked_cells_stay_at_zero(self, tmp_path: Path) -> None:
+        # Mask the top half (0), keep the bottom half (1 = active/sea).
+        mask = np.ones(self._OUTPUT_SPACE.shape, dtype=np.uint8)
+        mask[:4, :] = 0
+        np.save(tmp_path / "active_mask.npy", mask)
+        decoder = self._decoder(
+            method="additive",
+            restrict_range="none",
+            bias=0.0,
+            mask_dir=str(tmp_path),
+            mask_type="active",
+        )
+
+        out, _ = self._rollout(decoder, SkipAnchorType.PREVIOUS)
+
+        # The equilibrium is not 0 in masked cells, but they stay at 0
+        assert torch.all(out[..., :4, :] == 0).item()
+        assert torch.all(out[..., 4:, :] != 0).item()
+
+    def test_without_equilibrium_does_not_relax(self) -> None:
+        decoder = self._decoder(method="additive", restrict_range="none", bias=0.1)
+        latent = self._latent(self._N_FORECAST_STEPS)
+        persistence = self._persistence()
+
+        relaxed = decoder.rollout(
+            latent,
+            persistence,
+            anchor_type=SkipAnchorType.PREVIOUS,
+            relaxation=self._RELAXATION,
+        )
+        plain = decoder.rollout(
+            latent, persistence, anchor_type=SkipAnchorType.PREVIOUS
+        )
+
+        assert torch.equal(relaxed, plain)
 
 
 class TestDecoderCustomOutputRange(_SkipConnectionBase):
