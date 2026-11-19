@@ -44,8 +44,8 @@ Data is download at 0.25 degree resolution before being reprojected onto the sam
 
 The full-resolution datasets are detailed in:
 
-- `cryocast/config/data/datasets/full_weathernorth_era5_25p0km_1979_2025_24h_v3.yaml`
-- `cryocast/config/data/datasets/full_weathersouth_era5_25p0km_1979_2025_24h_v3.yaml`
+- `cryocast/config/data/datasets/full_weathernorth_era5_25p0km_1979_2025_24h_v4.yaml`
+- `cryocast/config/data/datasets/full_weathersouth_era5_25p0km_1979_2025_24h_v4.yaml`
 
 and contain the following subset of [available variables](https://codes.ecmwf.int/grib/param-db?encoding=grib2&ordering=id&limit=20&page=1):
 
@@ -62,6 +62,12 @@ Pressure-level fields (`levtype: pl`, at 10, 250, 500 and 1000 hPa):
 - `t`: air temperature
 - `q`: specific humidity
 - `u`, `v`: wind components
+
+ERA5 provides wind as eastward and northward components. After reprojection, the
+`rotate-winds-polar` filter rotates each pair onto the x and y axes of the EASE2 grid,
+so in these datasets `10u`/`u` are the grid-x and `10v`/`v` the grid-y components.
+The rotation angle at each grid cell is its longitude (north) or minus its longitude
+(south); wind speed is unchanged.
 
 Time-varying forcings, computed rather than retrieved:
 
