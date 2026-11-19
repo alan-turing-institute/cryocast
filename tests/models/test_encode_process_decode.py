@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
 import lightning
@@ -153,6 +153,7 @@ def _oracle_model(
     decoder_scale: float = 2.0,
     skip_connection: dict[str, Any] | None = None,
     skip_anchor: str | None = None,
+    relaxation: dict[str, Any] | None = None,
 ) -> EncodeProcessDecode:
     """Build a latent-loss model with a trainable encoder and a trainable decoder.
 
@@ -176,6 +177,7 @@ def _oracle_model(
         ),
         loss_weights=loss_weights,
         skip_anchor=skip_anchor,
+        relaxation=relaxation,
         hemisphere="north",
         input_spaces=[sic.to_dict()],
         loss=cfg_loss,
@@ -1280,7 +1282,7 @@ class TestSkipAnchor:
         rollout_space: RolloutSpace,
         expected: SkipAnchorType,
     ) -> None:
-        """Checkpoints saved before `skip_anchor` existed load with the old anchor."""
+        """Checkpoints saved before `skip_anchor` and `relaxation` existed still load."""
         model = EncodeProcessDecode(
             name="old-hparams",
             encoders=cfg_encoders,
@@ -1300,14 +1302,15 @@ class TestSkipAnchor:
             rollout_space=rollout_space,
             target_variable_indices=[0],
         )
-        # Leave out the key, as in a checkpoint saved before the option existed
-        assert model.hparams["skip_anchor"] is None
+        # Leave out the keys, as in a checkpoint saved before the options existed
+        new_keys = {"skip_anchor", "relaxation"}
+        assert all(model.hparams[key] is None for key in new_keys)
         checkpoint_file = tmp_path / "model.ckpt"
         torch.save(
             {
                 "state_dict": model.state_dict(),
                 "hyper_parameters": {
-                    k: v for k, v in model.hparams.items() if k != "skip_anchor"
+                    k: v for k, v in model.hparams.items() if k not in new_keys
                 },
                 "pytorch-lightning_version": lightning.__version__,
             },
@@ -1324,3 +1327,142 @@ class TestSkipAnchor:
         )
         assert loaded.rollout_strategy.space is rollout_space
         assert loaded.rollout_strategy.anchor is expected
+        assert loaded.rollout_strategy.relaxation is None
+
+
+class TestRelaxationInLatentLossTraining:
+    """Relaxation applies wherever the latent-loss training step decodes a forecast.
+
+    The decoder adds 0.1 * the target channel of each latent step to the previous
+    output, then each step is relaxed towards a constant climatology c:
+        output_k = lerp(clamp(output_{k-1} + delta_k), c, rate)
+    The reconstruction loss decodes observations, not a forecast, so it is not relaxed.
+    """
+
+    SCALE = 0.1
+    CLIMATOLOGY = 0.2
+    RELAXATION: ClassVar[dict[str, Any]] = {"tau": 2.0}
+
+    def _model(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        **kwargs: Any,
+    ) -> EncodeProcessDecode:
+        kwargs.setdefault(
+            "processor",
+            DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
+        )
+        kwargs.setdefault("relaxation", self.RELAXATION)
+        return _oracle_model(
+            cfg_loss=cfg_loss,
+            cfg_metrics=cfg_metrics,
+            decoder_scale=self.SCALE,
+            skip_connection={"method": "additive"},
+            skip_anchor="previous",
+            **kwargs,
+        )
+
+    def _batch(self) -> dict[str, TensorNTCHW]:
+        batch = _oracle_batch()
+        batch["climatology"] = torch.full_like(batch["target"], self.CLIMATOLOGY)
+        return batch
+
+    def _expected(
+        self,
+        observation: TensorNTCHW,
+        deltas: TensorNTCHW,
+        rate: float | None,
+    ) -> TensorNTCHW:
+        """Apply the skip connection, and the relaxation if `rate` is set, by hand."""
+        anchor = observation[:, -1, 1:2]
+        outputs = []
+        for delta in (self.SCALE * deltas[:, :, 1:2]).unbind(dim=1):
+            output = (anchor + delta).clamp(0.0, 1.0)
+            if rate is not None:
+                output = output + rate * (self.CLIMATOLOGY - output)
+            outputs.append(output)
+            anchor = output
+        return torch.stack(outputs, dim=1)
+
+    def test_metrics_decode_matches_forward(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        model = self._model(cfg_loss, cfg_metrics)
+        assert model.relaxation is not None
+        batch = self._batch()
+        expected = self._expected(
+            batch["sic"],
+            batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
+            model.relaxation.rate,
+        )
+
+        model.train()
+        result, _ = _training_step(model, batch)
+        model.eval()
+        with torch.no_grad():
+            forward = model(batch)
+
+        torch.testing.assert_close(result.prediction, expected)
+        torch.testing.assert_close(forward, expected)
+
+    def test_prediction_loss_is_relaxed(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        model = self._model(
+            cfg_loss,
+            cfg_metrics,
+            loss_weights={"reconstruction": 0.0, "prediction": 1.0},
+            processor=DictConfig(
+                {
+                    "_target_": f"{__name__}.{_PredictionProcessor.__name__}",
+                    "use_autoregressive": False,
+                }
+            ),
+        )
+        assert model.relaxation is not None
+        model.train()
+        batch = self._batch()
+        # The processor returns the last n_forecast_steps history latents
+        expected = model.loss(
+            self._expected(batch["sic"], batch["sic"], model.relaxation.rate),
+            batch["target"],
+        )
+
+        _, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(logged["train_prediction_loss"], expected)
+
+    def test_reconstruction_loss_is_not_relaxed(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        model = self._model(cfg_loss, cfg_metrics, loss_weights={"reconstruction": 1.0})
+        model.train()
+        batch = self._batch()
+        expected = model.loss(
+            self._expected(batch["sic"], batch["future_sic"], None), batch["target"]
+        )
+
+        _, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(logged["train_reconstruction_loss"], expected)
+
+    def test_off_in_training_ignores_climatology(
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
+    ) -> None:
+        model = self._model(
+            cfg_loss,
+            cfg_metrics,
+            relaxation={**self.RELAXATION, "apply_in_training": False},
+        )
+        model.train()
+        batch = _oracle_batch()  # no climatology entry
+        expected = self._expected(
+            batch["sic"],
+            batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
+            None,
+        )
+
+        result, _ = _training_step(model, batch)
+
+        torch.testing.assert_close(result.prediction, expected)

@@ -2,7 +2,13 @@ from typing import Any
 
 import torch
 
-from cryocast.models.common import Freezable, Mask, RestrictRange, SkipConnection
+from cryocast.models.common import (
+    ExponentialRelaxation,
+    Freezable,
+    Mask,
+    RestrictRange,
+    SkipConnection,
+)
 from cryocast.types import (
     DataSpace,
     RangeRestriction,
@@ -80,17 +86,26 @@ class BaseDecoder(Freezable):
             mask_dir=mask_dir,
         )
 
-    def finalise(self, x: TensorNCHW, persistence: TensorNCHW | None) -> TensorNCHW:
-        """Apply shared output steps: range restriction, skip connection, and masking.
+    def finalise(
+        self,
+        x: TensorNCHW,
+        persistence: TensorNCHW | None,
+        *,
+        relaxation: ExponentialRelaxation | None = None,
+        equilibrium: TensorNCHW | None = None,
+    ) -> TensorNCHW:
+        """Apply the shared output steps: restrict range, skip connection, relax, mask.
 
-        Range restriction (none/sigmoid/tanh/clamp) must be applied first, so that all
-        cells are at the same scale as the persistence and the mask. Without this, some
-        masking methods would convert zeros into non-zero values (e.g. sigmoid(0)=0.5).
+        Range restriction (none/sigmoid/tanh/clamp) comes first, so that all cells have
+        the same scale as the persistence and the equilibrium. Masking comes last, so
+        that cells set to 0 by the mask are not changed subsequently.
 
-        This function is called by `rollout` after `forward`, so every decoder gets it
-        automatically without having to call it themselves.
+        Args:
+            x: TensorNCHW decoder output for one step.
+            persistence: TensorNCHW skip-connection anchor, or None.
+            relaxation: Relaxation to apply, or None.
+            equilibrium: TensorNCHW to relax towards, or None for no relaxation.
 
-        RangeRestriction choices are: none/sigmoid/tanh/clamp
         """
         # Apply range restriction to bring the output into the required range
         bounded: TensorNCHW = self.restrict(x)
@@ -108,9 +123,13 @@ class BaseDecoder(Freezable):
                 self.range_min, self.range_max
             )
 
-        # Mask the output to zero out inactive/land cells. This must be applied after
-        # range restriction so that masked cells are exactly 0. If range restriction
-        # followed masking then e.g. sigmoid would give these cells non-zero values.
+        # Relax towards the equilibrium. The result is between two values in the valid
+        # range, so it is also in the valid range.
+        if relaxation is not None and equilibrium is not None:
+            bounded = relaxation(bounded, equilibrium)
+
+        # Mask inactive/land cells. This comes last, so that masked cells are exactly 0
+        # (e.g. sigmoid would change a masked 0 to 0.5).
         return self.mask(bounded)
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
@@ -133,13 +152,15 @@ class BaseDecoder(Freezable):
         persistence: TensorNTCHW | None,
         *,
         anchor_type: SkipAnchorType = SkipAnchorType.INITIAL,
+        relaxation: ExponentialRelaxation | None = None,
+        equilibrium: TensorNTCHW | None = None,
     ) -> TensorNTCHW:
         """Decode latent space into output space across multiple timesteps.
 
         The default implementation simply calls `self.forward` on each time slice
         simultaneously by reshaping the input to combine the batch and time dimensions,
-        before reshaping back. The shared restrict-skip-mask steps are applied in here,
-        so that concrete decoders only need to implement forward().
+        before reshaping back. The shared `finalise` steps are applied here, so that
+        concrete decoders only need to implement forward().
 
         Note that this (rollout method) also increases the effective batch size for any
         batch normalisation layers in the encoder.
@@ -153,6 +174,9 @@ class BaseDecoder(Freezable):
 
         The anchor type has no effect when the decoder has no skip connection.
 
+        If `equilibrium` is set, `finalise` relaxes each step towards the same step of
+        `equilibrium`. With a PREVIOUS anchor, the relaxed step is the next anchor.
+
         Args:
             x: TensorNTCHW with (batch_size, n_timeslices, n_latent_channels_total,
                 latent_height, latent_width)
@@ -160,6 +184,9 @@ class BaseDecoder(Freezable):
                 output_height, output_width) to use as the skip connection anchor
             anchor_type: SkipAnchorType that sets the anchor for each step after the
                 first (default: INITIAL)
+            relaxation: Relaxation to apply, or None.
+            equilibrium: TensorNTCHW with (batch_size, n_timeslices, output_channels,
+                output_height, output_width) to relax towards, or None.
 
         Returns:
             TensorNTCHW with (batch_size, n_timeslices, output_channels, output_height, output_width)
@@ -180,18 +207,25 @@ class BaseDecoder(Freezable):
             anchor = None if persistence is None else persistence[:, 0]
             outputs: list[TensorNCHW] = []
             for t in range(unbounded_ntchw.shape[1]):
-                anchor = self.finalise(unbounded_ntchw[:, t], anchor)
+                anchor = self.finalise(
+                    unbounded_ntchw[:, t],
+                    anchor,
+                    relaxation=relaxation,
+                    equilibrium=None if equilibrium is None else equilibrium[:, t],
+                )
                 outputs.append(anchor)
             return torch.stack(outputs, dim=1)
 
-        # Otherwise, repeat the persistence timeslice across every step and apply the
-        # shared finalisation steps (range restriction, skip connection, masking) to all
+        # Otherwise, repeat the persistence timeslice across every step and finalise all
         # timesteps at once.
         anchor = (
             None
             if persistence is None
             else persistence.expand_as(unbounded_ntchw).flatten(0, 1)
         )
-        return self.finalise(unbounded_ntchw.flatten(0, 1), anchor).unflatten(
-            0, batch_and_time
-        )
+        return self.finalise(
+            unbounded_ntchw.flatten(0, 1),
+            anchor,
+            relaxation=relaxation,
+            equilibrium=None if equilibrium is None else equilibrium.flatten(0, 1),
+        ).unflatten(0, batch_and_time)

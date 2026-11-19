@@ -27,8 +27,10 @@ The properties tested here, in order of importance:
 """
 
 import logging
+from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 import torch
 from omegaconf import DictConfig
@@ -60,6 +62,7 @@ def _build_model(
     *,
     rollout_space: str | None = None,
     skip_anchor: str | None = None,
+    relaxation: dict[str, Any] | None = None,
     decoder_extra: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
@@ -72,6 +75,7 @@ def _build_model(
     target_variable_indices: list[int] | None = None,
     seed: int = SEED,
     target_is_input: bool = True,
+    mask_dir: str | None = None,
 ) -> EncodeProcessDecode:
     input_name = TARGET_GROUP if target_is_input else "not_the_target"
     input_spaces = [
@@ -121,7 +125,9 @@ def _build_model(
         scheduler=DictConfig({}),
         lr_scheduler=DictConfig({}),
         **rollout_kwargs,
+        mask_dir=mask_dir,
         skip_anchor=skip_anchor,
+        relaxation=relaxation,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
@@ -159,6 +165,21 @@ def _inputs(
         )
         for space in model.input_spaces
     }
+
+
+def _climatology(
+    model: EncodeProcessDecode, value: float, *, batch_size: int = 2
+) -> torch.Tensor:
+    """A constant climatology with shape (batch, n_forecast_steps, C_out, H, W)."""
+    return torch.full(
+        (
+            batch_size,
+            model.n_forecast_steps,
+            model.output_space.channels,
+            *model.output_space.shape,
+        ),
+        value,
+    )
 
 
 def _final_conv(model: EncodeProcessDecode) -> torch.nn.Conv2d:
@@ -369,13 +390,26 @@ class TestPhysicalRolloutAdvancesTheState:
 
 
 class TestNoFutureLeak:
-    def test_target_key_is_never_read(self) -> None:
+    """forward() may only read the input groups and the climatology.
+
+    The input groups hold the frames up to the forecast origin. The climatology comes
+    from the training periods only, and is read only if relaxation is on. The "target"
+    and "future_<input>" keys hold the future frames, and must never be read.
+    """
+
+    @pytest.mark.parametrize(
+        "relaxation",
+        [None, {"tau": 2.0}],
+        ids=["no-relaxation", "relaxation"],
+    )
+    def test_target_key_is_never_read(self, relaxation: dict[str, Any] | None) -> None:
         model = _build_model(
             rollout_space="physical",
+            relaxation=relaxation,
             decoder_extra=ADDITIVE_SKIP_DECODER,
         )
         model.eval()
-        inputs = _inputs(model)
+        inputs = {**_inputs(model), "climatology": _climatology(model, 0.5)}
         with_truth = dict(inputs)
         with_truth["target"] = torch.ones(2, model.n_forecast_steps, 1, 32, 32)
         with torch.no_grad():
@@ -418,6 +452,32 @@ class TestNoFutureLeak:
             baseline = model(inputs)
             assert torch.equal(model(with_future(0.0)), baseline)
             assert torch.equal(model(with_future(1.0)), baseline)
+
+    @pytest.mark.parametrize(
+        ("relaxation", "reads_climatology"),
+        [(None, False), ({"tau": 2.0}, True)],
+        ids=["no-relaxation", "relaxation"],
+    )
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_climatology_is_read_only_with_relaxation(
+        self,
+        rollout_space: str,
+        relaxation: dict[str, Any] | None,
+        reads_climatology: bool,  # noqa: FBT001
+    ) -> None:
+        model = _build_model(
+            rollout_space=rollout_space,
+            skip_anchor="previous",
+            relaxation=relaxation,
+            decoder_extra=ADDITIVE_SKIP_DECODER,
+        )
+        _zero_decoder_output(model)
+        model.eval()
+        inputs = _inputs(model)
+        with torch.no_grad():
+            low = model({**inputs, "climatology": _climatology(model, 0.0)})
+            high = model({**inputs, "climatology": _climatology(model, 1.0)})
+        assert (not torch.equal(low, high)) is reads_climatology
 
 
 class TestConfigValidation:
@@ -697,3 +757,133 @@ class TestDecoderZeroInitOutput:
         )
         final = _final_conv(model)
         assert final.weight.abs().max() > 0
+
+
+class TestClimatologyRelaxation:
+    """Relaxation pulls each forecast step towards climatology, in both rollouts.
+
+    With a zero tendency and a constant climatology c, each step loses a fixed fraction
+    of its anomaly, so the forecast is damped anomaly persistence:
+        output_k = c + (1 - rate)^k * (observation - c),  k = 1..n_forecast_steps
+    """
+
+    @staticmethod
+    def _model(
+        rollout_space: str,
+        relaxation: dict[str, Any] | None,
+        *,
+        zero_tendency: bool = True,
+        **kwargs: Any,
+    ) -> EncodeProcessDecode:
+        kwargs.setdefault("decoder_extra", ADDITIVE_SKIP_DECODER)
+        model = _build_model(
+            rollout_space=rollout_space,
+            skip_anchor="previous",
+            relaxation=relaxation,
+            **kwargs,
+        )
+        if zero_tendency:
+            _zero_decoder_output(model)
+        return model
+
+    def test_off_by_default(self) -> None:
+        model = _build_model()
+        assert model.rollout_strategy.relaxation is None
+        assert model.relaxation is None
+
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_zero_tendency_is_damped_anomaly_persistence(
+        self, rollout_space: str
+    ) -> None:
+        model = self._model(rollout_space, {"tau": 2.0})
+        assert model.relaxation is not None
+        model.eval()
+        inputs = _inputs(model)
+        climatology = 0.3
+        observation = inputs[TARGET_GROUP][:, -1]
+        with torch.no_grad():
+            prediction = model(
+                {**inputs, "climatology": _climatology(model, climatology)}
+            )
+        for lead in range(model.n_forecast_steps):
+            decay = (1.0 - model.relaxation.rate) ** (lead + 1)
+            expected = climatology + decay * (observation - climatology)
+            assert torch.allclose(prediction[:, lead], expected, atol=1e-6), (
+                f"lead {lead + 1} is not damped anomaly persistence"
+            )
+
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_masked_cells_stay_at_zero(
+        self, tmp_path: Path, rollout_space: str
+    ) -> None:
+        """Masked cells stay at 0 even if the climatology there is not 0."""
+        mask = np.ones((32, 32), dtype=np.uint8)
+        mask[0, :] = 0
+        for mask_type in ("active", "land"):
+            np.save(tmp_path / f"{mask_type}_mask.npy", mask)
+        model = self._model(
+            rollout_space,
+            {"tau": 1.0},
+            decoder_extra={**ADDITIVE_SKIP_DECODER, "mask_type": "active"},
+            mask_dir=str(tmp_path),
+        )
+        model.eval()
+        inputs = _inputs(model)
+        with torch.no_grad():
+            prediction = model({**inputs, "climatology": _climatology(model, 1.0)})
+        assert torch.count_nonzero(prediction[..., 0, :]) == 0
+        assert torch.count_nonzero(prediction[..., 1:, :]) > 0
+
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_output_stays_in_range(self, rollout_space: str) -> None:
+        model = self._model(
+            rollout_space, {"tau": 1.0}, zero_tendency=False, processor=VIT_PROCESSOR
+        )
+        model.eval()
+        inputs = _inputs(model)
+        with torch.no_grad():
+            prediction = model({**inputs, "climatology": _climatology(model, 1.0)})
+        assert float(prediction.min()) >= 0.0
+        assert float(prediction.max()) <= 1.0
+
+    def test_missing_climatology_raises(self) -> None:
+        model = self._model("physical", {"tau": 2.0})
+        model.eval()
+        with (
+            torch.no_grad(),
+            pytest.raises(ValueError, match="no 'climatology' entry"),
+        ):
+            model(_inputs(model))
+
+    @pytest.mark.parametrize(
+        ("apply_in_training", "training", "relaxed"),
+        [
+            pytest.param(True, True, True, id="on-train"),
+            pytest.param(True, False, True, id="on-eval"),
+            pytest.param(False, True, False, id="off-train"),
+            pytest.param(False, False, True, id="off-eval"),
+        ],
+    )
+    def test_apply_in_training(
+        self,
+        apply_in_training: bool,  # noqa: FBT001
+        training: bool,  # noqa: FBT001
+        relaxed: bool,  # noqa: FBT001
+    ) -> None:
+        model = self._model(
+            "physical", {"tau": 2.0, "apply_in_training": apply_in_training}
+        )
+        model.train(training)
+        inputs = _inputs(model)
+        persistence = inputs[TARGET_GROUP][:, -1:].expand(
+            -1, model.n_forecast_steps, -1, -1, -1
+        )
+        with torch.no_grad():
+            prediction = model({**inputs, "climatology": _climatology(model, 0.0)})
+        assert (not torch.equal(prediction, persistence)) is relaxed
+
+    def test_off_in_training_does_not_need_climatology(self) -> None:
+        model = self._model("physical", {"tau": 2.0, "apply_in_training": False})
+        model.train()
+        with torch.no_grad():
+            model(_inputs(model))
