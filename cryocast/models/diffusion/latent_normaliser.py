@@ -5,16 +5,18 @@ from torch import nn
 class LatentNormaliser(nn.Module):
     """Normalise latents to zero mean and unit variance per channel.
 
-    The per-channel mean and variance are the average over the first ``n_batches``
+    The per-channel mean and variance are measured over the first ``n_batches``
     training batches. After that they are fixed, as they are outside training. They
     are stored as buffers, so a trained model is sampled with the same values it was
     trained with.
 
-    Fixing the statistics keeps them the same in the EMA-averaged model, which also
-    averages buffers but is only updated every few steps. Keep ``n_batches`` at or
-    below the EMA update interval, so the averaged model first copies the final
-    statistics.
+    EMA weight averaging copies these buffers instead of averaging them (see
+    ``exclude_from_weight_averaging``), so the averaged model always uses the same
+    statistics as training.
     """
+
+    # Tells EMAWeightAveragingCallback to copy these buffers instead of averaging them
+    exclude_from_weight_averaging = True
 
     running_mean: torch.Tensor
     running_var: torch.Tensor
