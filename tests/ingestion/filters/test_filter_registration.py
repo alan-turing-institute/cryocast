@@ -12,6 +12,9 @@ from anemoi.transform.filters import filter_registry
 from cryocast.ingestion.filters import register_filters
 from cryocast.ingestion.filters.nan_to_num_filter import NanToNumFilter
 from cryocast.ingestion.filters.reproject_filter import ReprojectFilter
+from cryocast.ingestion.filters.rotate_winds_polar_filter import (
+    RotateWindsPolarFilter,
+)
 from cryocast.ingestion.filters.set_geography_filter import SetGeographyFilter
 
 
@@ -21,6 +24,7 @@ class TestFilterRegistration:
     EXPECTED_FILTERS: ClassVar[dict] = {
         "nan-to-num": NanToNumFilter,
         "reproject": ReprojectFilter,
+        "rotate-winds-polar": RotateWindsPolarFilter,
         "set-geography": SetGeographyFilter,
     }
 

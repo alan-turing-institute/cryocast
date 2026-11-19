@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 CacheKey = tuple[str, str, tuple[int, int], str]
 
 
-def _grid_key(latlons: ArrayHWV) -> str:
+def grid_key(latlons: ArrayHWV) -> str:
     """Hash grid coordinates so that only identical grids share a cached mapping."""
     return hashlib.sha1(
         np.ascontiguousarray(latlons, dtype=np.float64).tobytes(),
@@ -93,7 +93,7 @@ class ReprojectFilter(Filter):
             self.crs,
             self.resolution,
             self.shape,
-            _grid_key(input_latlons),
+            grid_key(input_latlons),
         )
         if key not in ReprojectFilter.nn_indices_cached:
             # Get the output grid from the output geography
