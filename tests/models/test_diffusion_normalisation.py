@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import pytest
 import torch
 
@@ -6,25 +8,6 @@ from cryocast.types import DataSpace
 
 CHANNELS = 2
 SHAPE = (16, 16)
-
-
-def _latents(
-    mean: tuple[float, ...] = (5.0, -2.0),
-    std: tuple[float, ...] = (3.0, 0.5),
-    n_steps: int = 2,
-    seed: int = 438,
-) -> torch.Tensor:
-    """Return [N, T, C, H, W] latents with a known mean and std per channel."""
-    generator = torch.Generator().manual_seed(seed)
-    noise = torch.randn(4, n_steps, CHANNELS, *SHAPE, generator=generator)
-    return noise * torch.tensor(std).view(1, 1, -1, 1, 1) + torch.tensor(mean).view(
-        1, 1, -1, 1, 1
-    )
-
-
-def _per_channel(latent: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    values = latent.transpose(0, 2).flatten(1)
-    return values.mean(dim=1), values.std(dim=1, unbiased=False)
 
 
 def _processor(
@@ -61,8 +44,13 @@ class TestDiffusionProcessorNormalisation:
     @pytest.mark.parametrize(
         "use_autoregressive", [True, False], ids=["autoregressive", "parallel"]
     )
-    def test_training_diffuses_normalised_latents(
-        self, monkeypatch: pytest.MonkeyPatch, *, use_autoregressive: bool
+    def test_training_diffuses_normalisedmake_latents(
+        self,
+        make_latents: Callable[..., torch.Tensor],
+        per_channel_stats: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        use_autoregressive: bool,
     ) -> None:
         processor = _processor(
             normalise_latents=True, use_autoregressive=use_autoregressive
@@ -86,7 +74,7 @@ class TestDiffusionProcessorNormalisation:
 
         monkeypatch.setattr(processor.diffusion, "q_sample", record_clean)
         monkeypatch.setattr(processor.model, "forward", record_condition)
-        x, y = _latents(seed=1), _latents(seed=2)
+        x, y = make_latents(seed=1), make_latents(seed=2)
 
         output = processor.rollout(x, y)
 
@@ -94,15 +82,17 @@ class TestDiffusionProcessorNormalisation:
         assert int(processor.latent_normaliser.num_batches_tracked) == 1  # type: ignore[union-attr]
         for tensor in (clean[0], conditions[0]):
             per_channel = tensor.unflatten(1, (-1, CHANNELS))
-            mean, std = _per_channel(per_channel)
+            mean, std = per_channel_stats(per_channel)
             assert mean.abs().max() < 0.2
             assert (std - 1).abs().max() < 0.2
         assert output.loss is not None
         assert torch.isfinite(output.loss)
 
-    def test_metrics_prediction_is_in_original_units(self) -> None:
+    def test_metrics_prediction_is_in_original_units(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
         processor = _processor(normalise_latents=True)
-        x, y = _latents(seed=1), _latents(seed=2)
+        x, y = make_latents(seed=1), make_latents(seed=2)
         prediction = processor.rollout(x, y).prediction
         # Untrained predictions are noisy, but must be on the scale of the latents
         assert prediction[:, :, 0].mean() > 2.0
@@ -112,12 +102,16 @@ class TestDiffusionProcessorNormalisation:
         "use_autoregressive", [True, False], ids=["autoregressive", "parallel"]
     )
     def test_inference_returns_original_units(
-        self, monkeypatch: pytest.MonkeyPatch, *, use_autoregressive: bool
+        self,
+        make_latents: Callable[..., torch.Tensor],
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        use_autoregressive: bool,
     ) -> None:
         processor = _processor(
             normalise_latents=True, use_autoregressive=use_autoregressive
         )
-        processor.rollout(_latents(seed=1), _latents(seed=2))
+        processor.rollout(make_latents(seed=1), make_latents(seed=2))
         processor.eval()
         histories: list[torch.Tensor] = []
 
@@ -126,7 +120,7 @@ class TestDiffusionProcessorNormalisation:
             return torch.zeros_like(y)
 
         monkeypatch.setattr(processor, "_run_reverse_diffusion", zero_sample)
-        x = _latents(seed=3)
+        x = make_latents(seed=3)
         prediction = processor.rollout(x).prediction
 
         # A zero sample in normalised units is the running mean in original units
@@ -137,9 +131,11 @@ class TestDiffusionProcessorNormalisation:
         # The history passed to the sampler is normalised
         torch.testing.assert_close(histories[0], normaliser.normalise(x).flatten(1, 2))
 
-    def test_normalised_and_plain_processors_load_their_own_checkpoints(self) -> None:
+    def test_normalised_and_plain_processors_load_their_own_checkpoints(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
         trained = _processor(normalise_latents=True)
-        trained.rollout(_latents(seed=1), _latents(seed=2))
+        trained.rollout(make_latents(seed=1), make_latents(seed=2))
         restored = _processor(normalise_latents=True)
         restored.load_state_dict(trained.state_dict())
         assert restored.latent_normaliser is not None

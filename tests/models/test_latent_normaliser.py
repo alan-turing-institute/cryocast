@@ -1,89 +1,94 @@
+from collections.abc import Callable
+
 import pytest
 import torch
 
 from cryocast.models.diffusion import LatentNormaliser
 
 CHANNELS = 2
-SHAPE = (16, 16)
-
-
-def _latents(
-    mean: tuple[float, ...] = (5.0, -2.0),
-    std: tuple[float, ...] = (3.0, 0.5),
-    n_steps: int = 2,
-    seed: int = 438,
-) -> torch.Tensor:
-    """Return [N, T, C, H, W] latents with a known mean and std per channel."""
-    generator = torch.Generator().manual_seed(seed)
-    noise = torch.randn(4, n_steps, CHANNELS, *SHAPE, generator=generator)
-    return noise * torch.tensor(std).view(1, 1, -1, 1, 1) + torch.tensor(mean).view(
-        1, 1, -1, 1, 1
-    )
-
-
-def _per_channel(latent: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    values = latent.transpose(0, 2).flatten(1)
-    return values.mean(dim=1), values.std(dim=1, unbiased=False)
 
 
 class TestLatentNormaliser:
-    def test_first_update_uses_batch_statistics(self) -> None:
+    def test_first_update_uses_batch_statistics(
+        self,
+        make_latents: Callable[..., torch.Tensor],
+        per_channel_stats: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS)
-        latent = _latents()
+        latent = make_latents()
         normaliser.update(latent)
-        mean, std = _per_channel(latent)
+        mean, std = per_channel_stats(latent)
         torch.testing.assert_close(normaliser.running_mean, mean)
         torch.testing.assert_close(normaliser.running_var, std**2)
         assert int(normaliser.num_batches_tracked) == 1
 
-    def test_normalised_latents_have_zero_mean_and_unit_std(self) -> None:
+    def test_normalised_latents_have_zero_mean_and_unit_std(
+        self,
+        make_latents: Callable[..., torch.Tensor],
+        per_channel_stats: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS)
-        latent = _latents()
+        latent = make_latents()
         normaliser.update(latent)
-        mean, std = _per_channel(normaliser.normalise(latent))
+        mean, std = per_channel_stats(normaliser.normalise(latent))
         torch.testing.assert_close(mean, torch.zeros(CHANNELS), atol=1e-5, rtol=0)
         torch.testing.assert_close(std, torch.ones(CHANNELS), atol=1e-4, rtol=0)
 
-    def test_denormalise_inverts_normalise(self) -> None:
+    def test_denormalise_inverts_normalise(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS)
-        latent = _latents()
+        latent = make_latents()
         normaliser.update(latent)
         torch.testing.assert_close(
             normaliser.denormalise(normaliser.normalise(latent)), latent
         )
 
-    def test_updates_average_all_batches(self) -> None:
+    def test_updates_average_all_batches(
+        self,
+        make_latents: Callable[..., torch.Tensor],
+        per_channel_stats: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS)
-        first, second = _latents(mean=(0.0, 0.0)), _latents(mean=(4.0, 2.0), seed=1)
+        first, second = (
+            make_latents(mean=(0.0, 0.0)),
+            make_latents(mean=(4.0, 2.0), seed=1),
+        )
         normaliser.update(first)
         normaliser.update(second)
-        expected = (_per_channel(first)[0] + _per_channel(second)[0]) / 2
+        expected = (per_channel_stats(first)[0] + per_channel_stats(second)[0]) / 2
         torch.testing.assert_close(normaliser.running_mean, expected)
 
-    def test_statistics_are_fixed_after_n_batches(self) -> None:
+    def test_statistics_are_fixed_after_n_batches(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS, n_batches=2)
-        normaliser.update(_latents(mean=(0.0, 0.0)))
-        normaliser.update(_latents(mean=(4.0, 2.0), seed=1))
+        normaliser.update(make_latents(mean=(0.0, 0.0)))
+        normaliser.update(make_latents(mean=(4.0, 2.0), seed=1))
         state = {k: v.clone() for k, v in normaliser.state_dict().items()}
-        normaliser.update(_latents(mean=(100.0, 100.0), seed=2))
+        normaliser.update(make_latents(mean=(100.0, 100.0), seed=2))
         for key, value in normaliser.state_dict().items():
             assert torch.equal(value, state[key])
 
-    def test_statistics_are_fixed_outside_training(self) -> None:
+    def test_statistics_are_fixed_outside_training(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS)
-        normaliser.update(_latents())
+        normaliser.update(make_latents())
         state = {k: v.clone() for k, v in normaliser.state_dict().items()}
         normaliser.eval()
-        normaliser.update(_latents(mean=(100.0, 100.0)))
+        normaliser.update(make_latents(mean=(100.0, 100.0)))
         for key, value in normaliser.state_dict().items():
             assert torch.equal(value, state[key])
 
-    def test_statistics_are_saved_in_the_state_dict(self) -> None:
+    def test_statistics_are_saved_in_the_state_dict(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
         normaliser = LatentNormaliser(CHANNELS)
-        normaliser.update(_latents())
+        normaliser.update(make_latents())
         restored = LatentNormaliser(CHANNELS)
         restored.load_state_dict(normaliser.state_dict())
-        latent = _latents(seed=3)
+        latent = make_latents(seed=3)
         torch.testing.assert_close(
             restored.normalise(latent), normaliser.normalise(latent)
         )
