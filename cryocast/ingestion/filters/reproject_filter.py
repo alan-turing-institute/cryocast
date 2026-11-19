@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -25,18 +26,35 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Cache key: (output crs, output resolution, output shape, hash of input lat/lons)
+CacheKey = tuple[str, str, tuple[int, int], str]
+
+
+def _grid_key(latlons: ArrayHWV) -> str:
+    """Hash grid coordinates so that only identical grids share a cached mapping."""
+    return hashlib.sha1(
+        np.ascontiguousarray(latlons, dtype=np.float64).tobytes(),
+        usedforsecurity=False,
+    ).hexdigest()
+
 
 class ReprojectFilter(Filter):
     """A filter to reproject fields to a new grid."""
 
     # We cache at class level because each GroupOfDates in a dataset creates a new
-    # instance of the filter.
+    # instance of the filter. The key identifies both grids exactly: the output grid
+    # by its parameters and the input grid by a hash of its coordinates. Keying on
+    # shapes alone would let grids of the same size (e.g. north and south polar
+    # grids) silently share a mapping.
     nn_indices_cached: ClassVar[
-        dict[tuple[int, int, int, int], tuple[ArrayIndices2D, ArrayIndices2D]]
+        dict[CacheKey, tuple[ArrayIndices2D, ArrayIndices2D]]
     ] = {}
 
     def __init__(self, *, crs: str, resolution: str, shape: tuple[int, int]) -> None:
         """Initialise the filter with the output grid parameters."""
+        self.crs = crs
+        self.resolution = resolution
+        self.shape = (int(shape[0]), int(shape[1]))
         self.output_geography: GeographicGrid = grid_factory.create(
             crs, resolution=resolution, shape=shape
         )
@@ -70,25 +88,27 @@ class ReprojectFilter(Filter):
             axis=-1,
         )
 
-        # Get the output grid from the output geography
-        output_latlons: ArrayHWV = np.stack(
-            (self.output_geography.latitudes(), self.output_geography.longitudes()),
-            axis=-1,
-        )
-
         # Ensure that nearest neighbour mapping is in the class level cache
-        shape_key = (
-            int(input_latlons.shape[0]),
-            int(input_latlons.shape[1]),
-            int(output_latlons.shape[0]),
-            int(output_latlons.shape[1]),
+        key: CacheKey = (
+            self.crs,
+            self.resolution,
+            self.shape,
+            _grid_key(input_latlons),
         )
-        if shape_key not in ReprojectFilter.nn_indices_cached:
-            ReprojectFilter.nn_indices_cached[shape_key] = nearest_neighbour_indices(
+        if key not in ReprojectFilter.nn_indices_cached:
+            # Get the output grid from the output geography
+            output_latlons: ArrayHWV = np.stack(
+                (
+                    self.output_geography.latitudes(),
+                    self.output_geography.longitudes(),
+                ),
+                axis=-1,
+            )
+            ReprojectFilter.nn_indices_cached[key] = nearest_neighbour_indices(
                 input_latlons, output_latlons
             )
 
-        return ReprojectFilter.nn_indices_cached[shape_key]
+        return ReprojectFilter.nn_indices_cached[key]
 
     def forward(self, data: ekd.FieldList | pd.DataFrame) -> ekd.FieldList:
         """Apply the forward regridding transformation.
@@ -104,10 +124,12 @@ class ReprojectFilter(Filter):
             msg = f"Expected data to be a FieldList, but got {type(data)}."
             raise TypeError(msg)
 
+        # All fields in a FieldList share an input grid, so look up the mapping once
+        nn_indices_h, nn_indices_w = self.nearest_neighbours(data)
         return new_fieldlist_from_list(
             [
                 new_field_from_numpy(
-                    field.to_numpy()[*self.nearest_neighbours(data)],
+                    field.to_numpy()[nn_indices_h, nn_indices_w],
                     template=WrappedField(
                         GeographicField(field, self.output_geography)
                     ),
