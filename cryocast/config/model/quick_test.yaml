@@ -20,6 +20,8 @@ processor:
 
 decoder:
   _target_: cryocast.models.decoders.NaiveLinearDecoder
+
+finaliser:
   mask_type: active
   restrict_range: sigmoid
   skip_connection:

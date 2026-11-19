@@ -617,6 +617,7 @@ class ModelService:
                 return DecoderStage.load_from_checkpoint(
                     checkpoint_file.path,
                     decoder=self.config["model"]["decoder"],
+                    finaliser=self.config["model"].get("finaliser"),
                     encoders=encoder_models,
                     map_location="cpu",  # Lightning will move this to the correct device
                     mask_dir=str(self.data_module.mask_directory),
@@ -628,6 +629,7 @@ class ModelService:
 
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
+            finaliser=self.config["model"].get("finaliser"),
             encoders=encoder_models,
             output_space=self.data_module.output_space,
             target_dataset_name=self.data_module.target_group_name,
@@ -732,6 +734,8 @@ class ModelService:
         log.info("Loaded pretrained weights for processor.")
         model.decoder.load_state_dict(processor_model.decoder.state_dict())
         log.info("Loaded pretrained weights for decoder.")
+        model.finaliser.load_state_dict(processor_model.finaliser.state_dict())
+        log.info("Loaded pretrained weights for finaliser.")
         trainer = self._fit(config=train_cfg, job_stage="finetune")
         self._save_stage_checkpoint(trainer, "finetune")
         return trainer

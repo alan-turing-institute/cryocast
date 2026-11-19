@@ -41,10 +41,12 @@ processor:
 decoder:
   _target_: cryocast.models.decoders.CNNDecoder
   kernel_size: 5
-  mask_type: active
   n_layers: 1
   norm_type: groupnorm
-  restrict_range: sigmoid
   scale_factor: 3
+
+finaliser:
+  mask_type: active
+  restrict_range: sigmoid
   skip_connection:
     method: additive

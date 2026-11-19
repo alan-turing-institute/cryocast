@@ -173,8 +173,8 @@ def _oracle_model(
             scale=decoder_scale,
             data_space_in=DataSpace(channels=2, name="combined", shape=shape),
             data_space_out=output_space,
-            skip_connection=skip_connection,
         ),
+        finaliser={"skip_connection": skip_connection},
         loss_weights=loss_weights,
         skip_anchor=skip_anchor,
         relaxation=relaxation,
@@ -995,11 +995,9 @@ class TestPredictionLoss:
         decoded_shapes: list[tuple[bool, torch.Size]] = []
         rollout = model.decoder.rollout
 
-        def spy(
-            x: TensorNTCHW, persistence: TensorNTCHW | None, **kwargs: Any
-        ) -> TensorNTCHW:
+        def spy(x: TensorNTCHW) -> TensorNTCHW:
             decoded_shapes.append((torch.is_grad_enabled(), x.shape))
-            return rollout(x, persistence, **kwargs)
+            return rollout(x)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(model.decoder, "rollout", spy)
@@ -1148,6 +1146,7 @@ class TestPredictionLoss:
 
         assert model.decoder.frozen is expected_frozen
         assert model.decoder.training is not expected_frozen
+        assert model.finaliser.frozen is expected_frozen
         assert ("latent space can drift" in caplog.text) is expected_warning
 
     def test_rejects_prediction_without_gradients(

@@ -21,10 +21,12 @@ processor:
   patch_size: 6
 
 decoder:
-  restrict_range: sigmoid
   # Start with a zero-initialized output layer so that an untrained model
   # produces no output
   zero_init_output: true
+
+finaliser:
+  restrict_range: sigmoid
   # Combining an additive skip connection with a zero-initialized output layer
   # means that an untrained model will produce persistence exactly.
   skip_connection:

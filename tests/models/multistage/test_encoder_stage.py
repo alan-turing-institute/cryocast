@@ -13,60 +13,17 @@ from cryocast.types import DataSpace
 
 
 class TestEncoderStage:
-    def test_forward_ignores_skip_connection_persistence_requirement(
-        self,
-        cfg_encoders: DictConfig,
-        cfg_input_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
+    def test_forward_reconstructs_input_without_finaliser(
+        self, encoder_stage: EncoderStage, cfg_input_space: DictConfig
     ) -> None:
-        encoder_stage = EncoderStage(
-            channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
-            data_space_in=DataSpace.from_dict(cfg_input_space),
-            encoder=cfg_encoders["test-input"],
-            decoder=DictConfig(
-                {
-                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
-                    "skip_connection": {"method": "additive"},
-                }
-            ),
-            latent_space=cfg_encoders["latent_space"],
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=1,
-            n_history_steps=1,
-            name="test-input_encoder",
-            optimizer=cfg_optimizer,
-            output_space=cfg_input_space,
-            scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-        )
-
-        assert encoder_stage.decoder.skip_connection is None
-
         batch_size = 2
-        result = encoder_stage(
-            {
-                "target": torch.rand(
-                    batch_size,
-                    1,
-                    cfg_input_space["channels"],
-                    *cfg_input_space["shape"],
-                )
-            }
-        )
+        shape = (batch_size, 1, cfg_input_space["channels"], *cfg_input_space["shape"])
 
-        assert result.shape == (
-            batch_size,
-            1,
-            cfg_input_space["channels"],
-            *cfg_input_space["shape"],
-        )
+        result = encoder_stage({"target": torch.rand(shape)})
+
+        # The disposable decoder has no finaliser, so it needs no persistence
+        assert not hasattr(encoder_stage, "finaliser")
+        assert result.shape == shape
 
     def test_process_batch_extracts_first_timestep(
         self, encoder_stage: EncoderStage, cfg_input_space: DictConfig

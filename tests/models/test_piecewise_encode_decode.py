@@ -66,11 +66,10 @@ class TestPiecewiseEncodeDecode:
             conv_subblocks_final=n_conv_blocks,
             data_space_in=encoder.data_space_out,
             data_space_out=input_space,
-            restrict_range="none",
             use_final_normalisation=False,
             use_hann_window=False,
         )
-        output_ntchw = decoder.rollout(latent_ntchw, None)
+        output_ntchw = decoder.rollout(latent_ntchw)
         assert torch.equal(input_ntchw, output_ntchw)
 
     def test_stacked_conv_blocks_have_connected_gradients(self) -> None:
@@ -93,13 +92,12 @@ class TestPiecewiseEncodeDecode:
             conv_subblocks_final=3,
             data_space_in=encoder.data_space_out,
             data_space_out=input_space,
-            restrict_range="none",
             use_final_normalisation=False,
             use_hann_window=False,
         )
 
         latent_ntchw = encoder.rollout(input_ntchw)
-        output_ntchw = decoder.rollout(latent_ntchw, None)
+        output_ntchw = decoder.rollout(latent_ntchw)
         output_ntchw.square().mean().backward()
 
         assert input_ntchw.grad is not None

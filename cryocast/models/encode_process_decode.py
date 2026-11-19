@@ -10,6 +10,7 @@ from typing_extensions import override
 from cryocast.models.common import ExponentialRelaxation
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
+from cryocast.models.finalisers import Finaliser
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
@@ -36,6 +37,7 @@ class EncodeProcessDecode(BaseModel):
     ignored_hparams: ClassVar[frozenset[str]] = BaseModel.ignored_hparams | {
         "decoder",
         "encoders",
+        "finaliser",
         "mask_dir",
         "processor",
     }
@@ -46,6 +48,7 @@ class EncodeProcessDecode(BaseModel):
         encoders: DictConfig | list[BaseEncoder],
         processor: DictConfig | BaseProcessor,
         decoder: DictConfig | BaseDecoder,
+        finaliser: Mapping[str, Any] | Finaliser | None = None,
         target_variable_indices: list[int],
         loss_weights: dict[str, float] | None = None,
         mask_dir: str | None = None,
@@ -58,15 +61,19 @@ class EncodeProcessDecode(BaseModel):
 
         Note that we use BaseProcessor.computes_loss_in_latent_space to control:
         - `needs_future_inputs`: training batches hold `future_<input>` keys.
-        - the decoder is frozen if the reconstruction and prediction losses are off
+        - the decoder and finaliser are frozen if the reconstruction and prediction
+          losses are off
         - `rollout_space`: cannot be set to "physical"
         - `training_step`: takes the latent-loss branch.
 
         Args:
             encoders: DictConfig or list of BaseEncoder, one per input dataset.
             processor: DictConfig or BaseProcessor, the latent-space processor.
-            decoder: DictConfig or BaseDecoder, the decoder from latent to output space.
+            decoder: DictConfig or BaseDecoder, the decoder from latent to raw output
+                space.
             target_variable_indices: indices of the target variables within the output space.
+            finaliser: Options or Finaliser, the finaliser that turns raw decoder output
+                into a forecast state.
             loss_weights: weights for auxiliary loss terms. These apply only to
                 processors that compute their loss in latent space. Weights must not be
                 negative. Supported keys:
@@ -74,8 +81,8 @@ class EncodeProcessDecode(BaseModel):
                   inputs.
                 - `prediction` (default 0.0): loss on the decoded differentiable
                   prediction from the processor.
-                If both weights are 0, the decoder is frozen.
-            mask_dir: directory containing masks for the decoder (if needed).
+                If both weights are 0, the decoder and finaliser are frozen.
+            mask_dir: directory containing masks for the finaliser (if needed).
             rollout_space: RolloutSpace.LATENT or RolloutSpace.PHYSICAL (or the
                 equivalent string), where to perform the forecast loop.
             skip_anchor: Whether to use the last, real observed frame or the most recent
@@ -84,7 +91,7 @@ class EncodeProcessDecode(BaseModel):
             relaxation: Options to relax each forecast step towards climatology, or
                 None for no relaxation. See RelaxationOptions. Relaxation needs a
                 PREVIOUS skip anchor and a `climatology` entry in each batch.
-            **kwargs: forwarded to ``BaseModel`` (spaces, masks, range, skip).
+            **kwargs: forwarded to ``BaseModel``.
 
         """
         super().__init__(
@@ -168,7 +175,15 @@ class EncodeProcessDecode(BaseModel):
                 decoder,
                 data_space_in=combined_latent_space,
                 data_space_out=self.output_space,
-                mask_dir=mask_dir,
+            )
+        )
+
+        # Add a finaliser, which turns raw decoder output into a forecast state
+        self.finaliser: Finaliser = (
+            finaliser
+            if isinstance(finaliser, Finaliser)
+            else Finaliser(
+                data_space=self.output_space, mask_dir=mask_dir, **(finaliser or {})
             )
         )
 
@@ -203,11 +218,11 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
         if (
-            self.decoder.skip_connection is None
+            self.finaliser.skip_connection is None
             and not self.rollout_strategy.uses_default_anchor
         ):
             log.warning(
-                "skip_anchor='%s' has no effect because the decoder has no skip "
+                "skip_anchor='%s' has no effect because the finaliser has no skip "
                 "connection.",
                 self.rollout_strategy.anchor.value,
             )
@@ -252,10 +267,10 @@ class EncodeProcessDecode(BaseModel):
             window: TensorNTCHW holding the target dataset, most recent frame last.
 
         Returns:
-            TensorNCHW anchor, or None if the decoder has no skip connection.
+            TensorNCHW anchor, or None if the finaliser has no skip connection.
 
         """
-        if not self.decoder.skip_connection:
+        if not self.finaliser.skip_connection:
             return None
         return window[:, -1, self.target_variable_indices, :, :]
 
@@ -266,14 +281,14 @@ class EncodeProcessDecode(BaseModel):
             window: TensorNTCHW holding the target dataset, most recent frame last.
 
         Returns:
-            TensorNTCHW anchor, or None if the decoder has no skip connection.
+            TensorNTCHW anchor, or None if the finaliser has no skip connection.
 
         """
         anchor = self._anchor_nchw(window)
         return None if anchor is None else anchor.unsqueeze(1)
 
     def _configure_losses(self, weights: Mapping[str, float]) -> None:
-        """Validate the auxiliary loss weights and freeze the decoder if it is unused.
+        """Validate the auxiliary loss weights, and freeze the decoder and finaliser if unused.
 
         Args:
             weights: weights for auxiliary loss terms, see `__init__`.
@@ -298,9 +313,11 @@ class EncodeProcessDecode(BaseModel):
         }
 
         if self.processor.computes_loss_in_latent_space:
-            # Only the auxiliary losses use the decoder. If they are all off, freeze it.
+            # Only the auxiliary losses use the decoder and the finaliser. If they are all
+            # off, freeze both.
             if not any(self.loss_weights.values()):
                 self.decoder.freeze()
+                self.finaliser.freeze()
 
             # Without the reconstruction loss, nothing keeps the latent space and the
             # decoder compatible while they train.
@@ -330,9 +347,9 @@ class EncodeProcessDecode(BaseModel):
                 W), or None.
 
         """
-        return self.decoder.rollout(
-            latent,
-            anchor,
+        return self.finaliser.rollout(
+            self.decoder.rollout(latent),
+            anchor=anchor,
             anchor_type=self.rollout_strategy.anchor,
             relaxation=self.relaxation,
             equilibrium=equilibrium,
@@ -459,9 +476,9 @@ class EncodeProcessDecode(BaseModel):
         re-encode on the next iteration. Contrast with the default path, which appends
         the processor's raw latent to its own input window and never re-encodes.
 
-        When the decoder has an additive skip connection, it emits a tendency and the
-        state advances as `x_{k+1} = clamp(x_k + delta_k, 0, 1)`, so a zero-output
-        network reproduces persistence exactly.
+        When the finaliser has an additive skip connection, the decoder produces a
+        residual and the state advances as `x_{k+1} = clamp(x_k + residual_k, 0, 1)`, so
+        a zero-output network reproduces persistence exactly.
 
         The skip connection anchor depends on `rollout_strategy.anchor`:
         - PREVIOUS (default): the most recent frame in the target window, which is the
@@ -539,9 +556,9 @@ class EncodeProcessDecode(BaseModel):
                 if self.rollout_strategy.anchor == SkipAnchorType.INITIAL
                 else self._anchor_nchw(target_window)
             )
-            output = self.decoder.finalise(
+            output = self.finaliser(
                 raw_output,
-                anchor,
+                anchor=anchor,
                 relaxation=self.relaxation,
                 equilibrium=None if equilibrium is None else equilibrium[:, step],
             )
@@ -597,13 +614,18 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg)
 
-        # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
-        # in the graph without decoding anything: with DDP, a parameter that has no
-        # gradient on one process stops training.
+        # The mean over an empty mask is NaN, so return 0. Keep the decoder and finaliser
+        # parameters in the graph without decoding anything: with DDP, a parameter that
+        # has no gradient on one process stops training.
         if mask is not None and not mask.any():
             return (
                 sum(
-                    (p.sum() for p in self.decoder.parameters() if p.requires_grad),
+                    (
+                        p.sum()
+                        for module in (self.decoder, self.finaliser)
+                        for p in module.parameters()
+                        if p.requires_grad
+                    ),
                     start=prediction.new_zeros(()),
                 )
                 * 0.0

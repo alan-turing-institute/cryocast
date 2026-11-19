@@ -27,7 +27,7 @@ class ProcessorStage(EncodeProcessDecode):
         """Initialise a ProcessorStage with a trainable processor.
 
         - copy encoders from DecoderStage and freeze their parameters
-        - copy the decoder from DecoderStage and freeze its parameters
+        - copy the decoder and finaliser from DecoderStage and freeze their parameters
         - copy target_variable_indices from checkpoint or from DecoderStage
         """
         kwargs.setdefault(
@@ -39,6 +39,7 @@ class ProcessorStage(EncodeProcessDecode):
             ],
             processor=processor,
             decoder=copy.deepcopy(decoder_model.decoder).freeze(),
+            finaliser=copy.deepcopy(decoder_model.finaliser).freeze(),
             mask_dir=mask_dir,
             **kwargs,
         )
@@ -63,7 +64,7 @@ class ProcessorStage(EncodeProcessDecode):
             decoder_model: Trained DecoderStage that supplies the frozen encoders and
                 decoder.
             full_model: EncodeProcessDecode model that supplies the rollout strategy.
-            mask_dir: Directory that contains the masks for the decoder, if any.
+            mask_dir: Directory that contains the masks for the finaliser, if any.
 
         """
         return cls(
