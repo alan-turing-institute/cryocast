@@ -521,19 +521,10 @@ class ModelService:
         If this ModelService was loaded from a checkpoint, training resumes from it.
 
         Raises:
-            ValueError: If the model has a frozen decoder, which single-stage training
-                cannot train.
+            ValueError: If single-stage training cannot train the model.
 
         """
-        if isinstance(self.model, EncodeProcessDecode) and self.model.decoder.frozen:
-            msg = (
-                "The decoder is frozen, so single-stage training cannot train it. "
-                "This happens if the processor computes its loss in latent space and "
-                "loss_weights.reconstruction and loss_weights.prediction are both 0. "
-                "Either set one of these weights to a value greater than 0, or train "
-                "with `--multistage`."
-            )
-            raise ValueError(msg)
+        self.model.verify_single_stage_trainable()
         if self.checkpoint_file:
             log.info(
                 "Resuming single-stage training from %s.", self.checkpoint_file.path

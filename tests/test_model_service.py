@@ -840,7 +840,6 @@ class TestModelService:
     def test_train_single_stage_encode_process_decode(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.model_.decoder = MagicMock(frozen=False)
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -851,10 +850,12 @@ class TestModelService:
 
         mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
 
-    def test_train_single_stage_rejects_frozen_decoder(self) -> None:
+    def test_train_single_stage_rejects_untrainable_model(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.model_.decoder = MagicMock(frozen=True)
+        service.model_.verify_single_stage_trainable.side_effect = ValueError(
+            "decoder is frozen"
+        )
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
