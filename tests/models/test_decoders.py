@@ -262,3 +262,55 @@ class TestPiecewiseDecoder:
         )
 
         assert not any(isinstance(m, nn.Conv2d) for m in decoder.modules())
+
+
+class TestDecoderCheckpointing:
+    latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
+    output_space = DataSpace(name="output", channels=1, shape=(16, 16))
+
+    def _decoder(
+        self, decode_chunk_size: int | None, norm_type: str = "groupnorm"
+    ) -> CNNDecoder:
+        torch.manual_seed(0)
+        return CNNDecoder(
+            decode_chunk_size=decode_chunk_size,
+            data_space_in=self.latent_space,
+            data_space_out=self.output_space,
+            n_layers=1,
+            norm_type=norm_type,
+        )
+
+    @pytest.mark.parametrize(
+        "test_chunk_size", [1, 3, 10], ids=["chunk1", "chunk3", "chunk10"]
+    )
+    @pytest.mark.parametrize("test_grad", [True, False], ids=["grad", "no_grad"])
+    def test_matches_unchunked_rollout(
+        self, test_chunk_size: int, *, test_grad: bool
+    ) -> None:
+        reference = self._decoder(None)
+        chunked = self._decoder(test_chunk_size)
+        x = torch.randn(2, 3, self.latent_space.channels, *self.latent_space.shape)
+
+        with torch.set_grad_enabled(test_grad):
+            expected = reference.rollout(x)
+            result = chunked.rollout(x)
+        torch.testing.assert_close(result, expected)
+
+        if test_grad:
+            expected.square().sum().backward()
+            result.square().sum().backward()
+            for p_ref, p_chunked in zip(
+                reference.parameters(), chunked.parameters(), strict=True
+            ):
+                torch.testing.assert_close(p_chunked.grad, p_ref.grad)
+
+    def test_non_positive_chunk_size_raises(self) -> None:
+        with pytest.raises(ValueError, match="decode_chunk_size must be positive"):
+            self._decoder(0)
+
+    def test_batchnorm_raises(self) -> None:
+        decoder = self._decoder(2, norm_type="batchnorm")
+        x = torch.randn(1, 3, self.latent_space.channels, *self.latent_space.shape)
+
+        with pytest.raises(ValueError, match="batch normalisation"):
+            decoder.rollout(x)
