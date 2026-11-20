@@ -548,6 +548,28 @@ class TestOptionalGroups:
             combined.inputs[0].get_tchw([dates_as_np[2]]),
         )
 
+    def test_future_inputs_flag_missing_days(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        """Optional inputs flag which forecast steps have data, required inputs don't."""
+        combined = self._combined(
+            mock_dataset,
+            mock_dataset_missing_dates_fill_value,
+            include_future_inputs=True,
+        )
+        # Windows 0, 1 and 2 forecast days 2 (present), 3 (missing) and 4 (present)
+        for idx, expected in enumerate([True, False, True]):
+            has_data = combined[idx]["future_optional_has_data"]
+            assert has_data.dtype == np.bool_
+            np.testing.assert_array_equal(has_data, [expected])
+        assert "future_target_group_has_data" not in combined[0]
+
+    def test_no_has_data_flag_without_future_inputs(
+        self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
+    ) -> None:
+        combined = self._combined(mock_dataset, mock_dataset_missing_dates_fill_value)
+        assert "future_optional_has_data" not in combined[0]
+
     def test_missing_required_input_still_drops_window(
         self, mock_dataset: Path, mock_dataset_missing_dates_fill_value: Path
     ) -> None:

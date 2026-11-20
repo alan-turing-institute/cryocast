@@ -159,6 +159,10 @@ class CombinedDataset(Dataset):
             input data for the forecast steps:
             - `future_<input>`: [n_forecast_steps, C_input_k, H_input_k, W_input_k]
 
+            Inputs with a fill value also get whether each forecast step has data
+            (False where it holds the fill value):
+            - `future_<input>_has_data`: [n_forecast_steps]
+
         """
         start_date = self.dates[idx]
         input_dates = self.get_input_steps(start_date)
@@ -169,6 +173,13 @@ class CombinedDataset(Dataset):
             batch[ds.name] = window[: self.n_history_steps]
             if self.include_future_inputs:
                 batch[f"future_{ds.name}"] = window[self.n_history_steps :]
+                if ds.fill_value is not None:
+                    batch[f"future_{ds.name}_has_data"] = np.array(
+                        [
+                            ds.has_date(date)
+                            for date in input_dates[self.n_history_steps :]
+                        ]
+                    )
         batch["target"] = self.target.get_tchw(self.get_forecast_steps(start_date))
         if (climatology := self.climatology_for(start_date)) is not None:
             batch["climatology"] = climatology
