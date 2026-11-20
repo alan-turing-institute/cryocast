@@ -197,6 +197,20 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
         if (
+            self.rollout_strategy.relaxation is not None
+            and not self.rollout_strategy.is_physical
+            and self.finaliser.skip_connection is None
+        ):
+            # Without a skip connection, no step carries over to the next step in a
+            # latent rollout. Each step is then a fixed blend with climatology.
+            msg = (
+                "relaxation in a latent rollout requires a finaliser skip connection, "
+                "so that each relaxed step carries over to the next step. Set "
+                "finaliser.skip_connection, use rollout_space='physical', or remove "
+                "relaxation."
+            )
+            raise ValueError(msg)
+        if (
             self.finaliser.skip_connection is None
             and not self.rollout_strategy.uses_default_anchor
         ):

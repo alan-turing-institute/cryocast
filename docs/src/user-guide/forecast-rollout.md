@@ -121,6 +121,10 @@ A large `tau` gives a weak pull, and the effect is small at short lead times.
 - Relaxation needs `skip_anchor: previous`.
   With an `initial` anchor, the relaxation of one lead time does not carry over to the next lead time.
   The model raises a `ValueError` when you make it.
+- In a latent rollout, relaxation needs a finaliser skip connection.
+  Without a skip connection, the relaxation of one lead time does not carry over to the next lead time.
+  The model raises a `ValueError` when you make it.
+  A physical rollout re-encodes each relaxed lead time, so it does not need a skip connection.
 - Relaxation needs a `climatology` entry in each batch.
   The data module makes the climatology only from the training period of the target dataset.
   Thus the climatology does not contain information from the forecast period.

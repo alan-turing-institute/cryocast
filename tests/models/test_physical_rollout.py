@@ -493,6 +493,20 @@ class TestConfigValidation:
         assert model.rollout_strategy.is_physical
         assert model.rollout_strategy.anchor is SkipAnchorType.INITIAL
 
+    def test_latent_relaxation_requires_skip_connection(self) -> None:
+        """Without a skip connection, latent relaxation does not carry over steps."""
+        with pytest.raises(ValueError, match="requires a finaliser skip connection"):
+            _build_model(
+                rollout_space="latent",
+                skip_anchor="previous",
+                relaxation={"tau": 30.0},
+            )
+
+    def test_physical_relaxation_accepts_no_skip_connection(self) -> None:
+        """A physical rollout re-encodes each relaxed step, so no skip is needed."""
+        model = _build_model(rollout_space="physical", relaxation={"tau": 30.0})
+        assert model.relaxation is not None
+
     def test_physical_rollout_requires_target_as_input(self) -> None:
         with pytest.raises(ValueError, match="to also be a model input"):
             _build_model(rollout_space="physical", target_is_input=False)
