@@ -1191,3 +1191,43 @@ class TestConvLSTMProcessor:
         prediction = processor.rollout(x).prediction
 
         torch.testing.assert_close(prediction, x[:, -1:].expand_as(prediction))
+
+    def _saved_bytes_and_grads(
+        self, *, recompute_steps: bool
+    ) -> tuple[int, torch.Tensor, list[torch.Tensor | None]]:
+        torch.manual_seed(0)
+        latent_space = DataSpace(name="latent", channels=2, shape=(6, 6))
+        processor = ConvLSTMProcessor(
+            data_space=latent_space,
+            dropout=0.2,
+            hidden_channels=4,
+            n_forecast_steps=5,
+            n_history_steps=3,
+            n_layers=2,
+            recompute_steps=recompute_steps,
+        )
+        x = torch.randn(1, 3, latent_space.channels, *latent_space.shape)
+        saved_bytes = 0
+
+        def pack(tensor: torch.Tensor) -> torch.Tensor:
+            nonlocal saved_bytes
+            saved_bytes += tensor.numel() * tensor.element_size()
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+            prediction = processor.rollout(x).prediction
+        prediction.square().sum().backward()
+        return saved_bytes, prediction, [p.grad for p in processor.parameters()]
+
+    def test_recompute_steps_keeps_results_and_saves_memory(self) -> None:
+        reference_bytes, reference, reference_grads = self._saved_bytes_and_grads(
+            recompute_steps=False
+        )
+        recompute_bytes, result, grads = self._saved_bytes_and_grads(
+            recompute_steps=True
+        )
+
+        torch.testing.assert_close(result, reference)
+        for grad, reference_grad in zip(grads, reference_grads, strict=True):
+            torch.testing.assert_close(grad, reference_grad)
+        assert recompute_bytes < reference_bytes / 2

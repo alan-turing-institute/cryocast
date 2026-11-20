@@ -2,6 +2,7 @@ from typing import Any
 
 import torch
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from cryocast.models.common import ConvLSTMCell
 from cryocast.types import ProcessorOutput, TensorNCHW, TensorNTCHW
@@ -27,9 +28,23 @@ class ConvLSTMProcessor(BaseProcessor):
         n_layers: int = 2,
         dropout: float = 0.0,
         residual: bool = True,
+        recompute_steps: bool = False,
         **kwargs: Any,
     ) -> None:
-        """Initialise a ConvLSTM processor."""
+        """Initialise a ConvLSTM processor.
+
+        Args:
+            hidden_channels: Number of channels in the hidden and cell states.
+            kernel_size: Kernel size of the gate convolutions. Must be odd.
+            n_layers: Number of stacked ConvLSTM layers.
+            dropout: Dropout between ConvLSTM layers.
+            residual: If True, each prediction is a change from the previous frame.
+            recompute_steps: If True, keep only the input and state of each cell, and
+                run the cell again in the backward pass. This decreases memory use
+                for long rollouts, but makes training slower.
+            **kwargs: Forwarded to `BaseProcessor`.
+
+        """
         super().__init__(**kwargs)
         if hidden_channels <= 0:
             msg = "hidden_channels must be greater than 0."
@@ -42,6 +57,7 @@ class ConvLSTMProcessor(BaseProcessor):
             raise ValueError(msg)
 
         self.hidden_channels = hidden_channels
+        self.recompute_steps = recompute_steps
         self.residual = residual
         self.cells = nn.ModuleList(
             [
@@ -76,7 +92,11 @@ class ConvLSTMProcessor(BaseProcessor):
         next_states: list[tuple[TensorNCHW, TensorNCHW]] = []
         layer_input = x
         for layer_idx, (cell, state) in enumerate(zip(self.cells, states, strict=True)):
-            next_state = cell(layer_input, state)
+            next_state = (
+                checkpoint(cell, layer_input, state, use_reentrant=False)
+                if self.recompute_steps
+                else cell(layer_input, state)
+            )
             next_states.append(next_state)
             layer_input = next_state[0]
             if layer_idx < len(self.cells) - 1:
