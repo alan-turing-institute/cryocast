@@ -55,6 +55,7 @@ processor:
   time_embed_dim: 256
   dropout_rate: 0.05
   use_autoregressive: true
+  normalise_latents: false  # diffuse latents with zero mean and unit variance per channel
   loss: ${loss}
 
 decoder:

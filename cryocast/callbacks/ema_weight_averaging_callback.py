@@ -35,11 +35,25 @@ class EMAWeightAveragingCallback(WeightAveraging):
         """Ignore the update if the module has no parameters."""
         if next(pl_module.parameters(), None) is not None:
             super().on_train_batch_end(trainer, pl_module, *args, **kwargs)
+            self._copy_excluded_buffers(pl_module)
 
     def on_train_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Ignore the update if the module has no parameters."""
         if next(pl_module.parameters(), None) is not None:
             super().on_train_epoch_end(trainer, pl_module)
+            self._copy_excluded_buffers(pl_module)
+
+    def _copy_excluded_buffers(self, pl_module: LightningModule) -> None:
+        """Copy, not average, buffers of modules with exclude_from_weight_averaging."""
+        if self._average_model is None:
+            return
+        averaged_modules = dict(self._average_model.module.named_modules())
+        for name, module in pl_module.named_modules():
+            if getattr(module, "exclude_from_weight_averaging", False):
+                for averaged, current in zip(
+                    averaged_modules[name].buffers(), module.buffers(), strict=True
+                ):
+                    averaged.copy_(current)
 
     def should_update(
         self, step_idx: int | None = None, epoch_idx: int | None = None

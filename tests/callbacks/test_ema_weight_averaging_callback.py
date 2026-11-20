@@ -1,15 +1,34 @@
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 import torch
 from lightning.pytorch import LightningModule
 from lightning.pytorch.callbacks import WeightAveraging
+from torch.optim.swa_utils import AveragedModel
 
 from cryocast.callbacks.ema_weight_averaging_callback import EMAWeightAveragingCallback
+from cryocast.models.diffusion import LatentNormaliser
 
 
 class ParameterlessLightningModule(LightningModule):
     """A LightningModule with no parameters, to exercise the empty-module guard."""
+
+
+class NormalisedLightningModule(LightningModule):
+    """A LightningModule with one trainable layer and a LatentNormaliser."""
+
+    def __init__(self) -> None:
+        """Initialise the layer and the normaliser."""
+        super().__init__()
+        self.layer = torch.nn.Linear(2, 2)
+        self.normaliser = LatentNormaliser(2)
+
+
+def _averaged(callback: EMAWeightAveragingCallback) -> NormalisedLightningModule:
+    """Return the averaged copy of the module held by the callback."""
+    assert callback._average_model is not None
+    return cast("NormalisedLightningModule", callback._average_model.module)
 
 
 class TestInit:
@@ -153,3 +172,42 @@ class TestShouldUpdate:
         assert (
             callback.should_update(step_idx=step_idx, epoch_idx=epoch_idx) is expected
         )
+
+
+class TestExcludedBuffers:
+    """Tests for copying buffers that should not be averaged."""
+
+    @pytest.mark.parametrize("hook", ["on_train_batch_end", "on_train_epoch_end"])
+    def test_copies_normaliser_buffers_instead_of_averaging(
+        self, mock_trainer: MagicMock, monkeypatch: pytest.MonkeyPatch, hook: str
+    ) -> None:
+        """Keep the averaged normaliser statistics the same as in training."""
+        callback = EMAWeightAveragingCallback(decay_rate=0.99, every_n_steps=1)
+        monkeypatch.setattr(WeightAveraging, hook, MagicMock())
+        module = NormalisedLightningModule()
+        callback._average_model = AveragedModel(module, use_buffers=True)
+        module.normaliser.running_mean.fill_(3.0)
+        module.normaliser.running_var.fill_(4.0)
+        module.normaliser.num_batches_tracked.fill_(100)
+
+        getattr(callback, hook)(mock_trainer, module)
+
+        averaged = _averaged(callback).normaliser
+        for name, buffer in module.normaliser.named_buffers():
+            assert torch.equal(averaged.get_buffer(name), buffer)
+
+    def test_does_not_copy_parameters(
+        self, mock_trainer: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Leave averaged parameters to the parent callback."""
+        callback = EMAWeightAveragingCallback(decay_rate=0.99, every_n_steps=1)
+        monkeypatch.setattr(WeightAveraging, "on_train_batch_end", MagicMock())
+        module = NormalisedLightningModule()
+        callback._average_model = AveragedModel(module, use_buffers=True)
+        before = _averaged(callback).layer.weight.clone()
+        with torch.no_grad():
+            module.layer.weight.fill_(7.0)
+
+        callback.on_train_batch_end(mock_trainer, module)
+
+        assert torch.equal(_averaged(callback).layer.weight, before)
