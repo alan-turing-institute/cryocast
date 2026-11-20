@@ -27,6 +27,15 @@ from cryocast.utils import to_plain_types
 
 log = logging.getLogger(__name__)
 
+# Model config keys that moved from 'model.decoder' to 'model.finaliser'
+_FINALISER_KEYS = (
+    "mask_type",
+    "restrict_range",
+    "restrict_range_max",
+    "restrict_range_min",
+    "skip_connection",
+)
+
 
 @dataclass(frozen=True)
 class CheckpointFile:
@@ -121,6 +130,17 @@ class CheckpointFile:
                 f"Checkpoint configuration {self.config_path} uses the legacy "
                 "'predict' key. Upgrade it with "
                 f"'cryocast checkpoint upgrade {self.path}'."
+            )
+            raise OutdatedCheckpointError(msg)
+
+        # Configs from before the finaliser was split from the decoder must be upgraded,
+        # since the decoder no longer accepts these keys.
+        decoder_config = OmegaConf.select(ckpt_config, "model.decoder") or {}
+        if moved := [key for key in _FINALISER_KEYS if key in decoder_config]:
+            msg = (
+                f"Checkpoint configuration {self.config_path} sets "
+                f"{', '.join(moved)} under the legacy 'model.decoder' key. Upgrade it "
+                f"with 'cryocast checkpoint upgrade {self.path}'."
             )
             raise OutdatedCheckpointError(msg)
         return ckpt_config
@@ -333,6 +353,19 @@ class LegacyCheckpointFile:
         return value
 
     @staticmethod
+    def _move_finaliser_weights(state_dict: dict[str, Any]) -> bool:
+        """Move learned skip connection weights from the decoder to the finaliser.
+
+        Returns:
+            Whether any weights were moved.
+
+        """
+        keys = [key for key in state_dict if key.startswith("decoder.skip_connection.")]
+        for key in keys:
+            state_dict[key.replace("decoder.", "finaliser.", 1)] = state_dict.pop(key)
+        return bool(keys)
+
+    @staticmethod
     def _replace(path: Path, write: Callable[[Path], None]) -> None:
         """Replace a file, backing up the original unless it has already been.
 
@@ -358,8 +391,10 @@ class LegacyCheckpointFile:
 
         The checkpoint is rewritten to reference ``cryocast`` classes and to contain
         only plain Python types, so that it can be loaded with ``weights_only=True``.
-        The config is rewritten to reference ``cryocast`` and to replace the legacy
-        'predict' settings with 'variables' and 'window' ones.
+        The config is rewritten to reference ``cryocast``, to replace the legacy
+        'predict' settings with 'variables' and 'window' ones, and to move the
+        finaliser settings from 'model.decoder' to 'model.finaliser'. Learned skip
+        connection weights move from the decoder to the finaliser in the same way.
 
         Args:
             trusted: Whether the checkpoint comes from a trusted source. A checkpoint
@@ -404,8 +439,11 @@ class LegacyCheckpointFile:
             ckpt_state = self.checkpoint_file.load()
         renamed: set[str] = set()
         ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
+        moved_weights = isinstance(ckpt_state, dict) and self._move_finaliser_weights(
+            ckpt_state.get("state_dict", {})
+        )
 
-        if unsafe or renamed:
+        if unsafe or renamed or moved_weights:
 
             def write_upgraded_checkpoint(tmp_path: Path) -> None:
                 torch.save(ckpt_state, tmp_path)
@@ -421,7 +459,8 @@ class LegacyCheckpointFile:
         else:
             log.info("Checkpoint %s is already up to date.", checkpoint_path)
 
-        # Upgrade the config if it references the old package name or uses 'predict'
+        # Upgrade the config if it references the old package name, uses 'predict', or
+        # sets finaliser options on the decoder
         if not config_path.is_file():
             return self.checkpoint_file
         text = config_path.read_text()
@@ -443,7 +482,12 @@ class LegacyCheckpointFile:
                     "n_forecast_steps": predict.get("n_forecast_steps", 1),
                     "n_history_steps": predict.get("n_history_steps", 1),
                 }
-        if predict is not None or self._PACKAGE_PATTERN.search(text):
+        decoder = OmegaConf.select(config, "model.decoder") or {}
+        if moved := {
+            key: decoder.pop(key) for key in _FINALISER_KEYS if key in decoder
+        }:
+            config.model.finaliser = moved
+        if predict is not None or moved or self._PACKAGE_PATTERN.search(text):
             self._replace(config_path, lambda tmp_pth: OmegaConf.save(config, tmp_pth))
         else:
             log.info("Configuration %s is already up to date.", config_path)
