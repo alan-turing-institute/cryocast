@@ -44,12 +44,7 @@ class EMAWeightAveragingCallback(WeightAveraging):
             self._copy_excluded_buffers(pl_module)
 
     def _copy_excluded_buffers(self, pl_module: LightningModule) -> None:
-        """Copy buffers of modules that should not be averaged into the averaged model.
-
-        Modules with ``exclude_from_weight_averaging = True`` (e.g. LatentNormaliser)
-        hold statistics that must stay the same as in training, so they are copied
-        as they are instead of being averaged.
-        """
+        """Copy, not average, buffers of modules with exclude_from_weight_averaging."""
         if self._average_model is None:
             return
         averaged_modules = dict(self._average_model.module.named_modules())
