@@ -223,7 +223,12 @@ class DiffusionProcessor(BaseProcessor):
             return ProcessorOutput(prediction=self._sample_autoregressive(x))
         return ProcessorOutput(prediction=self._sample_parallel(x))
 
-    def _rollout_training(self, x: TensorNTCHW, y: TensorNTCHW) -> ProcessorOutput:
+    def _rollout_training(
+        self,
+        x: TensorNTCHW,
+        y: TensorNTCHW,
+        has_data: torch.Tensor | None = None,
+    ) -> ProcessorOutput:
         """One training rollout using DDPM v-prediction loss.
 
         During training, the clean future latent is corrupted using the forward
@@ -235,6 +240,10 @@ class DiffusionProcessor(BaseProcessor):
                 (B, n_history_steps, n_latent_channels_total, H, W).
             y (TensorNTCHW): Encoded future inputs of shape
                 (B, n_forecast_steps, n_latent_channels_total, H, W).
+            has_data (torch.Tensor | None): Optional bool tensor of shape
+                (B, n_forecast_steps, n_latent_channels_total), False where ``y`` was
+                encoded from a filled day of an optional input. These are left out
+                of the loss.
 
         Returns:
             ProcessorOutput:
@@ -283,10 +292,14 @@ class DiffusionProcessor(BaseProcessor):
         # We unfold to NTCHW in case the loss requires a time dimension
         # AR only predicts a single step so T=1; parallel predicts all steps
         n_steps = 1 if self.use_autoregressive else self.n_forecast_steps
-        loss = self.loss_fn(
-            pred_v.unflatten(1, (n_steps, self.c_combined)),
-            target_v.unflatten(1, (n_steps, self.c_combined)),
-        )
+        loss_pred_v = pred_v.unflatten(1, (n_steps, self.c_combined))
+        loss_target_v = target_v.unflatten(1, (n_steps, self.c_combined))
+        # Filled days of optional inputs have no real target, so set the prediction
+        # to the target there, which gives them no error and no gradient
+        if has_data is not None:
+            keep = has_data[:, :n_steps, :, None, None]
+            loss_pred_v = torch.where(keep, loss_pred_v, loss_target_v.detach())
+        loss = self.loss_fn(loss_pred_v, loss_target_v)
 
         # Reconstruct x0 for metrics only; this is not used for training.
         with torch.no_grad():
@@ -479,6 +492,8 @@ class DiffusionProcessor(BaseProcessor):
         self,
         x: TensorNTCHW,
         y: TensorNTCHW | None = None,
+        *,
+        has_data: torch.Tensor | None = None,
     ) -> ProcessorOutput:
         """Run the diffusion process in latent space.
 
@@ -500,6 +515,10 @@ class DiffusionProcessor(BaseProcessor):
             y (TensorNTCHW | None): During training: encoded forecast-step
                 inputs of shape (B, n_forecast_steps, n_latent_channels_total, H, W).
                 Otherwise: None.
+            has_data (torch.Tensor | None): Optional bool tensor of shape
+                (B, n_forecast_steps, n_latent_channels_total), False where ``y`` was
+                encoded from a filled day of an optional input. These are left out
+                of the training loss.
 
         Returns:
             ProcessorOutput:
@@ -509,7 +528,7 @@ class DiffusionProcessor(BaseProcessor):
 
         """
         if y is not None:
-            return self._rollout_training(x, y)
+            return self._rollout_training(x, y, has_data)
         return self._rollout_inference(x)
 
     def set_sampler(self, *, ddim_steps: int | None = None, eta: float = 1.0) -> None:
