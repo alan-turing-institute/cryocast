@@ -45,4 +45,8 @@ class ExponentialRelaxation(nn.Module):
                 f"state shape {tuple(x.shape)}."
             )
             raise ValueError(msg)
-        return torch.lerp(x, equilibrium, self.rate)
+        # torch.lerp needs the same dtype for both inputs. Under mixed precision, x can
+        # be bf16 and the equilibrium float32. Use the wider dtype: in bf16, a small
+        # step towards the equilibrium can round to no change.
+        dtype = torch.promote_types(x.dtype, equilibrium.dtype)
+        return torch.lerp(x.to(dtype), equilibrium.to(dtype), self.rate)

@@ -80,6 +80,28 @@ class TestExponentialRelaxationForward:
             state.grad, torch.full_like(state, 1.0 - relaxation.rate)
         )
 
+    @pytest.mark.parametrize(
+        ("state_dtype", "equilibrium_dtype"),
+        [
+            (torch.bfloat16, torch.float32),
+            (torch.float32, torch.bfloat16),
+        ],
+        ids=["bf16-state", "bf16-equilibrium"],
+    )
+    def test_mixed_dtypes_use_the_wider_dtype(
+        self,
+        state_dtype: torch.dtype,
+        equilibrium_dtype: torch.dtype,
+    ) -> None:
+        # Under bf16-mixed, the state can be bf16 and the climatology float32. A small
+        # step must not round to no change, so the result is float32.
+        state = torch.full((1, 1, 2, 2), 0.5, dtype=state_dtype)
+        equilibrium = torch.full((1, 1, 2, 2), 0.4, dtype=equilibrium_dtype)
+        relaxation = ExponentialRelaxation(tau=90.0)
+        relaxed = relaxation(state, equilibrium)
+        assert relaxed.dtype == torch.float32
+        assert torch.all(relaxed < state.float())
+
     def test_rejects_mismatched_equilibrium_shape(self, state: torch.Tensor) -> None:
         relaxation = ExponentialRelaxation(tau=30.0)
         with pytest.raises(ValueError, match="does not match state shape"):
