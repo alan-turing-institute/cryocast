@@ -56,11 +56,19 @@ class _OracleProcessor(BaseProcessor):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(computes_loss_in_latent_space=True, **kwargs)
         self.target: TensorNTCHW | None = None
+        self.has_data: torch.Tensor | None = None
 
-    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:
+    def rollout(
+        self,
+        x: TensorNTCHW,
+        y: TensorNTCHW | None = None,
+        *,
+        has_data: torch.Tensor | None = None,
+    ) -> ProcessorOutput:
         assert y is not None
         assert y.shape[2] == x.shape[2]
         self.target = y
+        self.has_data = has_data
         return ProcessorOutput(prediction=y.clone(), loss=torch.zeros(()))
 
 
@@ -413,15 +421,18 @@ class TestEncodeProcessDecode:
         with pytest.raises(ValueError, match="needs future inputs"):
             latent_loss_model.training_step(batch, 0)
 
-    def test_perfect_latent_forecast_decodes_to_target(
+    ORACLE_SHAPE = (8, 8)
+
+    @pytest.fixture
+    def oracle_model(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        """A perfect latent forecast decodes to the target."""
-        shape = (8, 8)
+    ) -> EncodeProcessDecode:
+        """Model with era5 (1 channel) and sic (2 channels) inputs and a perfect processor."""
+        shape = self.ORACLE_SHAPE
         era5 = DataSpace(channels=1, name="era5", shape=shape)
         sic = DataSpace(channels=2, name="sic", shape=shape)
         output_space = DataSpace(channels=1, name="sic", shape=shape)
-        model = EncodeProcessDecode(
+        return EncodeProcessDecode(
             name="oracle",
             encoders=[
                 _ScaledEncoder(data_space_in=era5, scale=1.0),
@@ -449,8 +460,12 @@ class TestEncodeProcessDecode:
             lr_scheduler=DictConfig({}),
             target_variable_indices=[1],
         )
+
+    def _oracle_batch(self) -> dict[str, torch.Tensor]:
+        """Batch of 2 samples with 2 history and 2 forecast steps for oracle_model."""
+        shape = self.ORACLE_SHAPE
         future_sic = torch.rand(2, 2, 2, *shape)
-        batch = {
+        return {
             "era5": torch.rand(2, 2, 1, *shape),
             "sic": torch.rand(2, 2, 2, *shape),
             "future_era5": torch.rand(2, 2, 1, *shape),
@@ -458,7 +473,12 @@ class TestEncodeProcessDecode:
             "target": future_sic[:, :, 1:2].clone(),
         }
 
-        result = model.training_step(batch, 0)
+    def test_perfect_latent_forecast_decodes_to_target(
+        self, oracle_model: EncodeProcessDecode
+    ) -> None:
+        """A perfect latent forecast decodes to the target."""
+        model = oracle_model
+        result = model.training_step(self._oracle_batch(), 0)
 
         mae = (result.prediction - result.target).abs().mean()
         assert mae.item() == pytest.approx(0.0, abs=1e-6)
@@ -469,6 +489,34 @@ class TestEncodeProcessDecode:
         assert processor.target is not None
         assert all(p.requires_grad for e in model.encoders for p in e.parameters())
         assert not processor.target.requires_grad
+
+    def test_filled_future_days_are_passed_per_latent_channel(
+        self, oracle_model: EncodeProcessDecode
+    ) -> None:
+        """Each input's has_data flags cover only that input's latent channels."""
+        batch = self._oracle_batch()
+        # era5 is filled on the second step of sample 0, sic has no flags
+        batch["future_era5_has_data"] = torch.tensor([[True, False], [True, True]])
+
+        oracle_model.training_step(batch, 0)
+
+        processor = oracle_model.processor
+        assert isinstance(processor, _OracleProcessor)
+        # Combined latent is [era5, sic_0, sic_1]
+        expected = torch.ones(2, 2, 3, dtype=torch.bool)
+        expected[0, 1, 0] = False
+        assert processor.has_data is not None
+        assert torch.equal(processor.has_data, expected)
+
+    def test_no_has_data_flags_pass_none(
+        self, oracle_model: EncodeProcessDecode
+    ) -> None:
+        """Without optional inputs, the processor gets no has_data mask."""
+        oracle_model.training_step(self._oracle_batch(), 0)
+
+        processor = oracle_model.processor
+        assert isinstance(processor, _OracleProcessor)
+        assert processor.has_data is None
 
     def test_checkpoint_loads_with_weights_only(
         self,

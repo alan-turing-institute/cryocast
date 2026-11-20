@@ -352,6 +352,19 @@ class TestVitProcessor:
         )
 
 
+class RecordingMSELoss(nn.Module):
+    """MSE loss that records the prediction and target it is called with."""
+
+    def __init__(self) -> None:
+        """Start with no recorded calls."""
+        super().__init__()
+        self.calls: list[tuple[torch.Tensor, torch.Tensor]] = []
+
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        self.calls.append((prediction.detach(), target.detach()))
+        return nn.functional.mse_loss(prediction, target)
+
+
 class TestDDPMProcessor:
     LATENT_CHW = (4, 16, 16)
 
@@ -515,6 +528,66 @@ class TestDDPMProcessor:
         assert result.loss is not None
         assert result.loss.ndim == 0
         assert torch.isfinite(result.loss)
+
+    @pytest.mark.parametrize(
+        "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
+    )
+    def test_training_leaves_filled_days_out_of_the_loss(
+        self, *, test_use_autoregressive: bool
+    ) -> None:
+        """Filled days give no error in the loss, and the other days are unchanged."""
+        batch_size, n_forecast_steps, n_channels = 2, 2, self.LATENT_CHW[0]
+        loss = RecordingMSELoss()
+        processor = self._make_processor(
+            n_forecast_steps=n_forecast_steps,
+            n_history_steps=1,
+            use_autoregressive=test_use_autoregressive,
+            loss=loss,
+        )
+        x = torch.randn(batch_size, 1, *self.LATENT_CHW)
+        y = torch.randn(batch_size, n_forecast_steps, *self.LATENT_CHW)
+        # Channels 0 and 1 are filled on the first step of sample 0 and on the second
+        # step of sample 1
+        has_data = torch.ones(
+            batch_size, n_forecast_steps, n_channels, dtype=torch.bool
+        )
+        has_data[0, 0, :2] = False
+        has_data[1, 1, :2] = False
+
+        result = processor.rollout(x, y, has_data=has_data)
+
+        ((prediction, target),) = loss.calls
+        # Autoregressive training only uses the first step
+        keep = has_data[:, : prediction.shape[1]]
+        assert torch.equal(prediction[~keep], target[~keep])
+        assert not torch.isclose(prediction[keep], target[keep]).any()
+        assert result.loss is not None
+        assert torch.isfinite(result.loss)
+
+    @pytest.mark.parametrize(
+        "test_use_autoregressive", [True, False], ids=["autoregressive", "direct"]
+    )
+    def test_training_with_all_days_present_matches_no_mask(
+        self, *, test_use_autoregressive: bool
+    ) -> None:
+        """A mask with data on every day gives the same loss as no mask."""
+        processor = self._make_processor(
+            n_forecast_steps=2,
+            n_history_steps=1,
+            use_autoregressive=test_use_autoregressive,
+        )
+        x = torch.randn(2, 1, *self.LATENT_CHW)
+        y = torch.randn(2, 2, *self.LATENT_CHW)
+        has_data = torch.ones(2, 2, self.LATENT_CHW[0], dtype=torch.bool)
+
+        torch.manual_seed(684)
+        masked = processor.rollout(x, y, has_data=has_data).loss
+        torch.manual_seed(684)
+        unmasked = processor.rollout(x, y).loss
+
+        assert masked is not None
+        assert unmasked is not None
+        torch.testing.assert_close(masked, unmasked)
 
     @pytest.mark.parametrize(
         ("test_use_autoregressive", "test_lead_time_exponent", "expect_warning"),

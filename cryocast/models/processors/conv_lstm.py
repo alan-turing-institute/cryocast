@@ -83,7 +83,13 @@ class ConvLSTMProcessor(BaseProcessor):
                 layer_input = self.dropout(layer_input)
         return next_states
 
-    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
+    def rollout(
+        self,
+        x: TensorNTCHW,
+        y: TensorNTCHW | None = None,  # noqa: ARG002
+        *,
+        has_data: Tensor | None = None,  # noqa: ARG002
+    ) -> ProcessorOutput:
         """Consume history and autoregressively forecast future latent frames."""
         # Initialise hidden states with zeros for every layer
         current: TensorNCHW = x[:, 0]

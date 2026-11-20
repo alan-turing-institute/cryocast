@@ -254,6 +254,44 @@ class EncodeProcessDecode(BaseModel):
         with torch.no_grad():
             return self._encode_inputs(future_inputs)
 
+    def _future_has_data(self, batch: dict[str, TensorNTCHW]) -> torch.Tensor | None:
+        """Return which latent channels have data on each forecast step.
+
+        Inputs with a fill value have a `future_<input>_has_data` entry in the batch.
+        Each one is expanded over the latent channels of that input's encoder, and
+        inputs without it always have data.
+
+        Args:
+            batch: Dictionary with an optional `future_<input>_has_data` bool tensor
+                of shape (batch, n_forecast_steps) per input dataset.
+
+        Returns:
+            Bool tensor of shape (batch_size, n_forecast_steps, n_latent_channels_total),
+            or None if no input has a fill value.
+
+        """
+        flags = {
+            encoder.name: batch.get(f"future_{encoder.name}_has_data")
+            for encoder in self.encoders
+        }
+        if all(flag is None for flag in flags.values()):
+            return None
+        batch_size = batch["target"].shape[0]
+        device = batch["target"].device
+        masks = []
+        for encoder in self.encoders:
+            flag = flags[encoder.name]
+            if flag is None:
+                flag = torch.ones(
+                    batch_size, self.n_forecast_steps, dtype=torch.bool, device=device
+                )
+            masks.append(
+                flag.bool()
+                .unsqueeze(-1)
+                .expand(-1, -1, encoder.data_space_out.channels)
+            )
+        return torch.cat(masks, dim=2)
+
     def _extract_anchor(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the last frame's target variables as the decoder skip-connection anchor.
 
@@ -463,7 +501,11 @@ class EncodeProcessDecode(BaseModel):
             future_latent = self._encode_future_inputs(batch)
 
             # Process in latent space
-            processor_output = self.processor.rollout(history_latent, future_latent)
+            processor_output = self.processor.rollout(
+                history_latent,
+                future_latent,
+                has_data=self._future_has_data(batch),
+            )
 
             # Get the loss from the processor output
             loss = processor_output.loss
