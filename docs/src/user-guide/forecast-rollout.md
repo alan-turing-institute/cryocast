@@ -204,3 +204,10 @@ A smaller chunk size uses less memory.
 !!! note
     `decode_chunk_size` cannot be used with a decoder that has batch normalisation (`norm_type: batchnorm`).
     The first rollout then raises a `ValueError`.
+
+A `ConvLSTMProcessor` also keeps its activations for each lead time.
+To recompute them in the backward pass in the same way, set `recompute_steps` in the processor config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.processor.recompute_steps=true
+```
