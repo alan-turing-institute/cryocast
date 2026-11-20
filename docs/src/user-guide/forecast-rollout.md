@@ -183,3 +183,24 @@ uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previ
     Do not omit the `+`. Without it, Hydra cannot add the key and stops with a `ConfigCompositionException`.
 
 To turn relaxation off, remove the `relaxation` key or set `tau` to `null`.
+
+## Memory use for long rollouts
+
+The decoder decodes all lead times together, at the full output resolution.
+For training, it keeps its activations for each lead time until the backward pass.
+Thus decoder memory increases linearly with `n_forecast_steps`, and a long rollout can use all GPU memory.
+
+To decrease decoder memory, set `decode_chunk_size` in the decoder config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.decoder.decode_chunk_size=10
+```
+
+The decoder then decodes this number of frames at a time.
+In training, it does not keep its activations. It runs each chunk again in the backward pass.
+The forecasts and gradients do not change, but each training step is slower.
+A smaller chunk size uses less memory.
+
+!!! note
+    `decode_chunk_size` cannot be used with a decoder that has batch normalisation (`norm_type: batchnorm`).
+    The first rollout then raises a `ValueError`.
