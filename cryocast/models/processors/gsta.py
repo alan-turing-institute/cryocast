@@ -17,7 +17,7 @@ numbers of input and output channels.
 import logging
 from typing import Any
 
-from torch import nn
+from torch import Tensor, nn
 
 from cryocast.models.common import GatedAttentionBlock
 from cryocast.types import ProcessorOutput, TensorNCHW, TensorNTCHW
@@ -93,7 +93,13 @@ class GSTAProcessor(BaseProcessor):
             )
         )
 
-    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
+    def rollout(
+        self,
+        x: TensorNTCHW,
+        y: TensorNTCHW | None = None,  # noqa: ARG002
+        *,
+        has_data: Tensor | None = None,  # noqa: ARG002
+    ) -> ProcessorOutput:
         """Rollout the processor over a window of history/forecast timesteps."""
         # Get the initial shape of the input tensor
         n, _, c, h, w = x.shape

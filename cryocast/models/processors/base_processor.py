@@ -1,7 +1,7 @@
 from collections import deque
 from collections.abc import Iterable
 
-from torch import cat, nn, stack
+from torch import Tensor, cat, nn, stack
 
 from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
 
@@ -56,7 +56,13 @@ class BaseProcessor(nn.Module):
         msg = "If you are using the default forward method, you must implement rollout."
         raise NotImplementedError(msg)
 
-    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
+    def rollout(
+        self,
+        x: TensorNTCHW,
+        y: TensorNTCHW | None = None,  # noqa: ARG002
+        *,
+        has_data: Tensor | None = None,  # noqa: ARG002
+    ) -> ProcessorOutput:
         """Process in latent space across multiple timesteps.
 
         The default implementation slides a window of the n_history_steps most recent
@@ -81,6 +87,9 @@ class BaseProcessor(nn.Module):
             y: Encoded future inputs TensorNTCHW with (batch_size, n_forecast_steps,
                 n_latent_channels_total, latent_height, latent_width). Note that this is
                 `None` except during training.
+            has_data: Optional bool tensor with (batch_size, n_forecast_steps,
+                n_latent_channels_total), False where `y` was encoded from a filled day
+                of an optional input. Processors with a latent loss can leave these out.
 
         Returns:
             ProcessorOutput with:
