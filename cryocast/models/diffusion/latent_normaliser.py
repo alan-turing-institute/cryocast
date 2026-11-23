@@ -9,8 +9,6 @@ class LatentNormaliser(nn.Module):
     batches, before the first optimiser step (see ``EncodeProcessDecode.on_fit_start``).
     After that they are fixed. They are stored as buffers, so a trained model is
     sampled with the same values it was trained with.
-
-    As they are fixed during training, EMA weight averaging leaves them unchanged.
     """
 
     running_mean: torch.Tensor
