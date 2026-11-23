@@ -114,7 +114,7 @@ class DiffusionProcessor(BaseProcessor):
                 one-step training. Default is True.
             normalise_latents (bool): Whether to diffuse latents normalised to zero
                 mean and unit variance per channel, using statistics averaged over
-                the first training batches. The history and target are both
+                `n_batches` training batches. The history and target are both
                 normalised, and predictions are returned in the original units.
                 Default is False.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
