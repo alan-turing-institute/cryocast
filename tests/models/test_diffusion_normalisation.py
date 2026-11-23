@@ -196,7 +196,7 @@ class TestDiffusionProcessorNormalisation:
     @pytest.mark.parametrize(
         "use_autoregressive", [True, False], ids=["autoregressive", "parallel"]
     )
-    def test_training_diffuses_normalisedmake_latents(
+    def test_training_diffuses_normalised_latents(
         self,
         make_latents: Callable[..., torch.Tensor],
         per_channel_stats: Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]],
