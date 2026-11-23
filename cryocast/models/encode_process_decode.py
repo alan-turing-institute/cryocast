@@ -419,6 +419,38 @@ class EncodeProcessDecode(BaseModel):
         return self._forward_rollout_latent(inputs)
 
     @override
+    def on_fit_start(self) -> None:
+        """Measure the latent statistics, if needed, before the first optimiser step.
+
+        The processor then trains with fixed statistics from the start, and EMA
+        weight averaging only ever sees these fixed values.
+        """
+        super().on_fit_start()
+        normaliser = getattr(self.processor, "latent_normaliser", None)
+        datamodule = getattr(self.trainer, "datamodule", None)
+        if normaliser is None or normaliser.is_fitted or datamodule is None:
+            return
+        log.info("Measuring latent statistics over %d batches.", normaliser.n_batches)
+        # Use the same modes as training, e.g. frozen encoders stay in eval mode
+        was_training = self.training
+        self.train()
+        dataloader = datamodule.train_dataloader()
+        with torch.no_grad(), self.trainer.precision_plugin.forward_context():
+            # Start the dataloader again if it has fewer than n_batches batches
+            while not normaliser.is_fitted and len(dataloader) > 0:
+                for batch in dataloader:
+                    processed = self.process_batch(
+                        self._apply_batch_transfer_handler(batch)
+                    )
+                    normaliser.update(
+                        self._encode_inputs(processed),
+                        self._encode_future_inputs(processed),
+                    )
+                    if normaliser.is_fitted:
+                        break
+        self.train(was_training)
+
+    @override
     def train(self, mode: bool = True) -> "EncodeProcessDecode":
         """Set training mode, with decoder frozen if computing loss in latent space."""
         super().train(mode)

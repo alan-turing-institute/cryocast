@@ -5,18 +5,13 @@ from torch import nn
 class LatentNormaliser(nn.Module):
     """Normalise latents to zero mean and unit variance per channel.
 
-    The per-channel mean and variance are measured over the first ``n_batches``
-    training batches. After that they are fixed, as they are outside training. They
-    are stored as buffers, so a trained model is sampled with the same values it was
-    trained with.
+    The per-channel mean and variance are measured over ``n_batches`` training
+    batches, before the first optimiser step (see ``EncodeProcessDecode.on_fit_start``).
+    After that they are fixed. They are stored as buffers, so a trained model is
+    sampled with the same values it was trained with.
 
-    EMA weight averaging copies these buffers instead of averaging them (see
-    ``exclude_from_weight_averaging``), so the averaged model always uses the same
-    statistics as training.
+    As they are fixed during training, EMA weight averaging leaves them unchanged.
     """
-
-    # Tells EMAWeightAveragingCallback to copy these buffers instead of averaging them
-    exclude_from_weight_averaging = True
 
     running_mean: torch.Tensor
     running_var: torch.Tensor
@@ -42,7 +37,13 @@ class LatentNormaliser(nn.Module):
         self.eps = eps
         self.register_buffer("running_mean", torch.zeros(channels))
         self.register_buffer("running_var", torch.ones(channels))
-        self.register_buffer("num_batches_tracked", torch.tensor(0, dtype=torch.long))
+        # A float, since EMA averaging can round a constant integer down by one
+        self.register_buffer("num_batches_tracked", torch.tensor(0.0))
+
+    @property
+    def is_fitted(self) -> bool:
+        """Whether the statistics have been measured over ``n_batches`` batches."""
+        return bool(self.num_batches_tracked >= self.n_batches)
 
     @torch.no_grad()
     def update(self, *latents: torch.Tensor) -> None:
@@ -50,7 +51,7 @@ class LatentNormaliser(nn.Module):
 
         Does nothing outside training, or once ``n_batches`` batches have been seen.
         """
-        if not self.training or self.num_batches_tracked >= self.n_batches:
+        if not self.training or self.is_fitted:
             return
         values = torch.cat(
             [latent.detach().transpose(0, 2).flatten(1) for latent in latents], dim=1

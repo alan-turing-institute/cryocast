@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 import pytest
 import torch
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
 from cryocast.models.diffusion import LatentNormaliser
 
@@ -107,6 +108,31 @@ class TestLatentNormaliser:
         torch.testing.assert_close(
             restored.normalise(latent), normaliser.normalise(latent)
         )
+
+    def test_is_fitted_after_n_batches(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
+        normaliser = LatentNormaliser(CHANNELS, n_batches=2)
+        normaliser.update(make_latents())
+        assert not normaliser.is_fitted
+        normaliser.update(make_latents(seed=1))
+        assert normaliser.is_fitted
+
+    def test_ema_averaging_keeps_fitted_statistics(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
+        # With an integer counter, a decay of 0.9 rounds 3 down to 2
+        normaliser = LatentNormaliser(CHANNELS, n_batches=3)
+        for seed in range(3):
+            normaliser.update(make_latents(seed=seed))
+        averaged = AveragedModel(
+            normaliser, multi_avg_fn=get_ema_multi_avg_fn(0.9), use_buffers=True
+        )
+        for _ in range(5):
+            averaged.update_parameters(normaliser)
+        for name, value in averaged.module.state_dict().items():
+            assert torch.equal(value, normaliser.state_dict()[name])
+        assert averaged.module.is_fitted
 
     @pytest.mark.parametrize("n_batches", [0, -1])
     def test_invalid_n_batches_raises(self, n_batches: int) -> None:
