@@ -428,8 +428,11 @@ class EncodeProcessDecode(BaseModel):
         super().on_fit_start()
         normaliser = getattr(self.processor, "latent_normaliser", None)
         datamodule = getattr(self.trainer, "datamodule", None)
-        if normaliser is None or normaliser.is_fitted or datamodule is None:
+        if normaliser is None or normaliser.is_fitted:
             return
+        if datamodule is None:
+            msg = "Measuring the latent statistics needs a datamodule."
+            raise RuntimeError(msg)
         log.info("Measuring latent statistics over %d batches.", normaliser.n_batches)
         # Use the same modes as training, e.g. frozen encoders stay in eval mode
         was_training = self.training

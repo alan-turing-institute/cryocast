@@ -35,6 +35,14 @@ def _processor(
     )
 
 
+def _fit_statistics(processor: DiffusionProcessor, *latents: torch.Tensor) -> None:
+    """Measure the latent statistics of a processor on one batch."""
+    normaliser = processor.latent_normaliser
+    assert normaliser is not None
+    normaliser.n_batches = 1
+    normaliser.update(*latents)
+
+
 def _model(cfg_input_space: DictConfig) -> EncodeProcessDecode:
     """Return a small encode-process-decode model with a normalised diffusion processor."""
     return EncodeProcessDecode(
@@ -178,6 +186,23 @@ class TestLatentStatisticsFittedBeforeTraining:
 
         assert (normaliser.running_mean == 7.0).all()
 
+    def test_fitting_without_datamodule_raises(
+        self, cfg_input_space: DictConfig, tmp_path: Path
+    ) -> None:
+        model = _model(cfg_input_space)
+        trainer = Trainer(
+            accelerator="cpu",
+            default_root_dir=tmp_path,
+            enable_checkpointing=False,
+            enable_model_summary=False,
+            enable_progress_bar=False,
+            limit_val_batches=0,
+            logger=False,
+            max_steps=1,
+        )
+        with pytest.raises(RuntimeError, match="needs a datamodule"):
+            trainer.fit(model, _DataModule(cfg_input_space).train_dataloader())
+
 
 class TestDiffusionProcessorNormalisation:
     def test_disabled_by_default(self) -> None:
@@ -227,6 +252,7 @@ class TestDiffusionProcessorNormalisation:
         monkeypatch.setattr(processor.diffusion, "q_sample", record_clean)
         monkeypatch.setattr(processor.model, "forward", record_condition)
         x, y = make_latents(seed=1), make_latents(seed=2)
+        _fit_statistics(processor, x, y)
 
         output = processor.rollout(x, y)
 
@@ -240,11 +266,19 @@ class TestDiffusionProcessorNormalisation:
         assert output.loss is not None
         assert torch.isfinite(output.loss)
 
+    def test_training_without_fitted_statistics_raises(
+        self, make_latents: Callable[..., torch.Tensor]
+    ) -> None:
+        processor = _processor(normalise_latents=True)
+        with pytest.raises(RuntimeError, match="must be measured before training"):
+            processor.rollout(make_latents(seed=1), make_latents(seed=2))
+
     def test_metrics_prediction_is_in_original_units(
         self, make_latents: Callable[..., torch.Tensor]
     ) -> None:
         processor = _processor(normalise_latents=True)
         x, y = make_latents(seed=1), make_latents(seed=2)
+        _fit_statistics(processor, x, y)
         prediction = processor.rollout(x, y).prediction
         # Untrained predictions are noisy, but must be on the scale of the latents
         assert prediction[:, :, 0].mean() > 2.0
@@ -263,7 +297,7 @@ class TestDiffusionProcessorNormalisation:
         processor = _processor(
             normalise_latents=True, use_autoregressive=use_autoregressive
         )
-        processor.rollout(make_latents(seed=1), make_latents(seed=2))
+        _fit_statistics(processor, make_latents(seed=1), make_latents(seed=2))
         processor.eval()
         histories: list[torch.Tensor] = []
 
@@ -287,7 +321,7 @@ class TestDiffusionProcessorNormalisation:
         self, make_latents: Callable[..., torch.Tensor]
     ) -> None:
         trained = _processor(normalise_latents=True)
-        trained.rollout(make_latents(seed=1), make_latents(seed=2))
+        _fit_statistics(trained, make_latents(seed=1), make_latents(seed=2))
         restored = _processor(normalise_latents=True)
         restored.load_state_dict(trained.state_dict())
         assert restored.latent_normaliser is not None

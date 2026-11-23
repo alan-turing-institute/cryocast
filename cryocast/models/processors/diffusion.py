@@ -286,8 +286,12 @@ class DiffusionProcessor(BaseProcessor):
         device = x.device
 
         # Normalise the history and target with the latent statistics
-        if self.latent_normaliser is not None:
-            self.latent_normaliser.update(x, y)
+        if self.latent_normaliser is not None and not self.latent_normaliser.is_fitted:
+            msg = (
+                "The latent statistics must be measured before training "
+                "(see EncodeProcessDecode.on_fit_start)."
+            )
+            raise RuntimeError(msg)
         x, y = self._normalise(x), self._normalise(y)
 
         # History frames folded into channels for the 2D UNet.
