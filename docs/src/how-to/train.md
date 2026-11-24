@@ -4,6 +4,11 @@ This guide walks through an end-to-end training run: getting data, creating a lo
 Single-stage training trains the full model end-to-end in one pass.
 It is the default and works for all model architectures.
 
+Some processors calculate their loss in latent space, for example `DiffusionProcessor`.
+Single-stage training needs `loss_weights.reconstruction` or `loss_weights.prediction` (or both) above `0`.
+With the defaults, it raises a `ValueError`.
+See [Loss in latent space](./add-a-processor.md#loss-in-latent-space).
+
 ## Prerequisites
 
 Make sure CryoCast is [installed](../user-guide/installation.md) before continuing.
