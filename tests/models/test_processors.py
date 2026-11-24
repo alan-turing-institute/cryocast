@@ -740,6 +740,7 @@ class TestDDIMProcessor:
         use_autoregressive: bool,
         ddim_steps: int | None = None,
         eta: float = 0.0,
+        prediction_loss_cutoff: float = 0.5,
         timesteps: int | None = None,
     ) -> DiffusionProcessor:
         combined = DataSpace(
@@ -752,6 +753,7 @@ class TestDDIMProcessor:
             timesteps=timesteps if timesteps is not None else self.TIMESTEPS,
             ddim_steps=ddim_steps if ddim_steps is not None else self.DDIM_STEPS,
             eta=eta,
+            prediction_loss_cutoff=prediction_loss_cutoff,
             start_out_channels=8,
             time_embed_dim=256,
             dropout_rate=0.0,
@@ -939,6 +941,27 @@ class TestDDIMProcessor:
                 n_history_steps=test_n_history_steps,
                 use_autoregressive=test_use_autoregressive,
                 eta=-0.1,
+            )
+
+    @pytest.mark.parametrize("test_cutoff", [0.0, 1.1], ids=lambda c: f"cutoff{c}")
+    def test_rejects_prediction_loss_cutoff_out_of_range(
+        self,
+        test_batch_size: int,  # noqa: ARG002
+        test_latent_chw: tuple[int, int, int],
+        test_n_forecast_steps: int,
+        test_n_history_steps: int,
+        test_use_autoregressive: bool,  # noqa: FBT001
+        test_cutoff: float,
+    ) -> None:
+        with pytest.raises(
+            ValueError, match=r"prediction_loss_cutoff=.+ must be in the range"
+        ):
+            self._make_processor(
+                latent_chw=test_latent_chw,
+                n_forecast_steps=test_n_forecast_steps,
+                n_history_steps=test_n_history_steps,
+                use_autoregressive=test_use_autoregressive,
+                prediction_loss_cutoff=test_cutoff,
             )
 
     def test_eta_zero_sampling_is_deterministic(

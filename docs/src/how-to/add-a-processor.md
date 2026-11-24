@@ -137,7 +137,7 @@ The prediction can also have fewer forecast steps than `n_forecast_steps`.
 For example, an autoregressive diffusion processor predicts only the first forecast step.
 The processor can also set `sample_mask` on the `ProcessorOutput`.
 This is a boolean mask with one value for each sample.
-For `DiffusionProcessor`, it is `True` for the samples whose diffusion timestep is below `0.5` of `timesteps`.
+For `DiffusionProcessor`, it is `True` for the samples whose diffusion timestep is below `prediction_loss_cutoff` (default `0.5`) of `timesteps`.
 
 If the weight `loss_weights.prediction` is greater than `0` (default `0`), the model does these steps:
 

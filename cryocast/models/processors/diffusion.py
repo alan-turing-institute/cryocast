@@ -42,7 +42,7 @@ live in the same space as the encoded history.
 """
 
 import logging
-from typing import Any, ClassVar
+from typing import Any
 
 import torch
 from omegaconf import DictConfig
@@ -74,8 +74,6 @@ class DiffusionProcessor(BaseProcessor):
         - Every channel contains the denoised prediction from reverse diffusion
     """
 
-    prediction_loss_cutoff: ClassVar[float] = 0.5  # earlier timesteps are too noisy
-
     def __init__(  # noqa: PLR0913
         self,
         *,
@@ -87,6 +85,7 @@ class DiffusionProcessor(BaseProcessor):
         kernel_size: int = 3,
         loss: DictConfig | nn.Module,
         normalization: str = "groupnorm",
+        prediction_loss_cutoff: float = 0.5,
         start_out_channels: int = 64,
         time_embed_dim: int = 256,
         timesteps: int = 1000,
@@ -112,6 +111,9 @@ class DiffusionProcessor(BaseProcessor):
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
             normalization (str): Normalization layer type (e.g., "groupnorm").
+            prediction_loss_cutoff (float): Fraction of ``timesteps``, in the range
+                ``(0, 1]``, below which a training sample is used for the prediction
+                loss. Above this we assume the x_0 estimate is mostly noise.
             start_out_channels (int): Base number of channels in the first UNet block.
             time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
             timesteps (int): Number of diffusion timesteps. Default is 1000.
@@ -134,6 +136,14 @@ class DiffusionProcessor(BaseProcessor):
 
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+
+        if not 0.0 < prediction_loss_cutoff <= 1.0:
+            msg = (
+                f"prediction_loss_cutoff={prediction_loss_cutoff} must be in "
+                "the range (0.0, 1.0]."
+            )
+            raise ValueError(msg)
+        self.prediction_loss_cutoff = prediction_loss_cutoff
 
         # Autoregressive training only optimises one forecast step at a time
         if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
