@@ -836,20 +836,38 @@ class TestModelService:
 
         assert calls_before_fit == [call(include=expected)]
 
-    def test_train_standard_mode_rejects_model_requiring_multistage(self) -> None:
+    def test_train_single_stage_encode_process_decode(self) -> None:
         service = ModelService.__new__(ModelService)
-        service.model_ = MagicMock()
-        service.model_.multistage_only = True
+        service.model_ = MagicMock(spec=EncodeProcessDecode)
+        service.model_.decoder = MagicMock(frozen=False)
+        service.config_ = DictConfig({"train": "train_config"})
+        service.checkpoint_file = None
 
-        with pytest.raises(ValueError, match="multistage"):
+        with pytest.MonkeyPatch.context() as mp:
+            mock_fit = MagicMock()
+            mp.setattr(service, "_fit", mock_fit)
             service.train()
 
-    def test_train_standard_mode_allows_model_not_requiring_multistage(
-        self,
-    ) -> None:
+        mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
+
+    def test_train_single_stage_rejects_frozen_decoder(self) -> None:
+        service = ModelService.__new__(ModelService)
+        service.model_ = MagicMock(spec=EncodeProcessDecode)
+        service.model_.decoder = MagicMock(frozen=True)
+        service.config_ = DictConfig({"train": "train_config"})
+        service.checkpoint_file = None
+
+        with pytest.MonkeyPatch.context() as mp:
+            mock_fit = MagicMock()
+            mp.setattr(service, "_fit", mock_fit)
+            with pytest.raises(ValueError, match="decoder is frozen"):
+                service.train()
+
+        mock_fit.assert_not_called()
+
+    def test_train_single_stage(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock()
-        service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -934,7 +952,6 @@ class TestModelService:
         """Resume training from the checkpoint that the model was loaded from."""
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock()
-        service.model_.multistage_only = False
         service.config_ = DictConfig({"train": "train_config"})
         path = tmp_path / "last.ckpt"
         path.write_text("checkpoint")
@@ -1340,8 +1357,11 @@ class TestModelService:
                 train_cfg=DictConfig({}), processor_model=pretrained
             )
 
+        # The auxiliary losses are off by default, so both losses are the latent loss
+        finetune_loss = loss(model)
+
         assert torch.isfinite(expected)
-        torch.testing.assert_close(loss(model), expected, rtol=0, atol=0)
+        torch.testing.assert_close(finetune_loss, expected, rtol=0, atol=0)
 
     def test_train_stage_processor_trains_new_processor(self, tmp_path: Path) -> None:
         service = ModelService.__new__(ModelService)

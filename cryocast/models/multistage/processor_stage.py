@@ -3,7 +3,6 @@ import logging
 from typing import Any, ClassVar
 
 from omegaconf import DictConfig
-from typing_extensions import override
 
 from cryocast.models import EncodeProcessDecode
 from cryocast.types import RolloutSpace
@@ -76,13 +75,3 @@ class ProcessorStage(EncodeProcessDecode):
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )
-
-    @override
-    def train(self, mode: bool = True) -> "ProcessorStage":
-        """Set training mode, but keep frozen modules in eval mode."""
-        super().train(mode)
-        if mode:
-            for encoder in self.encoders:
-                encoder.eval()
-            self.decoder.eval()
-        return self

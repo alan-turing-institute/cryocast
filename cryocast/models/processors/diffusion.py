@@ -50,7 +50,12 @@ from torch import nn
 
 from cryocast.losses import LeadTimeWeightedLoss, build_loss
 from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
-from cryocast.types import BetaSchedule, ProcessorOutput, TensorNCHW, TensorNTCHW
+from cryocast.types import (
+    BetaSchedule,
+    ProcessorOutput,
+    TensorNCHW,
+    TensorNTCHW,
+)
 
 from .base_processor import BaseProcessor
 
@@ -72,44 +77,48 @@ class DiffusionProcessor(BaseProcessor):
     def __init__(  # noqa: PLR0913
         self,
         *,
-        timesteps: int = 1000,
-        ddim_steps: int | None = None,
-        eta: float = 1.0,
+        activation: str = "SiLU",
         beta_schedule: str = "cosine",
+        ddim_steps: int | None = None,
+        dropout_rate: float = 0.1,
+        eta: float = 1.0,
         kernel_size: int = 3,
+        loss: DictConfig | nn.Module,
+        normalization: str = "groupnorm",
+        prediction_loss_cutoff: float = 0.5,
         start_out_channels: int = 64,
         time_embed_dim: int = 256,
-        dropout_rate: float = 0.1,
-        normalization: str = "groupnorm",
-        activation: str = "SiLU",
+        timesteps: int = 1000,
         use_autoregressive: bool = True,
-        loss: DictConfig | nn.Module,
         **kwargs: Any,
     ) -> None:
         """Initialize the diffusion processor.
 
         Args:
-            timesteps (int): Number of diffusion timesteps. Default is 1000.
+            activation (str): Activation function used throughout the network (e.g., "SiLU").
+            beta_schedule (str): Beta schedule used by ``GaussianDiffusion``:
+                ``"cosine"`` or ``"linear"``. Default is ``"cosine"``.
             ddim_steps (int | None): Number of timesteps visited when sampling.
                 Must satisfy ``1 <= ddim_steps <= timesteps``. ``None`` means
                 ``timesteps`` (visit every trained timestep). Default is None.
+            dropout_rate (float): Dropout probability applied inside the UNet blocks.
             eta (float): Sampling stochasticity in ``[0, 1]``. ``eta=0`` gives
                 deterministic DDIM sampling; ``eta=1`` matches DDPM's per-step
                 noise. With ``ddim_steps == timesteps`` and ``eta=1`` the
                 processor uses ancestral DDPM sampling. Default is 1.0.
-            beta_schedule (str): Beta schedule used by ``GaussianDiffusion``:
-                ``"cosine"`` or ``"linear"``. Default is ``"cosine"``.
             kernel_size (int): Convolution kernel size used in the conditional UNet.
-            start_out_channels (int): Base number of channels in the first UNet block.
-            time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
-            dropout_rate (float): Dropout probability applied inside the UNet blocks.
-            normalization (str): Normalization layer type (e.g., "groupnorm").
-            activation (str): Activation function used throughout the network (e.g., "SiLU").
-            use_autoregressive (bool): Whether to use autoregressive sampling and
-                one-step training. Default is True.
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
+            normalization (str): Normalization layer type (e.g., "groupnorm").
+            prediction_loss_cutoff (float): Fraction of ``timesteps``, in the range
+                ``(0, 1]``, below which a training sample is used for the prediction
+                loss. Above this we assume the x_0 estimate is mostly noise.
+            start_out_channels (int): Base number of channels in the first UNet block.
+            time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
+            timesteps (int): Number of diffusion timesteps. Default is 1000.
+            use_autoregressive (bool): Whether to use autoregressive sampling and
+                one-step training. Default is True.
             **kwargs: Additional arguments passed to ``BaseProcessor``.
 
         """
@@ -127,6 +136,14 @@ class DiffusionProcessor(BaseProcessor):
 
         self.timesteps = timesteps
         self.use_autoregressive = use_autoregressive
+
+        if not 0.0 < prediction_loss_cutoff <= 1.0:
+            msg = (
+                f"prediction_loss_cutoff={prediction_loss_cutoff} must be in "
+                "the range (0.0, 1.0]."
+            )
+            raise ValueError(msg)
+        self.prediction_loss_cutoff = prediction_loss_cutoff
 
         # Autoregressive training only optimises one forecast step at a time
         if use_autoregressive and isinstance(self.loss_fn, LeadTimeWeightedLoss):
@@ -164,31 +181,6 @@ class DiffusionProcessor(BaseProcessor):
             timesteps=timesteps,
             beta_schedule=BetaSchedule(beta_schedule),
         )
-
-    def _build_metrics_prediction(self, pred_x0: TensorNCHW) -> TensorNTCHW:
-        """Unfold the training-time x_0 estimate into an NTCHW combined-latent tensor.
-
-        The returned tensor is only used for metrics/callbacks (the actual
-        training signal is the v-prediction loss).
-
-        Args:
-            pred_x0 (TensorNCHW): Predicted x_0 of shape (B, C_combined, H, W)
-                in autoregressive mode, or (B, n_forecast_steps * C_combined, H, W)
-                in parallel mode.
-
-        Returns:
-            TensorNTCHW: Combined-latent tensor of shape
-                (B, n_forecast_steps, C_combined, H, W).
-
-        """
-        b, _, h, w = pred_x0.shape
-        # In autoregressive mode, we duplicate predicted x_0 across all forecast steps
-        if self.use_autoregressive:
-            return pred_x0.unsqueeze(1).expand(
-                b, self.n_forecast_steps, self.c_combined, h, w
-            )
-        # In parallel mode, the predicted x_0 is folded into channels for all forecast steps.
-        return pred_x0.reshape(b, self.n_forecast_steps, self.c_combined, h, w)
 
     def _rollout_inference(self, x: TensorNTCHW) -> ProcessorOutput:
         """Generate a latent forecast using a reverse diffusion process.
@@ -238,10 +230,12 @@ class DiffusionProcessor(BaseProcessor):
 
         Returns:
             ProcessorOutput:
-            - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W)
-                Combined-latent tensor built from the predicted x_0. Used
-                only for metrics/callbacks under ``torch.no_grad``.
+            - prediction: (B, T, n_latent_channels_total, H, W) predicted x_0,
+                with gradients back to the network, with T=1 in autoregressive
+                mode and T=n_forecast_steps in parallel mode.
             - loss: v-prediction loss value computed by ``self.loss_fn``.
+            - sample_mask: (B,) True where ``t`` is below ``self.prediction_loss_cutoff
+                * timesteps``.
 
         Notes:
             - In autoregressive mode, the model is trained on forecast step 0
@@ -288,16 +282,17 @@ class DiffusionProcessor(BaseProcessor):
             target_v.unflatten(1, (n_steps, self.c_combined)),
         )
 
-        # Reconstruct x0 for metrics only; this is not used for training.
-        with torch.no_grad():
-            # calculate_v() has the same formula as the x_0 reconstruction,
-            # so we reuse it by passing pred_v as x_start.
-            pred_x0: TensorNCHW = self.diffusion.calculate_v(
-                x_start=pred_v, noise=noisy_y, t=t
-            )
-            prediction = self._build_metrics_prediction(pred_x0)
+        # Reconstruct x_0 from pred_v. calculate_v() has the same formula as the x_0
+        # reconstruction, so we reuse it by passing pred_v as x_start.
+        pred_x0: TensorNTCHW = self.diffusion.calculate_v(
+            x_start=pred_v, noise=noisy_y, t=t
+        ).unflatten(1, (n_steps, self.c_combined))
 
-        return ProcessorOutput(prediction=prediction, loss=loss)
+        return ProcessorOutput(
+            prediction=pred_x0,
+            loss=loss,
+            sample_mask=t < self.prediction_loss_cutoff * self.timesteps,
+        )
 
     def _run_ddim_reverse_diffusion(
         self, y: TensorNCHW, cond: TensorNCHW
@@ -429,7 +424,6 @@ class DiffusionProcessor(BaseProcessor):
 
             # Iteratively denoise from the final diffusion timestep to zero.
             y = self._run_reverse_diffusion(y, cond)
-
             all_predictions.append(y)
 
             # Slide the history window forward: drop the oldest frame and
@@ -462,10 +456,8 @@ class DiffusionProcessor(BaseProcessor):
 
         """
         cond = x.flatten(start_dim=1, end_dim=2)
-
         b, _, h, w = cond.shape
         device = cond.device
-
         y = torch.randn(
             (b, self.n_forecast_steps * self.c_combined, h, w), device=device
         )
@@ -503,8 +495,12 @@ class DiffusionProcessor(BaseProcessor):
 
         Returns:
             ProcessorOutput:
-            - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W)
+            - prediction: (B, n_forecast_steps, n_latent_channels_total, H, W) at
+                inference. During training, the predicted x_0 with gradients,
+                with only one forecast step in autoregressive mode.
             - loss: v-prediction loss from ``self.loss_fn`` (training only,
+                otherwise None)
+            - sample_mask: samples for the prediction loss (training only,
                 otherwise None)
 
         """
