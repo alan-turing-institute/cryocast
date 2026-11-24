@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ from cryocast.models.common import (
     ConvBlockUpsample,
     ConvLSTMCell,
     ConvNormActUpsample,
+    Freezable,
     LiteMLA,
     Mask,
     NormalisedFold,
@@ -68,6 +70,58 @@ class TestConvBlockUpsample:
         x = torch.zeros(1, in_channels, height, width)
         y = layer(x)
         assert y.shape == (1, in_channels // 2, height * 2, width * 2)
+
+
+class _FreezableBlock(Freezable):
+    """Freezable module with a child module, to test that train() reaches children."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(2, 2)
+        self.dropout = torch.nn.Dropout(0.5)
+
+
+class TestFreezable:
+    def test_not_frozen_by_default(self) -> None:
+        block = _FreezableBlock()
+        assert not block.frozen
+        assert block.training
+        assert all(p.requires_grad for p in block.parameters())
+
+    def test_freeze(self) -> None:
+        block = _FreezableBlock()
+        assert block.freeze() is block
+        assert block.frozen
+        assert not any(p.requires_grad for p in block.parameters())
+        assert not any(m.training for m in block.modules())
+
+    def test_frozen_module_stays_in_eval_mode(self) -> None:
+        block = _FreezableBlock().freeze()
+        assert block.train() is block
+        assert not any(m.training for m in block.modules())
+
+    def test_frozen_child_stays_in_eval_mode_when_parent_trains(self) -> None:
+        parent = torch.nn.ModuleDict(
+            {"frozen": _FreezableBlock().freeze(), "trainable": _FreezableBlock()}
+        )
+        parent.eval()
+        parent.train()
+        assert parent.training
+        assert not any(m.training for m in parent["frozen"].modules())
+        assert all(m.training for m in parent["trainable"].modules())
+
+    def test_unfrozen_module_switches_mode(self) -> None:
+        block = _FreezableBlock()
+        block.eval()
+        assert not any(m.training for m in block.modules())
+        block.train()
+        assert all(m.training for m in block.modules())
+
+    def test_frozen_survives_deepcopy(self) -> None:
+        block = copy.deepcopy(_FreezableBlock().freeze())
+        block.train()
+        assert block.frozen
+        assert not block.training
 
 
 class TestConvLSTMCell:
