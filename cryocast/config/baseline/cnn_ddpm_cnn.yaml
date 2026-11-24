@@ -36,6 +36,7 @@ train:
   optimizer:
     lr: 2.5e-4
     weight_decay: 5.0e-3
-  # Note: this baseline cannot be run in single-stage mode
+  # Fits a single-stage 24h JASMIN A100 job with forecast-14-history-3, batch_size 1, bf16 (263 min/epoch)
   trainer:
+    max_epochs: 4
     precision: bf16-mixed

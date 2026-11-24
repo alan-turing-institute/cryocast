@@ -59,21 +59,15 @@ class BaseProcessor(nn.Module):
     def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
         """Process in latent space across multiple timesteps.
 
-        The default implementation slides a window of the n_history_steps most recent
-        timesteps along, concatenating them along the channel dimension and calling
-        `self.forward` once per forecast step to predict the next timestep, which is
-        then appended to the window (dropping the oldest timestep) so that every
-        prediction is conditioned on all of the currently-available history rather
-        than a single timestep. This matches issue #272: earlier versions called
-        `self.forward` on one history/forecast timestep at a time, which meant each
-        forecast day only ever saw a single timestep of context and, once
-        n_forecast_steps > n_history_steps, replayed stale original history timesteps
-        in a fixed cycle instead of the most recently produced information.
+        The default implementation keeps a window of the n_history_steps most recent
+        timesteps. For each forecast step, it calls `self.step` on the window, then adds
+        the prediction to the window and removes the oldest timestep.
 
-        Override this method to handle the NTCHW tensors directly or to compute a custom
-        loss using the target tensor `y` (e.g. for diffusion models). Set `loss` on the
-        returned `ProcessorOutput` to supply a custom training loss; the caller will use
-        it directly and skip its own loss computation.
+        Override this method to use the NTCHW tensors directly. A processor with
+        `computes_loss_in_latent_space=True` also overrides it to calculate its loss
+        against `y` during training. During training, the `prediction` of such a
+        processor might have gradients, and it might have fewer forecast steps (for
+        example, for an autoregressive diffusion processor).
 
         Args:
             x: Encoded input TensorNTCHW with (batch_size, n_history_steps,
@@ -85,7 +79,9 @@ class BaseProcessor(nn.Module):
         Returns:
             ProcessorOutput with:
                 prediction: TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
-                loss: an optional processor-specific loss
+                loss: the latent loss (training only, if `computes_loss_in_latent_space`)
+                sample_mask: optional (batch_size,) mask of the samples to use in the
+                    prediction loss. None means all samples.
 
         """
         # The current window of n_history_steps timesteps, oldest to newest

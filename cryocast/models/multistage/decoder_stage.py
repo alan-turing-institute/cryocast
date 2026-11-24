@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import hydra
 import torch
 from omegaconf import DictConfig
-from typing_extensions import override
 
 from cryocast.losses import LeadTimeWeightedLoss
 from cryocast.models import BaseModel
@@ -155,12 +154,3 @@ class DecoderStage(BaseModel):
                 :, -2, self.target_variable_indices, :, :
             ].unsqueeze(1),
         }
-
-    @override
-    def train(self, mode: bool = True) -> "DecoderStage":
-        """Set training mode, but keep the frozen encoders in eval mode."""
-        super().train(mode)
-        if mode:
-            for encoder in self.encoders:
-                encoder.eval()
-        return self
