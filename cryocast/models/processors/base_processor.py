@@ -2,7 +2,9 @@ from collections import deque
 from collections.abc import Iterable
 
 from torch import cat, nn, stack
+from torch.utils.checkpoint import checkpoint
 
+from cryocast.models.common.normalisations import verify_no_batchnorm
 from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 
@@ -23,6 +25,7 @@ class BaseProcessor(nn.Module):
         data_space: DataSpace,
         n_forecast_steps: int,
         n_history_steps: int,
+        recompute_steps: bool = False,
     ) -> None:
         """Initialise a BaseProcessor.
 
@@ -32,6 +35,10 @@ class BaseProcessor(nn.Module):
             data_space: The latent data space.
             n_forecast_steps: The number of forecast steps.
             n_history_steps: The number of history steps.
+            recompute_steps: If True, the rollout keeps only the input of each
+                forecast step, and runs the step again in the backward pass. This
+                decreases memory use for long rollouts, but makes training slower.
+                Only the default `rollout()` and `ConvLSTMProcessor` use this option.
 
         """
         super().__init__()
@@ -39,6 +46,7 @@ class BaseProcessor(nn.Module):
         self.data_space = data_space
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
+        self.recompute_steps = recompute_steps
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
         """Forward step: predict the next timestep from a window of history/forecast timesteps.
@@ -61,7 +69,8 @@ class BaseProcessor(nn.Module):
 
         The default implementation keeps a window of the n_history_steps most recent
         timesteps. For each forecast step, it calls `self.step` on the window, then adds
-        the prediction to the window and removes the oldest timestep.
+        the prediction to the window and removes the oldest timestep. If
+        `recompute_steps` is set, it checkpoints each step.
 
         Override this method to use the NTCHW tensors directly. A processor with
         `computes_loss_in_latent_space=True` also overrides it to calculate its loss
@@ -83,7 +92,14 @@ class BaseProcessor(nn.Module):
                 sample_mask: optional (batch_size,) mask of the samples to use in the
                     prediction loss. None means all samples.
 
+        Raises:
+            ValueError: If `recompute_steps` is set and the processor has batch
+                normalisation layers.
+
         """
+        if self.recompute_steps:
+            verify_no_batchnorm(self, "recompute_steps")
+
         # The current window of n_history_steps timesteps, oldest to newest
         window: deque[TensorNCHW] = deque(x.unbind(dim=1))
 
@@ -91,7 +107,11 @@ class BaseProcessor(nn.Module):
         # window and then dropping the oldest timestep to make room for the prediction.
         outputs: list[TensorNCHW] = []
         for _ in range(self.n_forecast_steps):
-            next_step = self.step(window)
+            next_step = (
+                checkpoint(self.step, tuple(window), use_reentrant=False)
+                if self.recompute_steps
+                else self.step(window)
+            )
             outputs.append(next_step)
             window.popleft()
             window.append(next_step)

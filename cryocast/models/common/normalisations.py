@@ -14,6 +14,25 @@ class ChannelNorm2D(nn.Module):
         return self.norm(x.movedim(c_dim, -1)).movedim(-1, c_dim)
 
 
+def verify_no_batchnorm(module: nn.Module, option: str) -> None:
+    """Raise a ValueError if the module has batch normalisation.
+
+    Activation checkpointing runs the forward pass again in the backward pass. This
+    would update the running statistics of batch normalisation layers a second time.
+
+    Args:
+        module: The module to check, with its submodules.
+        option: The name of the checkpointing option, for the error message.
+
+    """
+    if any(isinstance(m, nn.modules.batchnorm._BatchNorm) for m in module.modules()):
+        msg = (
+            f"{option} cannot be used with batch normalisation in "
+            f"{type(module).__name__}. Use a different norm_type, for example groupnorm."
+        )
+        raise ValueError(msg)
+
+
 def normalisation_from_name(norm_type: str, out_channels: int) -> nn.Module:
     """Create a normalization layer based on the specified type."""
     # Batch normalisation

@@ -28,7 +28,6 @@ class ConvLSTMProcessor(BaseProcessor):
         n_layers: int = 2,
         dropout: float = 0.0,
         residual: bool = True,
-        recompute_steps: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialise a ConvLSTM processor.
@@ -39,10 +38,9 @@ class ConvLSTMProcessor(BaseProcessor):
             n_layers: Number of stacked ConvLSTM layers.
             dropout: Dropout between ConvLSTM layers.
             residual: If True, each prediction is a change from the previous frame.
-            recompute_steps: If True, keep only the input and state of each cell, and
-                run the cell again in the backward pass. This decreases memory use
-                for long rollouts, but makes training slower.
-            **kwargs: Forwarded to `BaseProcessor`.
+            **kwargs: Forwarded to `BaseProcessor`. If `recompute_steps` is True, each
+                cell keeps only its input and state, and runs again in the backward
+                pass.
 
         """
         super().__init__(**kwargs)
@@ -57,7 +55,6 @@ class ConvLSTMProcessor(BaseProcessor):
             raise ValueError(msg)
 
         self.hidden_channels = hidden_channels
-        self.recompute_steps = recompute_steps
         self.residual = residual
         self.cells = nn.ModuleList(
             [

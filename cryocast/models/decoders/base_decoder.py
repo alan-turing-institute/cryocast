@@ -1,8 +1,8 @@
 import torch
-from torch import nn
 from torch.utils.checkpoint import checkpoint
 
 from cryocast.models.common import Freezable
+from cryocast.models.common.normalisations import verify_no_batchnorm
 from cryocast.types import DataSpace, TensorNCHW, TensorNTCHW
 
 
@@ -74,8 +74,8 @@ class BaseDecoder(Freezable):
         Note that this also increases the effective batch size for any batch
         normalisation layers in the decoder.
 
-        If `decode_chunk_size` is set, the frames are decoded in checkpointed
-        chunks of this size.
+        If `decode_chunk_size` is set, it decodes checkpointed chunks of this number
+        of frames.
 
         Args:
             x: TensorNTCHW with (batch_size, n_timeslices, n_latent_channels_total,
@@ -94,16 +94,7 @@ class BaseDecoder(Freezable):
         if self.decode_chunk_size is None:
             decoded = self(frames)
         else:
-            # The backward pass runs each chunk again, which would update the running
-            # statistics of batch normalisation layers a second time
-            if any(
-                isinstance(m, nn.modules.batchnorm._BatchNorm) for m in self.modules()
-            ):
-                msg = (
-                    "decode_chunk_size cannot be used with batch normalisation in "
-                    "the decoder. Use a different norm_type, for example groupnorm."
-                )
-                raise ValueError(msg)
+            verify_no_batchnorm(self, "decode_chunk_size")
             decoded = torch.cat(
                 [
                     checkpoint(self, chunk, use_reentrant=False)

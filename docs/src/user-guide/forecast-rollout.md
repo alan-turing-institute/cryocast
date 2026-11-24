@@ -193,9 +193,17 @@ A smaller chunk size uses less memory.
     `decode_chunk_size` cannot be used with a decoder that has batch normalisation (`norm_type: batchnorm`).
     The first rollout then raises a `ValueError`.
 
-A `ConvLSTMProcessor` also keeps its activations for each lead time.
+A processor that predicts one lead time at a time also keeps its activations for each lead time.
+This applies to `UNetProcessor`, `VitProcessor`, `NullProcessor` and `ConvLSTMProcessor`.
 To recompute them in the backward pass in the same way, set `recompute_steps` in the processor config:
 
 ```bash
 uv run cryocast train --config-name <your-config>.local +model.processor.recompute_steps=true
 ```
+
+`GSTAProcessor` and the diffusion processors ignore `recompute_steps`.
+
+!!! note
+    `recompute_steps` cannot be used with a processor that has batch normalisation (`norm_type: batchnorm`).
+    The first rollout then raises a `ValueError`.
+    The `UNetProcessor` default is `batchnorm`, but the `UNetProcessor` model configs set `norm_type: groupnorm`.
