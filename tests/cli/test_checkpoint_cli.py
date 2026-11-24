@@ -16,9 +16,9 @@ class TestCheckpointCLI:
             expected_patterns=[
                 r"Usage: cryocast checkpoint upgrade \[OPTIONS\] {checkpoints}...",
                 r"Upgrade checkpoints saved by older versions of the code.",
-                r"checkpoints\s+<path>\s+One or more checkpoint files to upgrade",
-                r"--trust\s+Trust the checkpoints to run arbitrary code.",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"checkpoints\.\.\.\s+<list\[Path\]>\s+One or more checkpoint files to upgrade",
+                r"--trust\s+<bool>\s+Trust the checkpoints to run arbitrary code.",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 

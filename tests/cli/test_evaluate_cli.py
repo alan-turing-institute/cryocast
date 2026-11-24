@@ -25,12 +25,12 @@ class TestEvaluateCLI:
             expected_patterns=[
                 r"Usage: cryocast evaluate \[OPTIONS\] \[overrides\]...",
                 r"Evaluate a pre-trained model",
-                r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
+                r"overrides\.\.\.\s+<list\[str\]>\s+One or more space-separated Hydra config overrides",
                 r"--checkpoint\s+<str>\s+Path of a trained model checkpoint",
                 r"--config-name\s+<str>\s+Name of a file to load from the config",
-                r"--help\s+-h\s+Show this message and exit.",
-                r"--save-layer\s+<str>\s+Dotted path of a model submodule to hook",
-                r"--save-predictions\s+Write predictions for the configured",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
+                r"--save-layer\s+<list\[str\]>\s+Dotted path of a model submodule to hook",
+                r"--save-predictions\s+<bool>\s+Write predictions for the configured",
             ],
         )
 
