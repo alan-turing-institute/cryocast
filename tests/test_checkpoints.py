@@ -604,28 +604,40 @@ class TestUpgrade:
         assert checkpoint_file._load_config() is not None
 
     def test_moves_skip_connection_weights_from_decoder(self, tmp_path: Path) -> None:
-        """Rename learned skip connection weights from the decoder to the finaliser."""
+        """Rename skip connection weights and clear the optimizer state that uses them.
+
+        The optimizer state refers to parameters by their order, which this changes.
+        """
         path = tmp_path / "checkpoints" / "last.ckpt"
         path.parent.mkdir()
         weight, other = torch.ones(2), torch.zeros(2)
+        param_groups = [{"lr": 1e-3, "params": [0, 1]}]
         torch.save(
             {
                 "state_dict": {
                     "decoder.conv.weight": other,
                     "decoder.skip_connection.fusion.weight": weight,
-                }
+                },
+                "optimizer_states": [
+                    {"state": {0: {"exp_avg": other}}, "param_groups": param_groups}
+                ],
             },
             path,
         )
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade()
 
-        upgraded = CheckpointFile(path).load()["state_dict"]
-        assert upgraded.keys() == {
+        upgraded = CheckpointFile(path).load()
+        assert upgraded["state_dict"].keys() == {
             "decoder.conv.weight",
             "finaliser.skip_connection.fusion.weight",
         }
-        assert torch.equal(upgraded["finaliser.skip_connection.fusion.weight"], weight)
+        assert torch.equal(
+            upgraded["state_dict"]["finaliser.skip_connection.fusion.weight"], weight
+        )
+        assert upgraded["optimizer_states"] == [
+            {"state": {}, "param_groups": param_groups}
+        ]
 
     def test_upgrades_several_checkpoints_from_one_run(self, tmp_path: Path) -> None:
         """Upgrade every checkpoint in a run, with its model config upgraded once."""

@@ -353,16 +353,25 @@ class LegacyCheckpointFile:
         return value
 
     @staticmethod
-    def _move_finaliser_weights(state_dict: dict[str, Any]) -> bool:
+    def _move_finaliser_weights(ckpt_state: dict[str, Any]) -> bool:
         """Move learned skip connection weights from the decoder to the finaliser.
+
+        This changes the parameter order, which the optimizer state uses to identify
+        parameters, so the per-parameter optimizer state is cleared. The parameter
+        groups are kept so that training can resume.
 
         Returns:
             Whether any weights were moved.
 
         """
+        state_dict = ckpt_state.get("state_dict", {})
         keys = [key for key in state_dict if key.startswith("decoder.skip_connection.")]
         for key in keys:
             state_dict[key.replace("decoder.", "finaliser.", 1)] = state_dict.pop(key)
+        if keys and (optimizer_states := ckpt_state.get("optimizer_states")):
+            for optimizer_state in optimizer_states:
+                optimizer_state["state"] = {}
+            log.warning("Reset the optimizer state, as the parameter order changed.")
         return bool(keys)
 
     @staticmethod
@@ -386,7 +395,7 @@ class LegacyCheckpointFile:
         shutil.move(tmp_path, path)
         log.info("Upgraded %s, keeping the original at %s.", path, backup_path)
 
-    def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901
+    def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901, PLR0912
         """Upgrade the checkpoint and its config to the current format.
 
         The checkpoint is rewritten to reference ``cryocast`` classes and to contain
@@ -439,9 +448,10 @@ class LegacyCheckpointFile:
             ckpt_state = self.checkpoint_file.load()
         renamed: set[str] = set()
         ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
-        moved_weights = isinstance(ckpt_state, dict) and self._move_finaliser_weights(
-            ckpt_state.get("state_dict", {})
-        )
+        if not isinstance(ckpt_state, dict):
+            msg = f"{checkpoint_path} is not a Lightning checkpoint."
+            raise CheckpointUpgradeError(msg)
+        moved_weights = self._move_finaliser_weights(ckpt_state)
 
         if unsafe or renamed or moved_weights:
 
