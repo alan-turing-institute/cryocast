@@ -28,11 +28,11 @@ class TestTrainCLI:
             expected_patterns=[
                 r"Usage: cryocast train \[OPTIONS\] \[overrides\]...",
                 r"Train a model",
-                r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
+                r"overrides\.\.\.\s+<list\[str\]>\s+One or more space-separated Hydra config overrides",
                 r"--checkpoint-dir\s+<path>\s+Path to a directory of existing",
                 r"--config-name\s+<str>\s+Name of a file to load from the config",
-                r"--help\s+-h\s+Show this message and exit.",
-                r"--multistage\s+Train an EncodeProcessDecode model in",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
+                r"--multistage\s+<bool>\s+Train an EncodeProcessDecode model in",
             ],
         )
 

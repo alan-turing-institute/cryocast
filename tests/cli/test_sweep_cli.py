@@ -88,7 +88,7 @@ class TestSweepCLI:
             expected_patterns=[
                 r"Usage: cryocast sweep \[OPTIONS\] COMMAND \[ARGS\]...",
                 r"Generate W&B sweeps with Optuna-sampled hyperparameters",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
                 r"initialise\s+Initialise a W&B sweep with Optuna-sampled",
                 r"summarise\s+Summarise the best parameters found in a",
                 r"trial\s+Run a single trial from a W&B sweep.",
@@ -104,10 +104,10 @@ class TestSweepInitialiseCLI:
             expected_patterns=[
                 r"Usage: cryocast sweep initialise \[OPTIONS\] \[overrides\]...",
                 r"Initialise a W&B sweep with Optuna-sampled hyperparameters.",
-                r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
+                r"overrides\.\.\.\s+<list\[str\]>\s+One or more space-separated Hydra config overrides",
                 r"--sweep-yaml\s+<path>\s+Full path to a sweep search-space YAML",
                 r"--config-name\s+<str>\s+Name of a file to load from the config",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 
@@ -209,7 +209,7 @@ class TestSweepSummariseCLI:
                 r"Usage: cryocast sweep summarise \[OPTIONS\]",
                 r"Summarise the best parameters found in a W&B sweep.",
                 r"--sweep-path\s+<path>\s+Full path to a local sweep directory",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 
@@ -343,8 +343,8 @@ class TestSweepTrialCLI:
                 r"Run a single trial from a W&B sweep.",
                 r"--sweep-path\s+<path>\s+Full path to a local sweep directory",
                 r"--checkpoint-dir\s+<path>\s+Path to a directory of existing",
-                r"--multistage\s+Train an EncodeProcessDecode model in",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--multistage\s+<bool>\s+Train an EncodeProcessDecode model in",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 

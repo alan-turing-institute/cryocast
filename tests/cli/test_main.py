@@ -11,9 +11,9 @@ class TestBaseCLI:
     expected_patterns_help = (
         r"Usage: cryocast \[OPTIONS\] COMMAND \[ARGS\]...",
         r"Entrypoint for CryoCast CLI application.",
-        r"--install-completion\s+Install completion for the current shell.",
-        r"--show-completion\s+Show completion for the current shell",
-        r"--help\s+-h\s+Show this message and exit.",
+        r"--install-completion\s+<bool>\s+Install completion for the current shell.",
+        r"--show-completion\s+<bool>\s+Show completion for the current shell",
+        r"--help\s+-h\s+<bool>\s+Show this message and exit.",
         r"checkpoint\s+Manage model checkpoints",
         r"datasets\s+Manage datasets",
         r"evaluate\s+Evaluate a pre-trained model",
