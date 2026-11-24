@@ -69,7 +69,7 @@ dev = [
 ]
 docs = [
     "mkdocstrings-python==2.0.10",
-    "zensical==0.1.0",
+    "zensical==0.1.1",
 ]
 notebooks = [
     "cartopy==0.26.0",
