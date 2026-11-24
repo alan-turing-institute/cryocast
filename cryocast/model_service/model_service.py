@@ -519,12 +519,19 @@ class ModelService:
         """Train a model in a single stage.
 
         If this ModelService was loaded from a checkpoint, training resumes from it.
+
+        Raises:
+            ValueError: If the model has a frozen decoder, which single-stage training
+                cannot train.
+
         """
-        if self.model.multistage_only:
+        if isinstance(self.model, EncodeProcessDecode) and self.model.decoder.frozen:
             msg = (
-                "This model cannot be trained in standard mode. The most likely "
-                "cause is that the decoder must be pretrained before processor "
-                "training. Use `cryocast train --multistage` instead."
+                "The decoder is frozen, so single-stage training cannot train it. "
+                "This happens if the processor computes its loss in latent space and "
+                "loss_weights.reconstruction and loss_weights.prediction are both 0. "
+                "Either set one of these weights to a value greater than 0, or train "
+                "with `--multistage`."
             )
             raise ValueError(msg)
         if self.checkpoint_file:

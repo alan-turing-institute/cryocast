@@ -32,10 +32,11 @@ train:
       scheduler:
         T_max: 4
       trainer:
-        max_epochs: 4  # ~148 min/epoch, estimated
+        max_epochs: 4
   optimizer:
     lr: 5.0e-4
     weight_decay: 1.0e-4
-  # Note: this baseline cannot be run in single-stage mode
+  # Fits a single-stage 24h JASMIN A100 job with forecast-14-history-3, batch_size 1, bf16 (137 min/epoch)
   trainer:
+    max_epochs: 9
     precision: bf16-mixed
