@@ -43,7 +43,7 @@ class EncodeProcessDecode(BaseModel):
         "processor",
     }
     # Relaxation has no weights, so a trained model can use a different relaxation
-    checkpoint_overrides: ClassVar[frozenset[str]] = frozenset({"relaxation"})
+    checkpoint_overrides: ClassVar[frozenset[str]] = frozenset({"relaxation_tau"})
 
     def __init__(  # noqa: PLR0913
         self,
@@ -57,7 +57,7 @@ class EncodeProcessDecode(BaseModel):
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
         skip_anchor: SkipAnchorType | str | None = None,
-        relaxation: Mapping[str, Any] | None = None,
+        relaxation_tau: float | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise an EncodeProcessDecode model.
@@ -81,10 +81,10 @@ class EncodeProcessDecode(BaseModel):
             skip_anchor: Whether to use the last, real observed frame or the most recent
                 forecast step as the skip connection anchor. If None, use the default
                 for the rollout space: INITIAL for latent and PREVIOUS for physical.
-            relaxation: Options to relax each forecast step towards climatology, or
-                None for no relaxation. The only configurable is `tau`, the folding time
-                in forecast steps. Relaxation needs a PREVIOUS skip anchor and a
-                `climatology` entry in each batch.
+            relaxation_tau: The folding time, in forecast steps, of the relaxation of
+                each forecast step towards climatology, or None for no relaxation.
+                Relaxation needs a PREVIOUS skip anchor and a `climatology` entry in
+                each batch.
             **kwargs: forwarded to ``BaseModel``.
 
         """
@@ -184,7 +184,7 @@ class EncodeProcessDecode(BaseModel):
         # Resolve the rollout strategy. This validates the options and uses the default
         # anchor for the space if it is unset.
         self.rollout_strategy = RolloutStrategy.from_options(
-            rollout_space, skip_anchor, relaxation
+            rollout_space, skip_anchor, relaxation_tau
         )
 
         # Check that the rollout strategy is compatible with the other components
@@ -223,8 +223,11 @@ class EncodeProcessDecode(BaseModel):
                 self.rollout_strategy.anchor.value,
             )
 
-        tau = self.rollout_strategy.relaxation_tau
-        self.relaxation = None if tau is None else ExponentialRelaxation(tau=tau)
+        self.relaxation = (
+            None
+            if relaxation_tau is None
+            else ExponentialRelaxation(tau=relaxation_tau)
+        )
 
         # Choose how to calculate the training loss
         self.objective: TrainingObjective = build_training_objective(self, loss_weights)

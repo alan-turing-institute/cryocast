@@ -62,7 +62,7 @@ def _build_model(
     *,
     rollout_space: str | None = None,
     skip_anchor: str | None = None,
-    relaxation: dict[str, Any] | None = None,
+    relaxation_tau: float | None = None,
     decoder_extra: dict[str, Any] | None = None,
     finaliser: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
@@ -129,7 +129,7 @@ def _build_model(
         **rollout_kwargs,
         mask_dir=mask_dir,
         skip_anchor=skip_anchor,
-        relaxation=relaxation,
+        relaxation_tau=relaxation_tau,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
@@ -400,14 +400,14 @@ class TestNoFutureLeak:
     """
 
     @pytest.mark.parametrize(
-        "relaxation",
-        [None, {"tau": 2.0}],
+        "relaxation_tau",
+        [None, 2.0],
         ids=["no-relaxation", "relaxation"],
     )
-    def test_target_key_is_never_read(self, relaxation: dict[str, Any] | None) -> None:
+    def test_target_key_is_never_read(self, relaxation_tau: float | None) -> None:
         model = _build_model(
             rollout_space="physical",
-            relaxation=relaxation,
+            relaxation_tau=relaxation_tau,
             finaliser=ADDITIVE_SKIP_FINALISER,
         )
         model.eval()
@@ -456,21 +456,21 @@ class TestNoFutureLeak:
             assert torch.equal(model(with_future(1.0)), baseline)
 
     @pytest.mark.parametrize(
-        ("relaxation", "reads_climatology"),
-        [(None, False), ({"tau": 2.0}, True)],
+        ("relaxation_tau", "reads_climatology"),
+        [(None, False), (2.0, True)],
         ids=["no-relaxation", "relaxation"],
     )
     @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
     def test_climatology_is_read_only_with_relaxation(
         self,
         rollout_space: str,
-        relaxation: dict[str, Any] | None,
+        relaxation_tau: float | None,
         reads_climatology: bool,  # noqa: FBT001
     ) -> None:
         model = _build_model(
             rollout_space=rollout_space,
             skip_anchor="previous",
-            relaxation=relaxation,
+            relaxation_tau=relaxation_tau,
             finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _zero_decoder_output(model)
@@ -499,12 +499,12 @@ class TestConfigValidation:
             _build_model(
                 rollout_space="latent",
                 skip_anchor="previous",
-                relaxation={"tau": 30.0},
+                relaxation_tau=30.0,
             )
 
     def test_physical_relaxation_accepts_no_skip_connection(self) -> None:
         """A physical rollout re-encodes each relaxed step, so no skip is needed."""
-        model = _build_model(rollout_space="physical", relaxation={"tau": 30.0})
+        model = _build_model(rollout_space="physical", relaxation_tau=30.0)
         assert model.relaxation is not None
 
     def test_physical_rollout_requires_target_as_input(self) -> None:
@@ -787,7 +787,7 @@ class TestClimatologyRelaxation:
     @staticmethod
     def _model(
         rollout_space: str,
-        relaxation: dict[str, Any] | None,
+        relaxation_tau: float | None,
         *,
         zero_tendency: bool = True,
         **kwargs: Any,
@@ -796,7 +796,7 @@ class TestClimatologyRelaxation:
         model = _build_model(
             rollout_space=rollout_space,
             skip_anchor="previous",
-            relaxation=relaxation,
+            relaxation_tau=relaxation_tau,
             **kwargs,
         )
         if zero_tendency:
@@ -812,7 +812,7 @@ class TestClimatologyRelaxation:
     def test_zero_tendency_is_damped_anomaly_persistence(
         self, rollout_space: str
     ) -> None:
-        model = self._model(rollout_space, {"tau": 2.0})
+        model = self._model(rollout_space, 2.0)
         assert model.relaxation is not None
         model.eval()
         inputs = _inputs(model)
@@ -840,7 +840,7 @@ class TestClimatologyRelaxation:
             np.save(tmp_path / f"{mask_type}_mask.npy", mask)
         model = self._model(
             rollout_space,
-            {"tau": 1.0},
+            1.0,
             finaliser={**ADDITIVE_SKIP_FINALISER, "mask_type": "active"},
             mask_dir=str(tmp_path),
         )
@@ -854,7 +854,7 @@ class TestClimatologyRelaxation:
     @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
     def test_output_stays_in_range(self, rollout_space: str) -> None:
         model = self._model(
-            rollout_space, {"tau": 1.0}, zero_tendency=False, processor=VIT_PROCESSOR
+            rollout_space, 1.0, zero_tendency=False, processor=VIT_PROCESSOR
         )
         model.eval()
         inputs = _inputs(model)
@@ -864,7 +864,7 @@ class TestClimatologyRelaxation:
         assert float(prediction.max()) <= 1.0
 
     def test_missing_climatology_raises(self) -> None:
-        model = self._model("physical", {"tau": 2.0})
+        model = self._model("physical", 2.0)
         model.eval()
         with (
             torch.no_grad(),
@@ -874,7 +874,7 @@ class TestClimatologyRelaxation:
 
     @pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
     def test_relaxes_in_train_and_eval(self, training: bool) -> None:  # noqa: FBT001
-        model = self._model("physical", {"tau": 2.0})
+        model = self._model("physical", 2.0)
         model.train(training)
         inputs = _inputs(model)
         persistence = inputs[TARGET_GROUP][:, -1:].expand(

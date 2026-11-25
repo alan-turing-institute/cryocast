@@ -318,7 +318,7 @@ class TestModelService:
     def test_from_checkpoint_passes_configured_relaxation(
         self, cfg_model_service: DictConfig, tmp_path: Path
     ) -> None:
-        """Pass the configured relaxation to the model as plain types."""
+        """Pass the configured relaxation to the model, not the checkpoint value."""
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True)
         path = checkpoint_dir / "last.ckpt"
@@ -330,11 +330,13 @@ class TestModelService:
         OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
 
         config = cfg_model_service.copy()
-        config["model"]["relaxation"] = {"tau": 30.0}
+        config["model"]["relaxation_tau"] = 30.0
         load_kwargs: dict[str, Any] = {}
 
         class RelaxedFakeModel(FakeModel):
-            checkpoint_overrides: ClassVar[frozenset[str]] = frozenset({"relaxation"})
+            checkpoint_overrides: ClassVar[frozenset[str]] = frozenset(
+                {"relaxation_tau"}
+            )
 
             @classmethod
             def load_from_checkpoint(  # type: ignore[override]
@@ -358,8 +360,7 @@ class TestModelService:
             )
             ModelService.from_checkpoint(config, checkpoint_file)
 
-        assert load_kwargs["relaxation"] == {"tau": 30.0}
-        assert type(load_kwargs["relaxation"]) is dict
+        assert load_kwargs["relaxation_tau"] == pytest.approx(30.0)
 
     def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
         self,

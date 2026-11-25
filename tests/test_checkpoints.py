@@ -440,10 +440,10 @@ class TestMergeConfig:
     @pytest.mark.parametrize(
         ("ckpt_model", "configured_model", "expected"),
         [
-            ({}, {"relaxation": {"tau": 30}}, {"tau": 30}),
-            ({"relaxation": {"tau": 30}}, {"relaxation": {"tau": 60}}, {"tau": 60}),
-            ({"relaxation": {"tau": 30}}, {"relaxation": None}, None),
-            ({"relaxation": {"tau": 30}}, {}, {"tau": 30}),
+            ({}, {"relaxation_tau": 30}, 30),
+            ({"relaxation_tau": 30}, {"relaxation_tau": 60}, 60),
+            ({"relaxation_tau": 30}, {"relaxation_tau": None}, None),
+            ({"relaxation_tau": 30}, {}, 30),
         ],
         ids=["add", "change-tau", "turn-off", "unset-keeps-checkpoint"],
     )
@@ -453,7 +453,7 @@ class TestMergeConfig:
         caplog: pytest.LogCaptureFixture,
         ckpt_model: dict[str, Any],
         configured_model: dict[str, Any],
-        expected: dict[str, Any] | None,
+        expected: float | None,
     ) -> None:
         """The configured relaxation replaces the checkpoint relaxation."""
         ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", **ckpt_model}})
@@ -466,11 +466,7 @@ class TestMergeConfig:
         ):
             combined = checkpoint_file.merge_config(config)
 
-        relaxation = OmegaConf.select(combined, "model.relaxation")
-        if expected is None:
-            assert relaxation is None
-        else:
-            assert OmegaConf.to_container(relaxation) == expected
+        assert OmegaConf.select(combined, "model.relaxation_tau") == expected
         assert not caplog.records
 
     def test_relaxation_from_checkpoint_for_a_different_model(
@@ -478,13 +474,13 @@ class TestMergeConfig:
     ) -> None:
         """A different configured model does not change the checkpoint relaxation."""
         ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc"}})
-        config = DictConfig({"model": {"name": "quick-test", "relaxation": {"tau": 3}}})
+        config = DictConfig({"model": {"name": "quick-test", "relaxation_tau": 3}})
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)
 
         combined = checkpoint_file.merge_config(config)
 
-        assert "relaxation" not in combined["model"]
+        assert "relaxation_tau" not in combined["model"]
 
     @pytest.mark.parametrize(
         ("ckpt_model", "expected"),

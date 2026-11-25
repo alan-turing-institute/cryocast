@@ -20,7 +20,7 @@ def rollout_strategy(model: DictConfig) -> RolloutStrategy:
     return RolloutStrategy.from_options(
         model.get("rollout_space", RolloutSpace.LATENT),
         model.get("skip_anchor"),
-        model.get("relaxation"),
+        model.get("relaxation_tau"),
     )
 
 
@@ -35,6 +35,6 @@ class TestModelConfigs:
         strategy = rollout_strategy(model)
 
         assert "skip_anchor" not in model
-        assert "relaxation" not in model
+        assert "relaxation_tau" not in model
         assert strategy.anchor == RolloutStrategy.default_anchor(strategy.space)
         assert strategy.relaxation_tau is None

@@ -293,33 +293,14 @@ class RolloutStrategy:
         cls,
         space: RolloutSpace | str = RolloutSpace.LATENT,
         anchor: SkipAnchorType | str | None = None,
-        relaxation: Mapping[str, Any] | None = None,
+        relaxation_tau: float | None = None,
     ) -> Self:
-        """Create a RolloutStrategy, using the default anchor for the space if unset.
-
-        Args:
-            space: Where the forecast loop runs.
-            anchor: The skip connection anchor, or None for the default for the space.
-            relaxation: Relaxation options, or None. The only key is `tau`. Relaxation
-                is off if the options are None or empty, or if `tau` is None.
-
-        Raises:
-            ValueError: If `relaxation` has a key other than `tau`.
-
-        """
-        options = dict(relaxation or {})
-        tau = options.pop("tau", None)
-        if options:
-            msg = (
-                f"Unknown relaxation options: {sorted(options)}. The only supported "
-                f"option is 'tau'."
-            )
-            raise ValueError(msg)
+        """Create a RolloutStrategy, using the default anchor for the space if unset."""
         space = RolloutSpace(space)
         return cls(
             space=space,
             anchor=SkipAnchorType(anchor) if anchor else cls.default_anchor(space),
-            relaxation_tau=tau,
+            relaxation_tau=relaxation_tau,
         )
 
     @staticmethod

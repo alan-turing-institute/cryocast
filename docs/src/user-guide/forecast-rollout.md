@@ -8,10 +8,10 @@ Three options in the model config control the rollout:
 |--------|--------|---------|--------|
 | `rollout_space` | `latent`, `physical` | `latent` | Where the forecast loop runs |
 | `skip_anchor` | `initial`, `previous` | `initial` for `latent`, `previous` for `physical` | The frame that the skip connection adds to each lead time |
-| `relaxation` | a mapping with `tau` | off | Relax each lead time towards climatology |
+| `relaxation_tau` | a positive number of lead times, or `null` | `null` (off) | Relax each lead time towards climatology |
 
 All three options are top-level keys of the model config, next to `encoders`, `processor`, `decoder` and `finaliser`.
-If you do not set `skip_anchor` and `relaxation`, the model uses the defaults in the table.
+If you do not set `skip_anchor` and `relaxation_tau`, the model uses the defaults in the table.
 Checkpoints that do not record these options use the same defaults.
 
 ## Rollout space
@@ -133,14 +133,13 @@ A large `tau` gives a weak pull, and the effect is small at short lead times.
 ### Relaxation for a trained model
 
 Relaxation has no weights, so you can add it to a trained model, change `tau`, or turn it off when you load a checkpoint.
-The `model.relaxation` value in the current config replaces the value in the checkpoint:
+The `model.relaxation_tau` value in the current config replaces the value in the checkpoint:
 
 ```bash
-uv run cryocast evaluate --checkpoint PATH_TO_A_CHECKPOINT +model.relaxation.tau=30
+uv run cryocast evaluate --checkpoint PATH_TO_A_CHECKPOINT +model.relaxation_tau=30
 ```
 
-Keys that you do not set come from the checkpoint relaxation.
-To turn relaxation off, set `++model.relaxation=null`.
+To turn relaxation off, set `++model.relaxation_tau=null`.
 The change also applies when you resume training from the checkpoint.
 
 `skip_anchor` always comes from the checkpoint, because it changes the inputs that the model learned from.
@@ -152,11 +151,11 @@ For a latent rollout, train the model with `skip_anchor: previous` first.
 
 | Situation | Recommended settings |
 |-----------|---------------------|
-| You must reproduce an existing checkpoint or leaderboard result | Do not set `skip_anchor` or `relaxation` |
+| You must reproduce an existing checkpoint or leaderboard result | Do not set `skip_anchor` or `relaxation_tau` |
 | Multistage model with a pre-trained decoder | `skip_anchor: previous`, so the forecast uses the decoder as the decoder stage trained it |
-| Forecast for lead times longer than the training lead times, or a forecast bias that increases with lead time | `skip_anchor: previous` and `relaxation` |
-| Physical rollout | Keep the default anchor (`previous`). Add `relaxation` for long lead times. |
-| Ablation of the anchor in a physical rollout | `skip_anchor: initial`, without `relaxation` |
+| Forecast for lead times longer than the training lead times, or a forecast bias that increases with lead time | `skip_anchor: previous` and `relaxation_tau` |
+| Physical rollout | Keep the default anchor (`previous`). Add `relaxation_tau` for long lead times. |
+| Ablation of the anchor in a physical rollout | `skip_anchor: initial`, without `relaxation_tau` |
 
 To select `tau`, compare values on the validation split (2022–2023).
 
@@ -174,18 +173,17 @@ To enable them, remove the comment characters:
 
 ```yaml
 skip_anchor: previous
-relaxation:
-  tau: 30.0
+relaxation_tau: 30.0
 ```
 
 You can also set them on the command line.
 The keys are not in the model configs, so put a `+` before each key:
 
 ```bash
-uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previous +model.relaxation.tau=30
+uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previous +model.relaxation_tau=30
 ```
 
 !!! warning
     Do not omit the `+`. Without it, Hydra cannot add the key and stops with a `ConfigCompositionException`.
 
-To turn relaxation off, remove the `relaxation` key or set `tau` to `null`.
+To turn relaxation off, remove the `relaxation_tau` key or set it to `null`.

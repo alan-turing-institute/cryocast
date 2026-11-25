@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 from unittest.mock import MagicMock
 
 import lightning
@@ -158,7 +158,7 @@ def _oracle_model(
     decoder_scale: float = 2.0,
     skip_connection: dict[str, Any] | None = None,
     skip_anchor: str | None = None,
-    relaxation: dict[str, Any] | None = None,
+    relaxation_tau: float | None = None,
 ) -> EncodeProcessDecode:
     """Build a latent-loss model with a trainable encoder and a trainable decoder.
 
@@ -182,7 +182,7 @@ def _oracle_model(
         finaliser={"skip_connection": skip_connection},
         loss_weights=loss_weights,
         skip_anchor=skip_anchor,
-        relaxation=relaxation,
+        relaxation_tau=relaxation_tau,
         hemisphere="north",
         input_spaces=[sic.to_dict()],
         loss=cfg_loss,
@@ -1307,7 +1307,7 @@ class TestSkipAnchor:
         rollout_space: RolloutSpace,
         expected: SkipAnchorType,
     ) -> None:
-        """Checkpoints saved before `skip_anchor` and `relaxation` existed still load."""
+        """Checkpoints saved before `skip_anchor` and `relaxation_tau` existed still load."""
         model = EncodeProcessDecode(
             name="old-hparams",
             encoders=cfg_encoders,
@@ -1328,7 +1328,7 @@ class TestSkipAnchor:
             target_variable_indices=[0],
         )
         # Leave out the keys, as in a checkpoint saved before the options existed
-        new_keys = {"skip_anchor", "relaxation"}
+        new_keys = {"skip_anchor", "relaxation_tau"}
         assert all(model.hparams[key] is None for key in new_keys)
         checkpoint_file = tmp_path / "model.ckpt"
         torch.save(
@@ -1364,7 +1364,7 @@ class TestSkipAnchor:
         tmp_path: Path,
     ) -> None:
         """A model trained without relaxation loads with it, and saves it again."""
-        assert "relaxation" in EncodeProcessDecode.checkpoint_overrides
+        assert "relaxation_tau" in EncodeProcessDecode.checkpoint_overrides
         model = EncodeProcessDecode(
             name="no-relaxation",
             encoders=cfg_encoders,
@@ -1400,13 +1400,13 @@ class TestSkipAnchor:
             processor=cfg_processor,
             decoder=cfg_decoder,
             metrics=[],
-            relaxation={"tau": 30.0},
+            relaxation_tau=30.0,
             weights_only=False,
         )
 
         assert loaded.relaxation is not None
         assert loaded.relaxation.tau == pytest.approx(30.0)
-        assert loaded.hparams["relaxation"] == {"tau": 30.0}
+        assert loaded.hparams["relaxation_tau"] == pytest.approx(30.0)
 
 
 class TestRelaxationInLatentLossTraining:
@@ -1420,7 +1420,7 @@ class TestRelaxationInLatentLossTraining:
 
     SCALE = 0.1
     CLIMATOLOGY = 0.2
-    RELAXATION: ClassVar[dict[str, Any]] = {"tau": 2.0}
+    TAU = 2.0
 
     def _model(
         self,
@@ -1432,7 +1432,7 @@ class TestRelaxationInLatentLossTraining:
             "processor",
             DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
         )
-        kwargs.setdefault("relaxation", self.RELAXATION)
+        kwargs.setdefault("relaxation_tau", self.TAU)
         return _oracle_model(
             cfg_loss=cfg_loss,
             cfg_metrics=cfg_metrics,

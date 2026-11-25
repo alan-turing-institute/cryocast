@@ -82,7 +82,7 @@ class ProcessorStage(EncodeProcessDecode):
             processor=processor,
             rollout_space=full_model.rollout_strategy.space,
             skip_anchor=full_model.rollout_strategy.anchor,
-            relaxation=full_model.hparams["relaxation"],
+            relaxation_tau=full_model.rollout_strategy.relaxation_tau,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )

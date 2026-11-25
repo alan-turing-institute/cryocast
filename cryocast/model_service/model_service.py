@@ -25,7 +25,7 @@ from cryocast.compatibility.torch import (
 from cryocast.data import CommonDataModule
 from cryocast.models import BaseModel, EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
-from cryocast.utils import get_device_name, get_timestamp, get_wandb_run, to_plain_types
+from cryocast.utils import get_device_name, get_timestamp, get_wandb_run
 
 from .checkpoints import CheckpointFile
 
@@ -113,7 +113,7 @@ class ModelService:
         """Build a new ModelService by loading a model from a checkpoint.
 
         The model is loaded with the "model", "variables" and "window" configs that
-        it was trained with, apart from "window.batch_size" and "model.relaxation".
+        it was trained with, apart from "window.batch_size" and "model.relaxation_tau".
         Everything else is taken from the current config. Calling `train` on the
         resulting ModelService will resume training from the checkpoint. To resume from
         a directory of checkpoints, find its checkpoint file with
@@ -141,18 +141,11 @@ class ModelService:
             builder.config["model"]["_target_"]
         )
         log.info("Loading a trained %s model...", builder.config["model"]["name"])
-        # For each of the keyword arguments that we know this model class ignores, we
-        # attempt to load them from the model config rather than the checkpoint.
+        # Load the keyword arguments that this model class does not save, or that the
+        # config can override, from the model config rather than the checkpoint.
         non_checkpoint_kwargs = {
             key: builder.config["model"][key]
-            for key in model_cls.ignored_hparams
-            if key in builder.config["model"]
-        }
-        # Saved arguments that the config can change are stored again with the model,
-        # so convert them to plain types that load with weights_only=True
-        non_checkpoint_kwargs |= {
-            key: to_plain_types(builder.config["model"][key])
-            for key in model_cls.checkpoint_overrides
+            for key in model_cls.ignored_hparams | model_cls.checkpoint_overrides
             if key in builder.config["model"]
         }
         builder.model_ = model_cls.load_from_checkpoint(

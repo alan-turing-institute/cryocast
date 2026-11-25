@@ -308,30 +308,10 @@ class TestRolloutStrategy:
         with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.anchor = SkipAnchorType.INITIAL  # type: ignore[misc]
 
-    @pytest.mark.parametrize(
-        "relaxation",
-        [None, {}, {"tau": None}],
-        ids=["none", "empty", "null-tau"],
-    )
-    def test_from_options_relaxation_is_off(
-        self, relaxation: dict[str, object] | None
-    ) -> None:
-        strategy = RolloutStrategy.from_options("physical", None, relaxation)
+    def test_from_options_sets_relaxation(self) -> None:
+        strategy = RolloutStrategy.from_options("physical", None, 5.0)
 
-        assert strategy.relaxation_tau is None
-
-    def test_from_options_rejects_unknown_relaxation_key(self) -> None:
-        with pytest.raises(
-            ValueError, match=r"Unknown relaxation options: \['schedule'\]"
-        ):
-            RolloutStrategy.from_options(
-                "physical", None, {"tau": 5.0, "schedule": "ramp"}
-            )
-
-    def test_from_options_parses_relaxation(self) -> None:
-        strategy = RolloutStrategy.from_options("physical", None, {"tau": 5.0})
-
-        assert strategy.relaxation_tau == 5.0
+        assert strategy.relaxation_tau == pytest.approx(5.0)
 
     @pytest.mark.parametrize(
         ("space", "anchor"),
@@ -344,7 +324,7 @@ class TestRolloutStrategy:
         self, space: str, anchor: str | None
     ) -> None:
         with pytest.raises(ValueError, match="requires skip_anchor='previous'"):
-            RolloutStrategy.from_options(space, anchor, {"tau": 5.0})
+            RolloutStrategy.from_options(space, anchor, 5.0)
 
 
 class TestTimespan:
