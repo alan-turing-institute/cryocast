@@ -1,0 +1,78 @@
+---
+name: Validate notebooks
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  notebook_validation:
+    name: Validate and execute notebooks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.8.3"
+
+      - name: Check all notebook files
+        run: |
+          uv run --group notebooks python scripts/notebook_hygiene.py
+          uv run --group notebooks python - <<'PY'
+          from pathlib import Path
+          import nbformat
+
+          paths = sorted(Path("notebooks").rglob("*.ipynb"))
+          assert paths, "No notebooks to validate"
+          for path in paths:
+              notebook = nbformat.read(path, as_version=4)
+              nbformat.validate(notebook)
+          print(f"Validated the Jupyter schema of {len(paths)} notebooks.")
+          PY
+
+      # This notebook uses synthetic arrays and metrics, not CDS/W&B or external
+      # data. Other notebooks require external data, accounts or checkpoints;
+      # keep them in the schema/hygiene check rather than silently skipping
+      # execution errors or deleting their research/teaching content.
+      - name: Execute offline metrics examples
+        env:
+          MPLBACKEND: module://matplotlib_inline.backend_inline
+        run: |
+          uv run --group notebooks jupyter nbconvert \
+            --to notebook --execute notebooks/metrics_examples.ipynb \
+            --ExecutePreprocessor.timeout=300 \
+            --ExecutePreprocessor.kernel_name=python3 \
+            --output metrics_examples-executed.ipynb \
+            --output-dir "$RUNNER_TEMP"
+          uv run --group notebooks python - <<'PY'
+          import os
+          from pathlib import Path
+          import nbformat
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "metrics_examples-executed.ipynb"
+          notebook = nbformat.read(path, as_version=4)
+          nbformat.validate(notebook)
+          code_cells = [cell for cell in notebook.cells if cell.cell_type == "code"]
+          assert code_cells and all(c.execution_count is not None for c in code_cells)
+          assert not any(
+              output.output_type == "error"
+              for cell in code_cells
+              for output in cell.outputs
+          )
+          print(f"Successfully executed {len(code_cells)} metrics example cells.")
+          PY
+          uv run --group notebooks python scripts/check_notebook_execution.py \
+            notebooks/metrics_examples.ipynb "$RUNNER_TEMP/metrics_examples-executed.ipynb"

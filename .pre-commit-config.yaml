@@ -28,3 +28,13 @@ repos:
       # Run the formatter
       - id: ruff-format
         pass_filenames: true
+
+  - repo: local
+    hooks:
+      - id: notebook-hygiene
+        name: Check notebooks for saved results and empty cells
+        entry: python scripts/notebook_hygiene.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        files: \.ipynb$
