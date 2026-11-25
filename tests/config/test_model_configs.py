@@ -37,4 +37,4 @@ class TestModelConfigs:
         assert "skip_anchor" not in model
         assert "relaxation" not in model
         assert strategy.anchor == RolloutStrategy.default_anchor(strategy.space)
-        assert strategy.relaxation is None
+        assert strategy.relaxation_tau is None

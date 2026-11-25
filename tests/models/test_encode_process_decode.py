@@ -1352,7 +1352,7 @@ class TestSkipAnchor:
         )
         assert loaded.rollout_strategy.space is rollout_space
         assert loaded.rollout_strategy.anchor is expected
-        assert loaded.rollout_strategy.relaxation is None
+        assert loaded.rollout_strategy.relaxation_tau is None
 
     def test_relaxation_can_be_added_to_a_trained_model(
         self,

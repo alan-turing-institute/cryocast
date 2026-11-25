@@ -82,8 +82,9 @@ class EncodeProcessDecode(BaseModel):
                 forecast step as the skip connection anchor. If None, use the default
                 for the rollout space: INITIAL for latent and PREVIOUS for physical.
             relaxation: Options to relax each forecast step towards climatology, or
-                None for no relaxation. See RelaxationOptions. Relaxation needs a
-                PREVIOUS skip anchor and a `climatology` entry in each batch.
+                None for no relaxation. The only configurable is `tau`, the folding time
+                in forecast steps. Relaxation needs a PREVIOUS skip anchor and a
+                `climatology` entry in each batch.
             **kwargs: forwarded to ``BaseModel``.
 
         """
@@ -199,7 +200,7 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
         if (
-            self.rollout_strategy.relaxation is not None
+            self.rollout_strategy.relaxation_tau is not None
             and not self.rollout_strategy.is_physical
             and self.finaliser.skip_connection is None
         ):
@@ -222,12 +223,8 @@ class EncodeProcessDecode(BaseModel):
                 self.rollout_strategy.anchor.value,
             )
 
-        relaxation_options = self.rollout_strategy.relaxation
-        self.relaxation = (
-            None
-            if relaxation_options is None
-            else ExponentialRelaxation(tau=relaxation_options.tau)
-        )
+        tau = self.rollout_strategy.relaxation_tau
+        self.relaxation = None if tau is None else ExponentialRelaxation(tau=tau)
 
         # Choose how to calculate the training loss
         self.objective: TrainingObjective = build_training_objective(self, loss_weights)
@@ -324,7 +321,7 @@ class EncodeProcessDecode(BaseModel):
             ValueError: If relaxation is on but the batch has no climatology.
 
         """
-        if self.rollout_strategy.relaxation is None:
+        if self.relaxation is None:
             return None
         if (climatology := batch.get("climatology")) is None:
             msg = (

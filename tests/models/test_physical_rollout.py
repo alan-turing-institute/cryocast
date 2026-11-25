@@ -805,7 +805,7 @@ class TestClimatologyRelaxation:
 
     def test_off_by_default(self) -> None:
         model = _build_model()
-        assert model.rollout_strategy.relaxation is None
+        assert model.rollout_strategy.relaxation_tau is None
         assert model.relaxation is None
 
     @pytest.mark.parametrize("rollout_space", ["latent", "physical"])

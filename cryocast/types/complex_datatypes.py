@@ -258,28 +258,6 @@ class PlotSpec:
 
 
 @dataclass(frozen=True)
-class RelaxationOptions:
-    """Options for relaxing each forecast step towards climatology.
-
-    Attributes:
-        tau: The folding time of the anomaly from climatology, in forecast steps.
-
-    """
-
-    tau: float
-
-    @classmethod
-    def from_options(cls, options: Mapping[str, Any] | None) -> Self | None:
-        """Create RelaxationOptions, or return None if relaxation is off.
-
-        Relaxation is off if `options` is None or empty, or if `tau` is None.
-        """
-        if not options or options.get("tau") is None:
-            return None
-        return cls(**options)
-
-
-@dataclass(frozen=True)
 class RolloutStrategy:
     """Describe how EncodeProcessDecode advances its forecast loop.
 
@@ -288,20 +266,21 @@ class RolloutStrategy:
             where each step is decoded and re-encoded.
         anchor: The frame that a decoder skip connection adds to each forecast step:
             the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
-        relaxation: Options to relax each forecast step towards climatology, or None.
-            Needs a PREVIOUS anchor, so that it carries over between steps.
+        relaxation_tau: The folding time, in forecast steps, of the relaxation of each
+            forecast step towards climatology, or None for no relaxation. Relaxation
+            needs a PREVIOUS anchor, so that it carries over between steps.
 
     """
 
     space: RolloutSpace
     anchor: SkipAnchorType
-    relaxation: RelaxationOptions | None = None
+    relaxation_tau: float | None = None
 
     def __post_init__(self) -> None:
         """Convert strings to enums and validate the relaxation."""
         object.__setattr__(self, "space", RolloutSpace(self.space))
         object.__setattr__(self, "anchor", SkipAnchorType(self.anchor))
-        if self.relaxation is not None and self.anchor != SkipAnchorType.PREVIOUS:
+        if self.relaxation_tau is not None and self.anchor != SkipAnchorType.PREVIOUS:
             msg = (
                 f"relaxation requires skip_anchor='previous', but it is "
                 f"'{self.anchor.value}'. With a fixed anchor, the relaxation does not "
@@ -318,13 +297,29 @@ class RolloutStrategy:
     ) -> Self:
         """Create a RolloutStrategy, using the default anchor for the space if unset.
 
-        See RelaxationOptions.from_options for the relaxation options.
+        Args:
+            space: Where the forecast loop runs.
+            anchor: The skip connection anchor, or None for the default for the space.
+            relaxation: Relaxation options, or None. The only key is `tau`. Relaxation
+                is off if the options are None or empty, or if `tau` is None.
+
+        Raises:
+            ValueError: If `relaxation` has a key other than `tau`.
+
         """
+        options = dict(relaxation or {})
+        tau = options.pop("tau", None)
+        if options:
+            msg = (
+                f"Unknown relaxation options: {sorted(options)}. The only supported "
+                f"option is 'tau'."
+            )
+            raise ValueError(msg)
         space = RolloutSpace(space)
         return cls(
             space=space,
             anchor=SkipAnchorType(anchor) if anchor else cls.default_anchor(space),
-            relaxation=RelaxationOptions.from_options(relaxation),
+            relaxation_tau=tau,
         )
 
     @staticmethod
