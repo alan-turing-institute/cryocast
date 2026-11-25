@@ -51,10 +51,4 @@ finaliser:
   skip_connection:
     method: additive
 
-# Rollout stabilisation. Both options are off by default. To enable them, uncomment
-# them here, or add them on the command line with a "+" prefix, for example
-# "+model.skip_anchor=previous +model.relaxation.tau=30".
-# skip_anchor: previous # initial | previous. Default: initial (latent), previous (physical)
-# relaxation:           # Relax each forecast step towards climatology
-#   tau: 30.0           # Folding time of the anomaly, in forecast steps
-#   apply_in_training: true
+# Rollout stabilisation (skip_anchor, relaxation): see docs/src/user-guide/forecast-rollout.md
