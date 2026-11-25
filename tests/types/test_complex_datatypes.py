@@ -333,16 +333,11 @@ class TestRelaxationOptions:
 
     @pytest.mark.parametrize(
         "options",
-        [None, {}, {"tau": None}, {"tau": None, "apply_in_training": False}],
-        ids=["none", "empty", "null-tau", "null-tau-with-options"],
+        [None, {}, {"tau": None}],
+        ids=["none", "empty", "null-tau"],
     )
     def test_from_options_is_off(self, options: dict[str, object] | None) -> None:
         assert RelaxationOptions.from_options(options) is None
-
-    def test_from_options_defaults_to_apply_in_training(self) -> None:
-        assert RelaxationOptions.from_options({"tau": 5.0}) == RelaxationOptions(
-            tau=5.0, apply_in_training=True
-        )
 
     def test_from_options_rejects_unknown_key(self) -> None:
         with pytest.raises(TypeError, match="unexpected keyword argument 'schedule'"):

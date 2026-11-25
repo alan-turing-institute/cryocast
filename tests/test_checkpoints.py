@@ -441,11 +441,7 @@ class TestMergeConfig:
         ("ckpt_model", "configured_model", "expected"),
         [
             ({}, {"relaxation": {"tau": 30}}, {"tau": 30}),
-            (
-                {"relaxation": {"tau": 30, "apply_in_training": False}},
-                {"relaxation": {"tau": 60}},
-                {"tau": 60, "apply_in_training": False},
-            ),
+            ({"relaxation": {"tau": 30}}, {"relaxation": {"tau": 60}}, {"tau": 60}),
             ({"relaxation": {"tau": 30}}, {"relaxation": None}, None),
             ({"relaxation": {"tau": 30}}, {}, {"tau": 30}),
         ],

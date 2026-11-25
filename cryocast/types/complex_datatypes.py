@@ -263,13 +263,10 @@ class RelaxationOptions:
 
     Attributes:
         tau: The folding time of the anomaly from climatology, in forecast steps.
-        apply_in_training: Whether to relax during training. If False, relax only in
-            evaluation mode.
 
     """
 
     tau: float
-    apply_in_training: bool = True
 
     @classmethod
     def from_options(cls, options: Mapping[str, Any] | None) -> Self | None:

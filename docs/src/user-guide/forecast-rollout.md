@@ -8,7 +8,7 @@ Three options in the model config control the rollout:
 |--------|--------|---------|--------|
 | `rollout_space` | `latent`, `physical` | `latent` | Where the forecast loop runs |
 | `skip_anchor` | `initial`, `previous` | `initial` for `latent`, `previous` for `physical` | The frame that the skip connection adds to each lead time |
-| `relaxation` | a mapping with `tau` and `apply_in_training` | off | Relax each lead time towards climatology |
+| `relaxation` | a mapping with `tau` | off | Relax each lead time towards climatology |
 
 All three options are top-level keys of the model config, next to `encoders`, `processor`, `decoder` and `finaliser`.
 If you do not set `skip_anchor` and `relaxation`, the model uses the defaults in the table.
@@ -130,17 +130,6 @@ A large `tau` gives a weak pull, and the effect is small at short lead times.
   Thus the climatology does not contain information from the forecast period.
   If the batch has no climatology, the forward pass raises a `ValueError`.
 
-### Relaxation in training
-
-| `apply_in_training` | Training | Validation, test and evaluation |
-|---------------------|----------|---------------------------------|
-| `true` (default) | Relaxed | Relaxed |
-| `false` | Not relaxed | Relaxed |
-
-Use `true` to make training and forecasts the same.
-The model then learns its changes together with the relaxation.
-Use `false` for a quick experiment that adds relaxation only outside training.
-
 ### Relaxation for a trained model
 
 Relaxation has no weights, so you can add it to a trained model, change `tau`, or turn it off when you load a checkpoint.
@@ -187,7 +176,6 @@ To enable them, remove the comment characters:
 skip_anchor: previous
 relaxation:
   tau: 30.0
-  apply_in_training: true
 ```
 
 You can also set them on the command line.

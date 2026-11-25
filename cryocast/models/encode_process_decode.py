@@ -311,22 +311,20 @@ class EncodeProcessDecode(BaseModel):
         )
 
     def _equilibrium(self, batch: Mapping[str, TensorNTCHW]) -> TensorNTCHW | None:
-        """Return the climatology to relax towards, or None if relaxation is inactive.
+        """Return the climatology to relax towards, or None if relaxation is off.
 
-        Relaxation is inactive if it is off, or if the model is training and
-        `apply_in_training` is False. Climatology comes from the training periods only,
-        so it does not leak future information.
+        Climatology comes from the training periods only, so it does not leak future
+        information.
 
         Args:
             batch: Dictionary that holds a `climatology` TensorNTCHW entry with shape
                 (batch, n_forecast_steps, n_output_channels, H_output, W_output).
 
         Raises:
-            ValueError: If relaxation is active but the batch has no climatology.
+            ValueError: If relaxation is on but the batch has no climatology.
 
         """
-        options = self.rollout_strategy.relaxation
-        if options is None or (self.training and not options.apply_in_training):
+        if self.rollout_strategy.relaxation is None:
             return None
         if (climatology := batch.get("climatology")) is None:
             msg = (

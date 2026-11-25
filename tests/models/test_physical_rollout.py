@@ -872,24 +872,9 @@ class TestClimatologyRelaxation:
         ):
             model(_inputs(model))
 
-    @pytest.mark.parametrize(
-        ("apply_in_training", "training", "relaxed"),
-        [
-            pytest.param(True, True, True, id="on-train"),
-            pytest.param(True, False, True, id="on-eval"),
-            pytest.param(False, True, False, id="off-train"),
-            pytest.param(False, False, True, id="off-eval"),
-        ],
-    )
-    def test_apply_in_training(
-        self,
-        apply_in_training: bool,  # noqa: FBT001
-        training: bool,  # noqa: FBT001
-        relaxed: bool,  # noqa: FBT001
-    ) -> None:
-        model = self._model(
-            "physical", {"tau": 2.0, "apply_in_training": apply_in_training}
-        )
+    @pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
+    def test_relaxes_in_train_and_eval(self, training: bool) -> None:  # noqa: FBT001
+        model = self._model("physical", {"tau": 2.0})
         model.train(training)
         inputs = _inputs(model)
         persistence = inputs[TARGET_GROUP][:, -1:].expand(
@@ -897,10 +882,4 @@ class TestClimatologyRelaxation:
         )
         with torch.no_grad():
             prediction = model({**inputs, "climatology": _climatology(model, 0.0)})
-        assert (not torch.equal(prediction, persistence)) is relaxed
-
-    def test_off_in_training_does_not_need_climatology(self) -> None:
-        model = self._model("physical", {"tau": 2.0, "apply_in_training": False})
-        model.train()
-        with torch.no_grad():
-            model(_inputs(model))
+        assert not torch.equal(prediction, persistence)

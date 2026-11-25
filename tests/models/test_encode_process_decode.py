@@ -1400,16 +1400,13 @@ class TestSkipAnchor:
             processor=cfg_processor,
             decoder=cfg_decoder,
             metrics=[],
-            relaxation={"tau": 30.0, "apply_in_training": False},
+            relaxation={"tau": 30.0},
             weights_only=False,
         )
 
         assert loaded.relaxation is not None
         assert loaded.relaxation.tau == pytest.approx(30.0)
-        assert loaded.hparams["relaxation"] == {
-            "tau": 30.0,
-            "apply_in_training": False,
-        }
+        assert loaded.hparams["relaxation"] == {"tau": 30.0}
 
 
 class TestRelaxationInLatentLossTraining:
@@ -1528,23 +1525,3 @@ class TestRelaxationInLatentLossTraining:
         _, logged = _training_step(model, batch)
 
         torch.testing.assert_close(logged["train_reconstruction_loss"], expected)
-
-    def test_off_in_training_ignores_climatology(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        model = self._model(
-            cfg_loss,
-            cfg_metrics,
-            relaxation={**self.RELAXATION, "apply_in_training": False},
-        )
-        model.train()
-        batch = _oracle_batch()  # no climatology entry
-        expected = self._expected(
-            batch["sic"],
-            batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
-            None,
-        )
-
-        result, _ = _training_step(model, batch)
-
-        torch.testing.assert_close(result.prediction, expected)
