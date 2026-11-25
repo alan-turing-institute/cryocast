@@ -604,19 +604,19 @@ class ModelService:
                 "Skipping training for decoder. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            with checkpoint_file.suggest_upgrade_on_failure():
-                return DecoderStage.load_from_checkpoint(
-                    checkpoint_file.path,
-                    decoder=self.config["model"]["decoder"],
-                    finaliser=self.config["model"].get("finaliser"),
-                    encoders=encoder_models,
-                    map_location="cpu",  # Lightning will move this to the correct device
-                    mask_dir=str(self.data_module.mask_directory),
-                    metrics=self.config["reporting"]["metrics"],
-                    target_dataset_name=self.data_module.target_group_name,
-                    target_variable_indices=self.data_module.target_variable_indices,
-                    weights_only=True,
-                )
+            checkpoint_file.load()
+            return DecoderStage.load_from_checkpoint(
+                checkpoint_file.path,
+                decoder=self.config["model"]["decoder"],
+                finaliser=self.config["model"].get("finaliser"),
+                encoders=encoder_models,
+                map_location="cpu",  # Lightning will move this to the correct device
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
+                target_dataset_name=self.data_module.target_group_name,
+                target_variable_indices=self.data_module.target_variable_indices,
+                weights_only=True,
+            )
 
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
@@ -662,17 +662,17 @@ class ModelService:
                     encoder.name,
                     checkpoint_file.path,
                 )
-                with checkpoint_file.suggest_upgrade_on_failure():
-                    encoder_models.append(
-                        EncoderStage.load_from_checkpoint(
-                            checkpoint_file.path,
-                            latitudes_fn=lambda: self.data_module.latitudes,
-                            longitudes_fn=lambda: self.data_module.longitudes,
-                            map_location="cpu",  # Lightning will move this to the correct device
-                            metrics=self.config["reporting"]["metrics"],
-                            weights_only=True,
-                        )
+                checkpoint_file.load()
+                encoder_models.append(
+                    EncoderStage.load_from_checkpoint(
+                        checkpoint_file.path,
+                        latitudes_fn=lambda: self.data_module.latitudes,
+                        longitudes_fn=lambda: self.data_module.longitudes,
+                        map_location="cpu",  # Lightning will move this to the correct device
+                        metrics=self.config["reporting"]["metrics"],
+                        weights_only=True,
                     )
+                )
                 continue
 
             encoder_model = EncoderStage.from_template(
@@ -747,16 +747,16 @@ class ModelService:
                 "Skipping training for processor. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            with checkpoint_file.suggest_upgrade_on_failure():
-                return ProcessorStage.load_from_checkpoint(
-                    checkpoint_file.path,
-                    decoder_model=decoder_model,
-                    map_location="cpu",  # Lightning will move this to the correct device
-                    mask_dir=str(self.data_module.mask_directory),
-                    metrics=self.config["reporting"]["metrics"],
-                    processor=self.config["model"]["processor"],
-                    weights_only=True,
-                )
+            checkpoint_file.load()
+            return ProcessorStage.load_from_checkpoint(
+                checkpoint_file.path,
+                decoder_model=decoder_model,
+                map_location="cpu",  # Lightning will move this to the correct device
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
+                processor=self.config["model"]["processor"],
+                weights_only=True,
+            )
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,

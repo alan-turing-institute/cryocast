@@ -1083,7 +1083,7 @@ class TestModelService:
         service.data_module_.mask_directory = tmp_path
         encoder_models: list[EncoderStage] = [MagicMock()]
         path = tmp_path / "decoder.epoch=2-step=10.ckpt"
-        path.write_text("checkpoint")
+        torch.save({}, path)
         checkpoint_file = CheckpointFile(path)
         loaded_decoder = MagicMock()
 
@@ -1429,7 +1429,7 @@ class TestModelService:
         service.data_module_.mask_directory = tmp_path
         decoder_model = MagicMock()
         path = tmp_path / "processor.epoch=1-step=5.ckpt"
-        path.write_text("checkpoint")
+        torch.save({}, path)
         checkpoint_file = CheckpointFile(path)
         loaded_processor = MagicMock()
 

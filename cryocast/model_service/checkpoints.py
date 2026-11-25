@@ -6,8 +6,7 @@ import re
 import reprlib
 import shutil
 from collections import OrderedDict
-from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -172,14 +171,37 @@ class CheckpointFile:
                 )
 
     def load(self) -> dict[str, Any]:
-        """Load the checkpoint, allowing only plain Python types and tensors.
+        """Load the checkpoint, refusing one that must be upgraded first.
 
         Raises:
-            OutdatedCheckpointError: If the checkpoint contains any other objects.
+            OutdatedCheckpointError: If the checkpoint contains objects other than plain
+                Python types and tensors, or keeps finaliser weights or options in the
+                decoder.
 
         """
-        with self.suggest_upgrade_on_failure():
-            return torch.load(self.path, map_location="cpu", weights_only=True)
+        try:
+            ckpt_state = torch.load(self.path, map_location="cpu", weights_only=True)
+        except pickle.UnpicklingError as exc:
+            msg = (
+                f"Checkpoint {self.path} contains objects that cannot be loaded "
+                "safely, probably because it was saved by an older version of this "
+                "code. Upgrading it runs any code embedded in the file, so only do so "
+                "if you trust its source, with 'cryocast checkpoint upgrade --trust "
+                f"{self.path}'."
+            )
+            raise OutdatedCheckpointError(msg) from exc
+        decoder = ckpt_state.get("hyper_parameters", {}).get("decoder") or {}
+        if any(key in decoder for key in _FINALISER_KEYS) or any(
+            key.startswith("decoder.skip_connection.")
+            for key in ckpt_state.get("state_dict", {})
+        ):
+            msg = (
+                f"Checkpoint {self.path} keeps finaliser weights or options in the "
+                "decoder, because an older version of this code saved it. Upgrade it "
+                f"with 'cryocast checkpoint upgrade {self.path}'."
+            )
+            raise OutdatedCheckpointError(msg)
+        return ckpt_state
 
     def merge_config(self, config: DictConfig) -> DictConfig:
         """Combine the current config with the config that the checkpoint was trained with.
@@ -255,27 +277,6 @@ class CheckpointFile:
 
         self._warn_replaced(config, combined, sections)
         return combined
-
-    @contextmanager
-    def suggest_upgrade_on_failure(self) -> Generator[None]:
-        """Suggest upgrading the checkpoint if it cannot be loaded safely.
-
-        Raises:
-            OutdatedCheckpointError: If loading the checkpoint fails because it contains
-                objects other than plain Python types and tensors.
-
-        """
-        try:
-            yield
-        except pickle.UnpicklingError as exc:
-            msg = (
-                f"Checkpoint {self.path} contains objects that cannot be loaded "
-                "safely, probably because it was saved by an older version of this "
-                "code. Upgrading it runs any code embedded in the file, so only do so "
-                "if you trust its source, with 'cryocast checkpoint upgrade --trust "
-                f"{self.path}'."
-            )
-            raise OutdatedCheckpointError(msg) from exc
 
 
 class LegacyCheckpointFile:
@@ -451,7 +452,9 @@ class LegacyCheckpointFile:
                 weights_only=False,  # this is an older checkpoint that the user chose
             )
         else:
-            ckpt_state = self.checkpoint_file.load()
+            ckpt_state = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
         renamed: set[str] = set()
         ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
         if not isinstance(ckpt_state, dict):

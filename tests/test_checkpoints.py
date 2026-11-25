@@ -124,6 +124,34 @@ class TestLoad:
         assert f"cryocast checkpoint upgrade --trust {path}" in str(exc_info.value)
         assert isinstance(exc_info.value, pickle.UnpicklingError)
 
+    @pytest.mark.parametrize(
+        "ckpt_state",
+        [
+            {"hyper_parameters": {"decoder": {"mask_type": "active"}}},
+            {"state_dict": {"decoder.skip_connection.fusion.weight": torch.ones(2)}},
+        ],
+        ids=["decoder-options", "decoder-skip-weights"],
+    )
+    def test_refuses_finaliser_in_decoder(
+        self, ckpt_state: dict[str, Any], tmp_path: Path
+    ) -> None:
+        """Suggest upgrading a checkpoint saved before the finaliser was separated."""
+        path = tmp_path / "decoder.epoch=1-step=1.ckpt"
+        torch.save(ckpt_state, path)
+
+        with pytest.raises(OutdatedCheckpointError) as exc_info:
+            CheckpointFile(path).load()
+
+        assert f"cryocast checkpoint upgrade {path}" in str(exc_info.value)
+
+    def test_loads_finaliser_skip_connection_weights(self, tmp_path: Path) -> None:
+        """Load a checkpoint that keeps its skip connection weights in the finaliser."""
+        path = tmp_path / "decoder.epoch=1-step=1.ckpt"
+        weights = {"finaliser.skip_connection.fusion.weight": torch.ones(2)}
+        torch.save({"state_dict": weights}, path)
+
+        assert CheckpointFile(path).load()["state_dict"].keys() == weights.keys()
+
     def test_loads_upgraded_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint after upgrading it."""
         checkpoint_file = _save_legacy_checkpoint(
