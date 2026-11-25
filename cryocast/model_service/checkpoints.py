@@ -212,6 +212,8 @@ class CheckpointFile:
         - "model" and "window": each checkpoint value replaces the current value, but
           "window.batch_size" keeps the current value. If the current config names a
           different model, the full "model" section comes from the checkpoint.
+          For the same model, "model.relaxation" keeps the current value, and a
+          "model.skip_anchor" that the checkpoint does not set is removed.
         - "variables" and "data.allow_missing": the checkpoint section replaces the
           current section. If the checkpoint has no "data.allow_missing", it was
           trained with every input required, so "data.allow_missing.groups" is set
@@ -274,6 +276,22 @@ class CheckpointFile:
                 configured_model,
             )
             sections.remove("model")
+        else:
+            ckpt_model = ckpt_config.get("model", {})
+            # Relaxation has no weights, so the configured relaxation can be added to,
+            # changed for, or removed (null) from a trained model
+            if "relaxation" in (configured := config.get("model", {})):
+                combined["model"]["relaxation"] = (
+                    None
+                    if configured["relaxation"] is None
+                    else OmegaConf.merge(
+                        ckpt_model.get("relaxation") or {}, configured["relaxation"]
+                    )
+                )
+            # The anchor changes what the trained model sees, so it must match training.
+            # A checkpoint config without one was trained with the default anchor.
+            if "skip_anchor" not in ckpt_model:
+                combined["model"].pop("skip_anchor", None)
 
         self._warn_replaced(config, combined, sections)
         return combined

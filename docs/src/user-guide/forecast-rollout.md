@@ -141,6 +141,24 @@ Use `true` to make training and forecasts the same.
 The model then learns its changes together with the relaxation.
 Use `false` for a quick experiment that adds relaxation only outside training.
 
+### Relaxation for a trained model
+
+Relaxation has no weights, so you can add it to a trained model, change `tau`, or turn it off when you load a checkpoint.
+The `model.relaxation` value in the current config replaces the value in the checkpoint:
+
+```bash
+uv run cryocast evaluate --checkpoint PATH_TO_A_CHECKPOINT +model.relaxation.tau=30
+```
+
+Keys that you do not set come from the checkpoint relaxation.
+To turn relaxation off, set `++model.relaxation=null`.
+The change also applies when you resume training from the checkpoint.
+
+`skip_anchor` always comes from the checkpoint, because it changes the inputs that the model learned from.
+Thus you can add relaxation only to a model that was trained with `skip_anchor: previous`.
+This is the default for a physical rollout.
+For a latent rollout, train the model with `skip_anchor: previous` first.
+
 ## When to use each option
 
 | Situation | Recommended settings |

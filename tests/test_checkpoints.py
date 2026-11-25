@@ -437,6 +437,90 @@ class TestMergeConfig:
             "configured 'quick-test' model." in caplog.text
         )
 
+    @pytest.mark.parametrize(
+        ("ckpt_model", "configured_model", "expected"),
+        [
+            ({}, {"relaxation": {"tau": 30}}, {"tau": 30}),
+            (
+                {"relaxation": {"tau": 30, "apply_in_training": False}},
+                {"relaxation": {"tau": 60}},
+                {"tau": 60, "apply_in_training": False},
+            ),
+            ({"relaxation": {"tau": 30}}, {"relaxation": None}, None),
+            ({"relaxation": {"tau": 30}}, {}, {"tau": 30}),
+        ],
+        ids=["add", "change-tau", "turn-off", "unset-keeps-checkpoint"],
+    )
+    def test_relaxation_from_config(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        ckpt_model: dict[str, Any],
+        configured_model: dict[str, Any],
+        expected: dict[str, Any] | None,
+    ) -> None:
+        """The configured relaxation replaces the checkpoint relaxation."""
+        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", **ckpt_model}})
+        config = DictConfig({"model": {"name": "dc-gsta-dc", **configured_model}})
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoints"
+        ):
+            combined = checkpoint_file.merge_config(config)
+
+        relaxation = OmegaConf.select(combined, "model.relaxation")
+        if expected is None:
+            assert relaxation is None
+        else:
+            assert OmegaConf.to_container(relaxation) == expected
+        assert not caplog.records
+
+    def test_relaxation_from_checkpoint_for_a_different_model(
+        self, tmp_path: Path
+    ) -> None:
+        """A different configured model does not change the checkpoint relaxation."""
+        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc"}})
+        config = DictConfig({"model": {"name": "quick-test", "relaxation": {"tau": 3}}})
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        combined = checkpoint_file.merge_config(config)
+
+        assert "relaxation" not in combined["model"]
+
+    @pytest.mark.parametrize(
+        ("ckpt_model", "expected"),
+        [({}, None), ({"skip_anchor": "initial"}, "initial")],
+        ids=["unset", "initial"],
+    )
+    def test_skip_anchor_from_checkpoint(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        ckpt_model: dict[str, Any],
+        expected: str | None,
+    ) -> None:
+        """The checkpoint sets the skip anchor, with a warning if the config differs."""
+        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", **ckpt_model}})
+        config = DictConfig(
+            {"model": {"name": "dc-gsta-dc", "skip_anchor": "previous"}}
+        )
+
+        checkpoint_file = _save_run_config(tmp_path, ckpt_config)
+
+        with caplog.at_level(
+            logging.WARNING, logger="cryocast.model_service.checkpoints"
+        ):
+            combined = checkpoint_file.merge_config(config)
+
+        assert combined["model"].get("skip_anchor") == expected
+        assert (
+            f"model.skip_anchor={expected or 'unset'!r} (config has 'previous')"
+            in caplog.text
+        )
+
 
 def _save_legacy_checkpoint(path: Path) -> CheckpointFile:
     """Save a legacy checkpoint, with enums, paths, DataSpaces and OmegaConf objects."""

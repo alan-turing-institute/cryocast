@@ -42,6 +42,8 @@ class EncodeProcessDecode(BaseModel):
         "mask_dir",
         "processor",
     }
+    # Relaxation has no weights, so a trained model can use a different relaxation
+    checkpoint_overrides: ClassVar[frozenset[str]] = frozenset({"relaxation"})
 
     def __init__(  # noqa: PLR0913
         self,
