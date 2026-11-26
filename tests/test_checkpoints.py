@@ -185,17 +185,32 @@ class TestMergeConfig:
         assert combined is cfg_model_service
         assert "Could not load the checkpoint configuration" in caplog.text
 
-    def test_refuses_legacy_predict_config(
-        self, cfg_model_service: DictConfig, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("key", "value", "match"),
+        [
+            ("predict", {"target": {"group_name": "sic-ssmis"}}, "legacy 'predict'"),
+            ("model.decoder.restrict_range", "sigmoid", "finaliser options"),
+        ],
+        ids=["legacy-predict", "decoder-finaliser-options"],
+    )
+    def test_refuses_legacy_config(
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        key: str,
+        value: object,
+        match: str,
     ) -> None:
-        """Suggest upgrading configs that predate the 'variables'/'window' split."""
+        """Suggest upgrading configs saved in an older format.
+
+        A full model saves its decoder options only in this config, not in the
+        checkpoint, so finaliser options in the decoder must be detected here.
+        """
         legacy_config = cfg_model_service.copy()
-        legacy_config["predict"] = {"target": {"group_name": "sic-ssmis"}}
+        OmegaConf.update(legacy_config, key, value, force_add=True)
         checkpoint_file = _save_run_config(tmp_path, legacy_config)
 
-        with pytest.raises(
-            OutdatedCheckpointError, match="legacy 'predict' key"
-        ) as exc:
+        with pytest.raises(OutdatedCheckpointError, match=match) as exc:
             checkpoint_file.merge_config(cfg_model_service)
 
         assert f"cryocast checkpoint upgrade {checkpoint_file.path}" in str(exc.value)

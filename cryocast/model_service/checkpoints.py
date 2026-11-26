@@ -133,7 +133,8 @@ class CheckpointFile:
             The checkpoint config, or None (with a warning) if it could not be loaded.
 
         Raises:
-            OutdatedCheckpointError: If the config predates the current format.
+            OutdatedCheckpointError: If the config uses the legacy 'predict' key or
+                keeps finaliser options in the decoder.
 
         """
         try:
@@ -155,6 +156,17 @@ class CheckpointFile:
                 f"Checkpoint configuration {self.config_path} uses the legacy "
                 "'predict' key. Upgrade it with "
                 f"'cryocast checkpoint upgrade {self.path}'."
+            )
+            raise OutdatedCheckpointError(msg)
+        # A full model does not save its decoder in the checkpoint, so finaliser
+        # options that an older version kept in the decoder are only in this config
+        if _legacy_finaliser_options(
+            OmegaConf.select(ckpt_config, "model.decoder") or {}
+        ):
+            msg = (
+                f"Checkpoint configuration {self.config_path} keeps finaliser options "
+                "in 'model.decoder', because an older version of this code saved it. "
+                f"Upgrade it with 'cryocast checkpoint upgrade {self.path}'."
             )
             raise OutdatedCheckpointError(msg)
         return ckpt_config
