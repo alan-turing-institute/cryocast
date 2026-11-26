@@ -207,3 +207,32 @@ uv run cryocast train --config-name <your-config>.local +model.processor.recompu
     `recompute_steps` cannot be used with a processor that has batch normalisation (`norm_type: batchnorm`).
     The first rollout then raises a `ValueError`.
     The `UNetProcessor` default is `batchnorm`, but the `UNetProcessor` model configs set `norm_type: groupnorm`.
+
+### Physical rollout
+
+A physical rollout does not use `decode_chunk_size` or the processor `recompute_steps`.
+For each lead time, it encodes the input window, runs one processor step, decodes one frame and applies the finaliser.
+For training, it keeps the activations of the encoders, the processor and the decoder for each lead time.
+Thus a physical rollout uses the most memory for each lead time.
+
+To recompute each lead time in the backward pass, set `recompute_steps` in the model config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.recompute_steps=true
+```
+
+The model then keeps only the input window of each lead time.
+The forecasts and gradients do not change, but each training step is slower.
+
+!!! note
+    The model `recompute_steps` cannot be used with a latent rollout or with batch normalisation.
+    The model then raises a `ValueError` when you create it.
+    `CNNEncoder` and `CNNDecoder` use `batchnorm` by default.
+    For `cnn_vit_cnn_residual`, set `norm_type: groupnorm` for each encoder in your config, for example:
+
+    ```bash
+    uv run cryocast train --config-name <your-config>.local +model.recompute_steps=true \
+      +model.encoders.sic-osisaf.norm_type=groupnorm +model.encoders.era5.norm_type=groupnorm
+    ```
+
+    A model with `groupnorm` encoders cannot load a checkpoint from a model with `batchnorm` encoders.

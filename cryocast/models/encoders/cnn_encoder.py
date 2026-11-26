@@ -24,7 +24,7 @@ class CNNEncoder(BaseEncoder):
         TensorNTCHW with (batch_size, n_timeslices, latent_channels, latent_height, latent_width)
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         activation: str = "ReLU",
@@ -32,10 +32,24 @@ class CNNEncoder(BaseEncoder):
         kernel_size: int = 3,
         n_layers: int = 3,
         n_subblocks: int = 2,
+        norm_type: str = "batchnorm",
         scale_factor: int = 2,
         **kwargs: Any,
     ) -> None:
-        """Initialise a CNNEncoder."""
+        """Initialise a CNNEncoder.
+
+        Args:
+            activation: Name of the activation function.
+            data_space_in: The input data space.
+            kernel_size: Size of the convolutional kernel.
+            n_layers: Number of size-reducing convolutional blocks.
+            n_subblocks: Number of convolutional sub-blocks in each block.
+            norm_type: Normalisation inside the blocks ("groupnorm", "batchnorm",
+                "none").
+            scale_factor: Factor by which each block decreases the size.
+            **kwargs: Forwarded to ``BaseEncoder``.
+
+        """
         # Initialise the base class with the correct number of output channels
         output_channels = data_space_in.channels * scale_factor**n_layers
         super().__init__(
@@ -70,6 +84,7 @@ class CNNEncoder(BaseEncoder):
                     activation=activation,
                     kernel_size=kernel_size,
                     n_subblocks=n_subblocks,
+                    norm_type=norm_type,
                     scale_factor=scale_factor,
                 )
             )
