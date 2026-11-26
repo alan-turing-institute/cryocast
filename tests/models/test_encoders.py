@@ -334,7 +334,11 @@ class TestEncoderCheckpointing:
             for p_ref, p_chunked in zip(
                 reference.parameters(), chunked.parameters(), strict=True
             ):
-                torch.testing.assert_close(p_chunked.grad, p_ref.grad)
+                # Checkpointed chunks add per-step gradients in a different order,
+                # and conv biases before GroupNorm have zero true gradient (noise).
+                torch.testing.assert_close(
+                    p_chunked.grad, p_ref.grad, rtol=1e-4, atol=1e-4
+                )
 
     def test_non_positive_chunk_size_raises(self) -> None:
         with pytest.raises(ValueError, match="encode_chunk_size must be positive"):
