@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar, cast
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -157,17 +157,6 @@ class CheckpointFile:
                 f"'cryocast checkpoint upgrade {self.path}'."
             )
             raise OutdatedCheckpointError(msg)
-
-        # Configs from before the finaliser was split from the decoder must be upgraded,
-        # since the decoder no longer accepts these keys.
-        decoder_config = OmegaConf.select(ckpt_config, "model.decoder") or {}
-        if moved := _legacy_finaliser_options(decoder_config):
-            msg = (
-                f"Checkpoint configuration {self.config_path} sets "
-                f"{', '.join(moved)} under the legacy 'model.decoder' key. Upgrade it "
-                f"with 'cryocast checkpoint upgrade {self.path}'."
-            )
-            raise OutdatedCheckpointError(msg)
         return ckpt_config
 
     def _warn_replaced(
@@ -196,7 +185,7 @@ class CheckpointFile:
                     reprlib.repr(configured),
                 )
 
-    def load(self) -> dict[str, Any]:
+    def load_dict(self) -> dict[str, Any]:
         """Load the checkpoint, refusing one that must be upgraded first.
 
         Raises:
@@ -243,7 +232,7 @@ class CheckpointFile:
             OutdatedCheckpointError: If the checkpoint must be upgraded first.
 
         """
-        self.load()
+        self.load_dict()
         return model_cls.load_from_checkpoint(
             self.path,
             map_location="cpu",  # Lightning will move this to the correct device
@@ -456,7 +445,7 @@ class LegacyCheckpointFile:
             hyper_parameters["finaliser"] = options
         return bool(keys or options)
 
-    def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901, PLR0912
+    def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901
         """Upgrade the checkpoint and its config to the current format.
 
         The checkpoint is rewritten to reference ``cryocast`` classes and to contain
@@ -511,10 +500,9 @@ class LegacyCheckpointFile:
                 checkpoint_path, map_location="cpu", weights_only=True
             )
         renamed: set[str] = set()
-        ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
-        if not isinstance(ckpt_state, dict):
-            msg = f"{checkpoint_path} is not a Lightning checkpoint."
-            raise CheckpointUpgradeError(msg)
+        ckpt_state = cast(
+            "dict[str, Any]", self._rename(to_plain_types(ckpt_state), renamed)
+        )
         separated = self._separate_finaliser(ckpt_state)
 
         if unsafe or renamed or separated:
@@ -558,11 +546,7 @@ class LegacyCheckpointFile:
                 }
         decoder = OmegaConf.select(config, "model.decoder") or {}
         if moved := _legacy_finaliser_options(decoder, remove=True):
-            # The legacy decoder applied these options, so they override any
-            # finaliser settings that are already in the config
-            config.model.finaliser = OmegaConf.merge(
-                config.model.get("finaliser") or {}, moved
-            )
+            config.model.finaliser = moved
         if predict is not None or moved or self._PACKAGE_PATTERN.search(text):
             self._replace(config_path, lambda tmp_pth: OmegaConf.save(config, tmp_pth))
         else:

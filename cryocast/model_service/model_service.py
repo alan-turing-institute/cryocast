@@ -128,7 +128,7 @@ class ModelService:
 
         """
         # Load the checkpoint first, so that an outdated one fails before anything else
-        checkpoint = checkpoint_file.load()
+        ckpt_dict = checkpoint_file.load_dict()
 
         # Use the config that the checkpoint was trained with, where available
         combined_cfg = checkpoint_file.merge_config(config)
@@ -157,7 +157,7 @@ class ModelService:
             weights_only=True,
             **non_checkpoint_kwargs,
         )
-        builder.model_.checkpoint_epoch = checkpoint.get("epoch")
+        builder.model_.checkpoint_epoch = ckpt_dict.get("epoch")
         builder._verify_model_matches_data()
         return builder
 
@@ -641,7 +641,7 @@ class ModelService:
         trainer = self._fit(model=decoder_model, config=train_cfg, job_stage="decoder")
         checkpoint_file = self._save_stage_checkpoint(trainer, "decoder")
         # Reload the best weights into the decoder model
-        decoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
+        decoder_model.load_state_dict(checkpoint_file.load_dict()["state_dict"])
         return decoder_model
 
     def train_stage_encoders(
@@ -710,7 +710,7 @@ class ModelService:
                 trainer, f"encoder-{encoder.name}"
             )
             # Reload the best weights into the encoder model
-            encoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
+            encoder_model.load_state_dict(checkpoint_file.load_dict()["state_dict"])
             encoder_models.append(encoder_model)
 
         return encoder_models
@@ -775,5 +775,5 @@ class ModelService:
         )
         checkpoint_file = self._save_stage_checkpoint(trainer, "processor")
         # Reload the best weights into the processor model
-        processor_model.load_state_dict(checkpoint_file.load()["state_dict"])
+        processor_model.load_state_dict(checkpoint_file.load_dict()["state_dict"])
         return processor_model

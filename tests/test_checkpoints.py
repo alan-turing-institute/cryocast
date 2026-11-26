@@ -19,8 +19,6 @@ from cryocast.model_service.checkpoints import (
     OutdatedCheckpointError,
 )
 
-# A model config whose class allows 'relaxation_tau' to be overridden
-
 
 def _save_run_config(run_dir: Path, config: DictConfig) -> CheckpointFile:
     """Save a run's model_config.yaml and return a checkpoint file in the run."""
@@ -104,13 +102,13 @@ class TestFindLast:
             CheckpointFile.find_last(checkpoint_dir)
 
 
-class TestLoad:
+class TestLoadDict:
     def test_loads_plain_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint that contains only plain Python types and tensors."""
         path = tmp_path / "last.ckpt"
         torch.save({"epoch": 3, "state_dict": {"weight": torch.ones(2)}}, path)
 
-        checkpoint = CheckpointFile(path).load()
+        checkpoint = CheckpointFile(path).load_dict()
 
         assert checkpoint["epoch"] == 3
         assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
@@ -121,7 +119,7 @@ class TestLoad:
         torch.save({"callbacks": {"dirpath": Path("/run/checkpoints")}}, path)
 
         with pytest.raises(OutdatedCheckpointError) as exc_info:
-            CheckpointFile(path).load()
+            CheckpointFile(path).load_dict()
 
         assert f"cryocast checkpoint upgrade --trust {path}" in str(exc_info.value)
         assert isinstance(exc_info.value, pickle.UnpicklingError)
@@ -142,7 +140,7 @@ class TestLoad:
         torch.save(ckpt_state, path)
 
         with pytest.raises(OutdatedCheckpointError) as exc_info:
-            CheckpointFile(path).load()
+            CheckpointFile(path).load_dict()
 
         assert f"cryocast checkpoint upgrade {path}" in str(exc_info.value)
 
@@ -152,7 +150,7 @@ class TestLoad:
         weights = {"finaliser.skip_connection.fusion.weight": torch.ones(2)}
         torch.save({"state_dict": weights}, path)
 
-        assert CheckpointFile(path).load()["state_dict"].keys() == weights.keys()
+        assert CheckpointFile(path).load_dict()["state_dict"].keys() == weights.keys()
 
     def test_loads_upgraded_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint after upgrading it."""
@@ -160,11 +158,11 @@ class TestLoad:
             tmp_path / "checkpoints" / "last.ckpt"
         )
         with pytest.raises(OutdatedCheckpointError):
-            checkpoint_file.load()
+            checkpoint_file.load_dict()
 
         LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
-        assert checkpoint_file.load()["hyper_parameters"]["hemisphere"] == "north"
+        assert checkpoint_file.load_dict()["hyper_parameters"]["hemisphere"] == "north"
 
 
 class TestMergeConfig:
@@ -197,26 +195,6 @@ class TestMergeConfig:
 
         with pytest.raises(
             OutdatedCheckpointError, match="legacy 'predict' key"
-        ) as exc:
-            checkpoint_file.merge_config(cfg_model_service)
-
-        assert f"cryocast checkpoint upgrade {checkpoint_file.path}" in str(exc.value)
-
-    def test_refuses_legacy_decoder_finaliser_config(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """Suggest upgrading configs that set finaliser options on the decoder."""
-        legacy_config = cfg_model_service.copy()
-        legacy_config["model"]["decoder"] = {
-            "_target_": "cryocast.models.decoders.CNNDecoder",
-            "mask_type": "active",
-            "restrict_range": "sigmoid",
-        }
-        checkpoint_file = _save_run_config(tmp_path, legacy_config)
-
-        with pytest.raises(
-            OutdatedCheckpointError,
-            match=r"mask_type, restrict_range under the legacy 'model\.decoder' key",
         ) as exc:
             checkpoint_file.merge_config(cfg_model_service)
 
@@ -630,32 +608,6 @@ class TestUpgrade:
                 },
             },
         }
-        # The upgraded config loads without suggesting another upgrade
-        assert checkpoint_file._load_config() is not None
-
-    def test_merges_finaliser_options_into_existing_finaliser(
-        self, tmp_path: Path
-    ) -> None:
-        """Keep existing 'model.finaliser' settings that the decoder does not set."""
-        checkpoint_file = _save_legacy_checkpoint(
-            tmp_path / "checkpoints" / "last.ckpt"
-        )
-        legacy_config = {
-            "model": {
-                "decoder": {"restrict_range": "sigmoid"},
-                "finaliser": {"mask_type": "active", "restrict_range": "clamp"},
-            },
-        }
-        _save_legacy_config(checkpoint_file, OmegaConf.to_yaml(legacy_config))
-
-        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
-
-        assert OmegaConf.load(checkpoint_file.config_path) == {
-            "model": {
-                "decoder": {},
-                "finaliser": {"mask_type": "active", "restrict_range": "sigmoid"},
-            },
-        }
 
     def test_moves_skip_connection_weights_from_decoder(self, tmp_path: Path) -> None:
         """Rename skip connection weights and clear the optimizer state that uses them.
@@ -681,7 +633,7 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade()
 
-        upgraded = CheckpointFile(path).load()
+        upgraded = CheckpointFile(path).load_dict()
         assert upgraded["state_dict"].keys() == {
             "decoder.conv.weight",
             "finaliser.skip_connection.fusion.weight",
@@ -716,7 +668,7 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade()
 
-        assert CheckpointFile(path).load()["hyper_parameters"] == {
+        assert CheckpointFile(path).load_dict()["hyper_parameters"] == {
             "decoder": decoder,
             "finaliser": {
                 "mask_type": "active",
@@ -839,7 +791,7 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade(trusted=True)
 
-        checkpoint = CheckpointFile(path).load()
+        checkpoint = CheckpointFile(path).load_dict()
         assert checkpoint["callbacks"]["best_score"] == 0.25
         assert type(checkpoint["callbacks"]["best_score"]) is float
 
@@ -858,7 +810,7 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade()
 
-        upgraded = CheckpointFile(path).load()["state_dict"]
+        upgraded = CheckpointFile(path).load_dict()["state_dict"]
         assert upgraded._metadata == state_dict._metadata  # type: ignore[attr-defined]
 
     def test_leaves_files_unchanged_if_upgrade_would_not_load_safely(

@@ -97,7 +97,7 @@ class TestEncoderStage:
         )
 
         checkpoint_file = LegacyCheckpointFile(CheckpointFile(path)).upgrade()
-        checkpoint_file.load()
+        checkpoint_file.load_dict()
         loaded = EncoderStage.load_from_checkpoint(
             checkpoint_file.path, metrics=cfg_metrics, weights_only=True
         )
