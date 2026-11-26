@@ -268,16 +268,14 @@ class TestDecoderCheckpointing:
     latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
     output_space = DataSpace(name="output", channels=1, shape=(16, 16))
 
-    def _decoder(
-        self, decode_chunk_size: int | None, norm_type: str = "groupnorm"
-    ) -> CNNDecoder:
+    def _decoder(self, decode_chunk_size: int | None) -> CNNDecoder:
         torch.manual_seed(0)
         return CNNDecoder(
             decode_chunk_size=decode_chunk_size,
             data_space_in=self.latent_space,
             data_space_out=self.output_space,
             n_layers=1,
-            norm_type=norm_type,
+            norm_type="groupnorm",
         )
 
     @pytest.mark.parametrize(
@@ -311,10 +309,3 @@ class TestDecoderCheckpointing:
     def test_non_positive_chunk_size_raises(self) -> None:
         with pytest.raises(ValueError, match="decode_chunk_size must be positive"):
             self._decoder(0)
-
-    def test_batchnorm_raises(self) -> None:
-        decoder = self._decoder(2, norm_type="batchnorm")
-        x = torch.randn(1, 3, self.latent_space.channels, *self.latent_space.shape)
-
-        with pytest.raises(ValueError, match="batch normalisation"):
-            decoder.rollout(x)

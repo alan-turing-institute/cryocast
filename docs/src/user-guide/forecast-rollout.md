@@ -217,7 +217,9 @@ A smaller chunk size uses less memory.
 
 !!! note
     `decode_chunk_size` cannot be used with a decoder that has batch normalisation (`norm_type: batchnorm`).
-    The first rollout then raises a `ValueError`.
+    The model then raises a `ValueError` when you create it.
+    `CNNDecoder` uses `batchnorm` by default, so also set `norm_type: groupnorm` for the decoder.
+    A model with a `groupnorm` decoder cannot load a checkpoint from a model with a `batchnorm` decoder.
 
 A latent diffusion model with a non-zero `loss_weights.reconstruction` also encodes the inputs for all lead times with gradients.
 The `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc` model configs set `reconstruction: 1.0`.
@@ -231,48 +233,52 @@ uv run cryocast train --config-name <your-config>.local \
 
 !!! note
     `encode_chunk_size` cannot be used with an encoder that has batch normalisation.
+    The model then raises a `ValueError` when you create it.
     `CNNEncoder` uses `batchnorm` by default, so also set `norm_type: groupnorm` for each encoder.
     A model with `groupnorm` encoders cannot load a checkpoint from a model with `batchnorm` encoders.
 
 A processor that predicts one lead time at a time also keeps its activations for each lead time.
 This applies to `UNetProcessor`, `VitProcessor`, `NullProcessor` and `ConvLSTMProcessor`.
-To recompute them in the backward pass in the same way, set `recompute_steps` in the processor config:
+To recompute each processor step in the backward pass in the same way, set `trade_compute_for_memory` in the model config:
 
 ```bash
-uv run cryocast train --config-name <your-config>.local +model.processor.recompute_steps=true
+uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true
 ```
 
-`GSTAProcessor` and the diffusion processors ignore `recompute_steps`.
+In a latent rollout, this option applies only to the processor.
+To decrease encoder and decoder memory, set `encode_chunk_size` and `decode_chunk_size`.
 
 !!! note
-    `recompute_steps` cannot be used with a processor that has batch normalisation (`norm_type: batchnorm`).
-    The first rollout then raises a `ValueError`.
+    `trade_compute_for_memory` cannot be used with a processor that has batch normalisation (`norm_type: batchnorm`).
     The `UNetProcessor` default is `batchnorm`, but the `UNetProcessor` model configs set `norm_type: groupnorm`.
+    `GSTAProcessor` and the diffusion processors do not predict one lead time at a time, so they do not support `trade_compute_for_memory` in a latent rollout.
+    In these cases, the model raises a `ValueError` when you create it.
 
 ### Physical rollout
 
-A physical rollout does not use `decode_chunk_size` or the processor `recompute_steps`.
+A physical rollout does not use `encode_chunk_size` or `decode_chunk_size`.
 For each lead time, it encodes the input window, runs one processor step, decodes one frame and applies the finaliser.
 For training, it keeps the activations of the encoders, the processor and the decoder for each lead time.
 Thus a physical rollout uses the most memory for each lead time.
 
-To recompute each lead time in the backward pass, set `recompute_steps` in the model config:
+To recompute each lead time in the backward pass, set `trade_compute_for_memory` in the model config, as for a latent rollout:
 
 ```bash
-uv run cryocast train --config-name <your-config>.local +model.recompute_steps=true
+uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true
 ```
 
+In a physical rollout, this option recomputes the full step: the encoders, the processor, the decoder and the finaliser.
 The model then keeps only the input window of each lead time.
 The forecasts and gradients do not change, but each training step is slower.
 
 !!! note
-    The model `recompute_steps` cannot be used with a latent rollout or with batch normalisation.
+    In a physical rollout, `trade_compute_for_memory` cannot be used if any part of the model has batch normalisation.
     The model then raises a `ValueError` when you create it.
     `CNNEncoder` and `CNNDecoder` use `batchnorm` by default.
     For `cnn_vit_cnn_residual`, set `norm_type: groupnorm` for each encoder in your config, for example:
 
     ```bash
-    uv run cryocast train --config-name <your-config>.local +model.recompute_steps=true \
+    uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true \
       +model.encoders.sic-osisaf.norm_type=groupnorm +model.encoders.era5.norm_type=groupnorm
     ```
 

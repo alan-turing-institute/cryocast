@@ -1226,7 +1226,9 @@ class TestRecomputeSteps:
     def _saved_bytes_and_grads(
         self, name: str, *, recompute_steps: bool
     ) -> tuple[int, torch.Tensor, list[torch.Tensor | None]]:
-        processor = self._processor(name, recompute_steps=recompute_steps)
+        processor = self._processor(name)
+        # EncodeProcessDecode sets this from its own recompute_steps option
+        processor.recompute_steps = recompute_steps
         x = torch.randn(1, 3, self.latent_space.channels, *self.latent_space.shape)
         saved_bytes = 0
 
@@ -1253,10 +1255,3 @@ class TestRecomputeSteps:
         for grad, reference_grad in zip(grads, reference_grads, strict=True):
             torch.testing.assert_close(grad, reference_grad)
         assert recompute_bytes < reference_bytes / 2
-
-    def test_batchnorm_raises(self) -> None:
-        processor = self._processor("unet", norm_type="batchnorm", recompute_steps=True)
-        x = torch.randn(1, 3, self.latent_space.channels, *self.latent_space.shape)
-
-        with pytest.raises(ValueError, match="batch normalisation"):
-            processor.rollout(x)

@@ -81,12 +81,6 @@ class BaseDecoder(Freezable):
             TensorNTCHW with (batch_size, n_timeslices, output_channels, output_height,
             output_width)
 
-        Raises:
-            ValueError: If `decode_chunk_size` is set and the decoder has batch
-                normalisation layers.
-
         """
-        decoded = checkpointed_chunks(
-            self, x.flatten(0, 1), self.decode_chunk_size, "decode_chunk_size"
-        )
+        decoded = checkpointed_chunks(self, x.flatten(0, 1), self.decode_chunk_size)
         return decoded.unflatten(0, x.shape[:2])

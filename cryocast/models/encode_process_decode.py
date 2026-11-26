@@ -60,7 +60,7 @@ class EncodeProcessDecode(BaseModel):
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
         skip_anchor: SkipAnchorType | str | None = None,
         relaxation_tau: float | None = None,
-        recompute_steps: bool = False,
+        trade_compute_for_memory: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialise an EncodeProcessDecode model.
@@ -88,11 +88,20 @@ class EncodeProcessDecode(BaseModel):
                 each forecast step towards climatology, or None for no relaxation.
                 Relaxation needs a PREVIOUS skip anchor and a `climatology` entry in
                 each batch.
-            recompute_steps: If True, a physical rollout runs each forecast step again
-                in the backward pass, instead of keeping its activations. This decreases
-                memory use, but makes training slower. Needs rollout_space='physical'
-                and no batch normalisation.
+            trade_compute_for_memory: If True, run each forecast step again in the backward
+                pass, instead of keeping its activations. This decreases memory use for
+                long rollouts, but makes training slower. A physical rollout recomputes
+                the full step (encoders, processor, decoder and finaliser), and needs
+                a model with no batch normalisation. A latent rollout recomputes only
+                the processor steps, and needs a processor with no batch normalisation
+                and with a per-step rollout.
             **kwargs: forwarded to ``BaseModel``.
+
+        Raises:
+            ValueError: If a checkpointing option (`trade_compute_for_memory`,
+                `encode_chunk_size` or `decode_chunk_size`) is set on a component with
+                batch normalisation, or if `trade_compute_for_memory` is set for a latent
+                rollout with a processor that does not support it.
 
         """
         super().__init__(
@@ -209,21 +218,45 @@ class EncodeProcessDecode(BaseModel):
 
         self._add_relaxation()
 
-        # Only the per-step loop of a physical rollout recomputes steps. A latent
-        # rollout uses processor.recompute_steps and decoder.decode_chunk_size.
-        if recompute_steps:
-            if not self.rollout_strategy.is_physical:
-                msg = (
-                    "recompute_steps requires rollout_space='physical'. For a latent "
-                    "rollout, set processor.recompute_steps and "
-                    "decoder.decode_chunk_size instead."
-                )
-                raise ValueError(msg)
-            verify_no_batchnorm(self, "recompute_steps")
-        self.recompute_steps = recompute_steps
+        self.trade_compute_for_memory = trade_compute_for_memory
+        self._verify_checkpointing_options()
 
         # Choose how to calculate the training loss
         self.objective: TrainingObjective = build_training_objective(self, loss_weights)
+
+    def _verify_checkpointing_options(self) -> None:
+        """Check the activation checkpointing options of the model and its components.
+
+        Checkpointing runs a module again in the backward pass. The checks run here,
+        and not in the first rollout, so that a bad configuration fails before
+        training starts.
+
+        Raises:
+            ValueError: If a checkpointing option is set on a module with batch
+                normalisation, or if `trade_compute_for_memory` is set for a latent rollout
+                with a processor that does not support it.
+
+        """
+        # A physical rollout recomputes each full step in its own loop. A latent
+        # rollout gives the option to the processor, which recomputes its own steps.
+        if self.trade_compute_for_memory:
+            if self.rollout_strategy.is_physical:
+                verify_no_batchnorm(self, "trade_compute_for_memory")
+            else:
+                if not self.processor.supports_recompute_steps:
+                    msg = (
+                        f"{type(self.processor).__name__} does not support "
+                        "trade_compute_for_memory with rollout_space='latent': its rollout has "
+                        "no per-step loop to recompute."
+                    )
+                    raise ValueError(msg)
+                verify_no_batchnorm(self.processor, "trade_compute_for_memory")
+                self.processor.recompute_steps = True
+        for encoder in self.encoders:
+            if encoder.encode_chunk_size is not None:
+                verify_no_batchnorm(encoder, "encode_chunk_size")
+        if self.decoder.decode_chunk_size is not None:
+            verify_no_batchnorm(self.decoder, "decode_chunk_size")
 
     def _add_relaxation(self) -> None:
         """Give the finaliser the relaxation that the rollout strategy sets.
@@ -422,7 +455,7 @@ class EncodeProcessDecode(BaseModel):
         If relaxation is on, each step is relaxed towards climatology before it goes
         into the window.
 
-        If `recompute_steps` is set, it checkpoints each step. The backward pass then
+        If `trade_compute_for_memory` is set, it checkpoints each step. The backward pass then
         runs the step again, instead of keeping its activations.
 
         Non-target input groups hold their most recent OBSERVED frame for every forecast
@@ -470,7 +503,7 @@ class EncodeProcessDecode(BaseModel):
                 self._forward_physical_step,
                 step_windows,
                 step_equilibrium,
-                enabled=self.recompute_steps,
+                enabled=self.trade_compute_for_memory,
             )
             outputs.append(output)
 

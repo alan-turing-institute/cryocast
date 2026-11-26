@@ -15,7 +15,7 @@ numbers of input and output channels.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from torch import nn
 
@@ -41,6 +41,9 @@ class GSTAProcessor(BaseProcessor):
     A checkpoint does not load into a model with a different n_forecast_steps.
     For a longer horizon, increase hid_channels.
     """
+
+    # All lead times come from one step, so there are no steps to recompute
+    supports_recompute_steps: ClassVar[bool] = False
 
     def __init__(  # noqa: PLR0913
         self,

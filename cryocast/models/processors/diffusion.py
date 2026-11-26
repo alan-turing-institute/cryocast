@@ -42,7 +42,7 @@ live in the same space as the encoded history.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from omegaconf import DictConfig
@@ -73,6 +73,9 @@ class DiffusionProcessor(BaseProcessor):
         TensorNTCHW with shape (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
         - Every channel contains the denoised prediction from reverse diffusion
     """
+
+    # The rollout calls the sampler, not a per-step loop that can be recomputed
+    supports_recompute_steps: ClassVar[bool] = False
 
     def __init__(  # noqa: PLR0913
         self,

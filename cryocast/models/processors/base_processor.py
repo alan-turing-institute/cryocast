@@ -1,10 +1,10 @@
 from collections import deque
 from collections.abc import Iterable
+from typing import ClassVar
 
 from torch import cat, nn, stack
 
 from cryocast.models.common import checkpoint_activations
-from cryocast.models.common.normalisations import verify_no_batchnorm
 from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 
@@ -16,7 +16,18 @@ class BaseProcessor(nn.Module):
 
     Output space:
         TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
+
+    Attributes:
+        supports_recompute_steps: False for a processor whose rollout has no
+            per-step loop to recompute.
+        recompute_steps: If True, the rollout keeps only the input of each forecast
+            step, and runs the step again in the backward pass. This decreases memory
+            use for long rollouts, but makes training slower. `EncodeProcessDecode`
+            sets this from its `trade_compute_for_memory` option.
+
     """
+
+    supports_recompute_steps: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -25,7 +36,6 @@ class BaseProcessor(nn.Module):
         data_space: DataSpace,
         n_forecast_steps: int,
         n_history_steps: int,
-        recompute_steps: bool = False,
     ) -> None:
         """Initialise a BaseProcessor.
 
@@ -35,10 +45,6 @@ class BaseProcessor(nn.Module):
             data_space: The latent data space.
             n_forecast_steps: The number of forecast steps.
             n_history_steps: The number of history steps.
-            recompute_steps: If True, the rollout keeps only the input of each
-                forecast step, and runs the step again in the backward pass. This
-                decreases memory use for long rollouts, but makes training slower.
-                Only the default `rollout()` and `ConvLSTMProcessor` use this option.
 
         """
         super().__init__()
@@ -46,7 +52,7 @@ class BaseProcessor(nn.Module):
         self.data_space = data_space
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
-        self.recompute_steps = recompute_steps
+        self.recompute_steps = False
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
         """Forward step: predict the next timestep from a window of history/forecast timesteps.
@@ -92,14 +98,7 @@ class BaseProcessor(nn.Module):
                 sample_mask: optional (batch_size,) mask of the samples to use in the
                     prediction loss. None means all samples.
 
-        Raises:
-            ValueError: If `recompute_steps` is set and the processor has batch
-                normalisation layers.
-
         """
-        if self.recompute_steps:
-            verify_no_batchnorm(self, "recompute_steps")
-
         # The current window of n_history_steps timesteps, oldest to newest
         window: deque[TensorNCHW] = deque(x.unbind(dim=1))
 

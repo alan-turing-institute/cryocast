@@ -100,14 +100,8 @@ class BaseEncoder(Freezable):
         Returns:
             TensorNTCHW with (batch_size, n_timeslices, latent_channels, latent_height, latent_width)
 
-        Raises:
-            ValueError: If `encode_chunk_size` is set and the encoder has batch
-                normalisation layers.
-
         """
-        encoded = checkpointed_chunks(
-            self, x.flatten(0, 1), self.encode_chunk_size, "encode_chunk_size"
-        )
+        encoded = checkpointed_chunks(self, x.flatten(0, 1), self.encode_chunk_size)
         return encoded.unflatten(0, x.shape[:2])
 
     def verify_output_channels(

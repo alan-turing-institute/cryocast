@@ -37,9 +37,9 @@ class ConvLSTMProcessor(BaseProcessor):
             n_layers: Number of stacked ConvLSTM layers.
             dropout: Dropout between ConvLSTM layers.
             residual: If True, each prediction is a change from the previous frame.
-            **kwargs: Forwarded to `BaseProcessor`. If `recompute_steps` is True, each
-                cell keeps only its input and state, and runs again in the backward
-                pass.
+            **kwargs: Forwarded to `BaseProcessor`. If `recompute_steps` is set,
+                each cell keeps only its input and state, and runs again in the
+                backward pass.
 
         """
         super().__init__(**kwargs)
