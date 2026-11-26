@@ -1,5 +1,5 @@
+from .activation_checkpointing import checkpoint_activations, checkpointed_chunks
 from .channel_adaptor import ChannelAdaptor
-from .checkpointed_chunks import checkpointed_chunks
 from .conv_block_common import CommonConvBlock
 from .conv_block_downsample import ConvBlockDownsample
 from .conv_block_upsample import ConvBlockUpsample
@@ -49,5 +49,6 @@ __all__ = [
     "TimeEmbed",
     "TransformerEncoderBlock",
     "WeightedUpsample",
+    "checkpoint_activations",
     "checkpointed_chunks",
 ]

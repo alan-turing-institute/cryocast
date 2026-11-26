@@ -1424,3 +1424,33 @@ class TestSkipAnchor:
         assert loaded.rollout_strategy.space is rollout_space
         assert loaded.rollout_strategy.anchor is expected
         assert loaded.rollout_strategy.relaxation_tau is None
+
+    @pytest.mark.parametrize(
+        ("n_forecast_steps", "relaxation_tau", "expected_warning"),
+        [
+            pytest.param(29, None, False, id="short-unrelaxed"),
+            pytest.param(30, None, True, id="long-unrelaxed"),
+            pytest.param(30, 10.0, False, id="long-relaxed"),
+        ],
+    )
+    def test_warns_about_long_rollout_without_relaxation(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+        n_forecast_steps: int,
+        relaxation_tau: float | None,
+        *,
+        expected_warning: bool,
+    ) -> None:
+        """Recommend relaxation_tau=10 for a rollout of 30 or more lead times."""
+        with caplog.at_level(logging.WARNING):
+            _skip_model(
+                cfg_loss,
+                cfg_metrics,
+                n_forecast_steps=n_forecast_steps,
+                skip_anchor="previous",
+                relaxation_tau=relaxation_tau,
+            )
+
+        assert ("no relaxation towards climatology" in caplog.text) is expected_warning

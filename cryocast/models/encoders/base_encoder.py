@@ -105,13 +105,9 @@ class BaseEncoder(Freezable):
                 normalisation layers.
 
         """
-        frames = x.flatten(0, 1)
-        if self.encode_chunk_size is None:
-            encoded = self(frames)
-        else:
-            encoded = checkpointed_chunks(
-                self, frames, self.encode_chunk_size, "encode_chunk_size"
-            )
+        encoded = checkpointed_chunks(
+            self, x.flatten(0, 1), self.encode_chunk_size, "encode_chunk_size"
+        )
         return encoded.unflatten(0, x.shape[:2])
 
     def verify_output_channels(

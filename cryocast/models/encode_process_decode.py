@@ -5,10 +5,9 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import hydra
 import torch
 from omegaconf import DictConfig
-from torch.utils.checkpoint import checkpoint
 from typing_extensions import override
 
-from cryocast.models.common import ExponentialRelaxation
+from cryocast.models.common import ExponentialRelaxation, checkpoint_activations
 from cryocast.models.common.normalisations import verify_no_batchnorm
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
@@ -31,6 +30,9 @@ if TYPE_CHECKING:
     from torch.nn.modules.module import _IncompatibleKeys
 
 log = logging.getLogger(__name__)
+
+# Warn about a rollout without relaxation from this number of lead times
+_LONG_ROLLOUT_STEPS = 30
 
 
 class EncodeProcessDecode(BaseModel):
@@ -205,22 +207,7 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
 
-        # Without a skip connection, no step carries over to the next step in a
-        # latent rollout. Each step is then a fixed blend with climatology.
-        tau = self.rollout_strategy.relaxation_tau
-        if (
-            tau is not None
-            and not self.rollout_strategy.is_physical
-            and self.finaliser.skip_connection is None
-        ):
-            msg = (
-                "relaxation in a latent rollout requires a finaliser skip connection, "
-                "so that each relaxed step carries over to the next step. Set "
-                "finaliser.skip_connection, use rollout_space='physical', or remove "
-                "relaxation."
-            )
-            raise ValueError(msg)
-        self.finaliser.relaxation = None if tau is None else ExponentialRelaxation(tau)
+        self._add_relaxation()
 
         # Only the per-step loop of a physical rollout recomputes steps. A latent
         # rollout uses processor.recompute_steps and decoder.decode_chunk_size.
@@ -237,6 +224,37 @@ class EncodeProcessDecode(BaseModel):
 
         # Choose how to calculate the training loss
         self.objective: TrainingObjective = build_training_objective(self, loss_weights)
+
+    def _add_relaxation(self) -> None:
+        """Give the finaliser the relaxation that the rollout strategy sets.
+
+        Raises:
+            ValueError: If a latent rollout has relaxation but no skip connection.
+
+        """
+        # Without a skip connection, no step carries over to the next step in a
+        # latent rollout. Each step is then a fixed blend with climatology.
+        tau = self.rollout_strategy.relaxation_tau
+        if (
+            tau is not None
+            and not self.rollout_strategy.is_physical
+            and self.finaliser.skip_connection is None
+        ):
+            msg = (
+                "relaxation in a latent rollout requires a finaliser skip connection, "
+                "so that each relaxed step carries over to the next step. Set "
+                "finaliser.skip_connection, use rollout_space='physical', or remove "
+                "relaxation."
+            )
+            raise ValueError(msg)
+        self.finaliser.relaxation = None if tau is None else ExponentialRelaxation(tau)
+        if tau is None and self.n_forecast_steps >= _LONG_ROLLOUT_STEPS:
+            log.warning(
+                "This model makes %d lead times with no relaxation towards "
+                "climatology. For long rollouts, the recommended settings are "
+                "skip_anchor='previous' and relaxation_tau=10.",
+                self.n_forecast_steps,
+            )
 
     @override
     def load_state_dict(
@@ -448,15 +466,11 @@ class EncodeProcessDecode(BaseModel):
 
             # Predict one forecast step, optionally recomputing it in the backward pass
             # -> (B, C_out, H_out, W_out)
-            output: TensorNCHW = (
-                checkpoint(
-                    self._forward_physical_step,
-                    step_windows,
-                    step_equilibrium,
-                    use_reentrant=False,
-                )
-                if self.recompute_steps
-                else self._forward_physical_step(step_windows, step_equilibrium)
+            output: TensorNCHW = checkpoint_activations(
+                self._forward_physical_step,
+                step_windows,
+                step_equilibrium,
+                enabled=self.recompute_steps,
             )
             outputs.append(output)
 

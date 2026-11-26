@@ -2,9 +2,8 @@ from typing import Any
 
 import torch
 from torch import Tensor, nn
-from torch.utils.checkpoint import checkpoint
 
-from cryocast.models.common import ConvLSTMCell
+from cryocast.models.common import ConvLSTMCell, checkpoint_activations
 from cryocast.types import ProcessorOutput, TensorNCHW, TensorNTCHW
 
 from .base_processor import BaseProcessor
@@ -89,10 +88,8 @@ class ConvLSTMProcessor(BaseProcessor):
         next_states: list[tuple[TensorNCHW, TensorNCHW]] = []
         layer_input = x
         for layer_idx, (cell, state) in enumerate(zip(self.cells, states, strict=True)):
-            next_state = (
-                checkpoint(cell, layer_input, state, use_reentrant=False)
-                if self.recompute_steps
-                else cell(layer_input, state)
+            next_state = checkpoint_activations(
+                cell, layer_input, state, enabled=self.recompute_steps
             )
             next_states.append(next_state)
             layer_input = next_state[0]

@@ -2,8 +2,8 @@ from collections import deque
 from collections.abc import Iterable
 
 from torch import cat, nn, stack
-from torch.utils.checkpoint import checkpoint
 
+from cryocast.models.common import checkpoint_activations
 from cryocast.models.common.normalisations import verify_no_batchnorm
 from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
 
@@ -107,10 +107,8 @@ class BaseProcessor(nn.Module):
         # window and then dropping the oldest timestep to make room for the prediction.
         outputs: list[TensorNCHW] = []
         for _ in range(self.n_forecast_steps):
-            next_step = (
-                checkpoint(self.step, tuple(window), use_reentrant=False)
-                if self.recompute_steps
-                else self.step(window)
+            next_step = checkpoint_activations(
+                self.step, tuple(window), enabled=self.recompute_steps
             )
             outputs.append(next_step)
             window.popleft()

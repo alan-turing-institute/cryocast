@@ -138,6 +138,7 @@ A large `tau` gives a weak pull, and the effect is small at short lead times.
 |-----------|---------------------|
 | You must reproduce an existing checkpoint or leaderboard result | Do not set `skip_anchor` or `relaxation_tau` |
 | Multistage model with a pre-trained decoder | `skip_anchor: previous`, so the forecast uses the decoder as the decoder stage trained it |
+| 90-day rollout (`window=forecast-90-history-4`) | `skip_anchor: previous` and `relaxation_tau: 10`. See [Long forecast horizons](#long-forecast-horizons). |
 | Forecast for lead times longer than the training lead times, or a forecast bias that increases with lead time | `skip_anchor: previous` and `relaxation_tau` |
 | Physical rollout | Keep the default anchor (`previous`). Add `relaxation_tau` for long lead times. |
 
@@ -157,14 +158,14 @@ To enable them, add them to the `model` section of your `*.local.yaml` config:
 
 ```yaml
 skip_anchor: previous
-relaxation_tau: 30.0
+relaxation_tau: 10.0
 ```
 
 You can also set them on the command line.
 The keys are not in the model configs, so put a `+` before each key:
 
 ```bash
-uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previous +model.relaxation_tau=30
+uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previous +model.relaxation_tau=10
 ```
 
 !!! warning
@@ -299,11 +300,16 @@ For a latent diffusion processor, you can set `ddim_steps` to sample with fewer 
 
 ## Long forecast horizons
 
-The `window/forecast-90-history-4` config makes 90-day forecasts from 4 days of history:
+The `window/forecast-90-history-4` config makes 90-day forecasts from 4 days of history.
+For 90-day forecasts, set `relaxation_tau: 10`.
+Relaxation needs `skip_anchor: previous`:
 
 ```bash
-uv run cryocast train --config-name <your-config>.local window=forecast-90-history-4
+uv run cryocast train --config-name <your-config>.local window=forecast-90-history-4 +model.skip_anchor=previous +model.relaxation_tau=10
 ```
+
+The window config does not set these options, so you must set them yourself.
+If you make a model with 30 or more lead times and no relaxation, the model logs a warning.
 
 Read the sections above about [fixed horizons](#processors-with-a-fixed-horizon) and [memory use](#memory-use-for-long-rollouts) before you train with a long horizon.
 

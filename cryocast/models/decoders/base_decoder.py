@@ -86,11 +86,7 @@ class BaseDecoder(Freezable):
                 normalisation layers.
 
         """
-        frames = x.flatten(0, 1)
-        if self.decode_chunk_size is None:
-            decoded = self(frames)
-        else:
-            decoded = checkpointed_chunks(
-                self, frames, self.decode_chunk_size, "decode_chunk_size"
-            )
+        decoded = checkpointed_chunks(
+            self, x.flatten(0, 1), self.decode_chunk_size, "decode_chunk_size"
+        )
         return decoded.unflatten(0, x.shape[:2])
