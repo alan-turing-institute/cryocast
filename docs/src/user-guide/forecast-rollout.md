@@ -200,10 +200,15 @@ Thus they do not have a fixed horizon.
 
 ## Memory use for long rollouts
 
-The decoder decodes all lead times together, at the full output resolution.
-For training, it keeps its activations for each lead time until the backward pass.
-Thus decoder memory increases linearly with `n_forecast_steps`, and a long rollout can use all GPU memory.
+For training, the model keeps the activations of each lead time until the backward pass.
+Thus memory increases linearly with `n_forecast_steps`, and a long rollout can use all GPU memory.
+Three options decrease this memory.
+Each option does not keep the activations, and runs the forward pass again in the backward pass.
+The forecasts and gradients do not change, but each training step is slower.
 
+### Decoder
+
+The decoder decodes all lead times together, at the full output resolution.
 To decrease decoder memory, set `decode_chunk_size` in the decoder config:
 
 ```bash
@@ -211,35 +216,25 @@ uv run cryocast train --config-name <your-config>.local +model.decoder.decode_ch
 ```
 
 The decoder then decodes this number of frames at a time.
-In training, it does not keep its activations. It runs each chunk again in the backward pass.
-The forecasts and gradients do not change, but each training step is slower.
 A smaller chunk size uses less memory.
 
-!!! note
-    `decode_chunk_size` cannot be used with a decoder that has batch normalisation (`norm_type: batchnorm`).
-    The model then raises a `ValueError` when you create it.
-    `CNNDecoder` uses `batchnorm` by default, so also set `norm_type: groupnorm` for the decoder.
-    A model with a `groupnorm` decoder cannot load a checkpoint from a model with a `batchnorm` decoder.
+### Encoders
 
 A latent diffusion model with a non-zero `loss_weights.reconstruction` also encodes the inputs for all lead times with gradients.
 The `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc` model configs set `reconstruction: 1.0`.
 Thus encoder memory also increases linearly with `n_forecast_steps`.
-To decrease encoder memory in the same way, set `encode_chunk_size` for each encoder:
+To decrease encoder memory, set `encode_chunk_size` for each encoder:
 
 ```bash
 uv run cryocast train --config-name <your-config>.local \
   +model.encoders.sic-osisaf.encode_chunk_size=10 +model.encoders.era5.encode_chunk_size=10
 ```
 
-!!! note
-    `encode_chunk_size` cannot be used with an encoder that has batch normalisation.
-    The model then raises a `ValueError` when you create it.
-    `CNNEncoder` uses `batchnorm` by default, so also set `norm_type: groupnorm` for each encoder.
-    A model with `groupnorm` encoders cannot load a checkpoint from a model with `batchnorm` encoders.
+### Processor
 
 A processor that predicts one lead time at a time also keeps its activations for each lead time.
 This applies to `UNetProcessor`, `VitProcessor`, `NullProcessor` and `ConvLSTMProcessor`.
-To recompute each processor step in the backward pass in the same way, set `trade_compute_for_memory` in the model config:
+To recompute each processor step in the backward pass, set `trade_compute_for_memory` in the model config:
 
 ```bash
 uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true
@@ -247,15 +242,8 @@ uv run cryocast train --config-name <your-config>.local +model.trade_compute_for
 
 In a latent rollout, this option applies only to the processor.
 To decrease encoder and decoder memory, set `encode_chunk_size` and `decode_chunk_size`.
-
-!!! note
-    `trade_compute_for_memory` cannot be used with a processor that has batch normalisation (`norm_type: batchnorm`).
-    The `UNetProcessor` default is `batchnorm`.
-    The `cnn_unet_cnn`, `dc_unet_dc` and `quick_test` model configs set `norm_type: groupnorm`.
-    The `unet` model config uses the `batchnorm` default, and `piecewise_unet_piecewise_conv` and `piecewise_unet_piecewise_linear` set `norm_type: batchnorm`.
-    To use `trade_compute_for_memory` with these models, also set `++model.processor.norm_type=groupnorm`.
-    `GSTAProcessor` and the diffusion processors do not predict one lead time at a time, so they do not support `trade_compute_for_memory` in a latent rollout.
-    In these cases, the model raises a `ValueError` when you create it.
+`GSTAProcessor` and the diffusion processors do not predict one lead time at a time, so they do not support `trade_compute_for_memory` in a latent rollout.
+In these cases, the model raises a `ValueError` when you create it.
 
 ### Physical rollout
 
@@ -264,28 +252,30 @@ For each lead time, it encodes the input window, runs one processor step, decode
 For training, it keeps the activations of the encoders, the processor and the decoder for each lead time.
 Thus a physical rollout uses the most memory for each lead time.
 
-To recompute each lead time in the backward pass, set `trade_compute_for_memory` in the model config, as for a latent rollout:
-
-```bash
-uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true
-```
-
+Set `trade_compute_for_memory` as for a latent rollout.
 In a physical rollout, this option recomputes the full step: the encoders, the processor, the decoder and the finaliser.
 The model then keeps only the input window of each lead time.
-The forecasts and gradients do not change, but each training step is slower.
+
+### Batch normalisation
+
+These options cannot be used with batch normalisation (`norm_type: batchnorm`) in the parts of the model that they recompute.
+`decode_chunk_size` applies to the decoder, `encode_chunk_size` to each encoder, and `trade_compute_for_memory` to the processor (latent rollout) or to all parts of the model (physical rollout).
+If one of these parts uses batch normalisation, the model raises a `ValueError` when you create it.
+
+`CNNEncoder`, `CNNDecoder` and `UNetProcessor` use `batchnorm` by default.
+The `cnn_unet_cnn`, `dc_unet_dc` and `quick_test` model configs set `norm_type: groupnorm` for the processor.
+The `unet` model config uses the `batchnorm` default, and `piecewise_unet_piecewise_conv` and `piecewise_unet_piecewise_linear` set `norm_type: batchnorm`.
+Set `norm_type: groupnorm` for each part that you recompute, for example for `cnn_vit_cnn_residual` with a physical rollout:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true \
+  +model.encoders.sic-osisaf.norm_type=groupnorm +model.encoders.era5.norm_type=groupnorm
+```
+
+Use `+` to add a key that the model config does not set, and `++` to change a key that it sets (for example `++model.processor.norm_type=groupnorm`).
 
 !!! note
-    In a physical rollout, `trade_compute_for_memory` cannot be used if any part of the model has batch normalisation.
-    The model then raises a `ValueError` when you create it.
-    `CNNEncoder` and `CNNDecoder` use `batchnorm` by default.
-    For `cnn_vit_cnn_residual`, set `norm_type: groupnorm` for each encoder in your config, for example:
-
-    ```bash
-    uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true \
-      +model.encoders.sic-osisaf.norm_type=groupnorm +model.encoders.era5.norm_type=groupnorm
-    ```
-
-    A model with `groupnorm` encoders cannot load a checkpoint from a model with `batchnorm` encoders.
+    A model with `groupnorm` layers cannot load a checkpoint from a model with `batchnorm` layers in the same place.
 
 ### Diffusion models
 
