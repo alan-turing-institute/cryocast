@@ -279,32 +279,24 @@ class TestDecoderCheckpointing:
         )
 
     @pytest.mark.parametrize(
-        "test_chunk_size", [1, 3, 10], ids=["chunk1", "chunk3", "chunk10"]
+        ("test_chunk_size", "expected_frames_per_call"),
+        [(None, [6]), (4, [4, 2])],
+        ids=["unchunked", "chunk4"],
     )
-    @pytest.mark.parametrize("test_grad", [True, False], ids=["grad", "no_grad"])
-    def test_matches_unchunked_rollout(
-        self, test_chunk_size: int, *, test_grad: bool
+    def test_rollout_uses_chunk_size(
+        self, test_chunk_size: int | None, expected_frames_per_call: list[int]
     ) -> None:
-        reference = self._decoder(None)
-        chunked = self._decoder(test_chunk_size)
+        # The chunking itself is tested in tests/models/test_common.py
+        module = self._decoder(test_chunk_size)
+        frames_per_call: list[int] = []
+        module.register_forward_hook(
+            lambda _module, args, _output: frames_per_call.append(args[0].shape[0])
+        )
         x = torch.randn(2, 3, self.latent_space.channels, *self.latent_space.shape)
 
-        with torch.set_grad_enabled(test_grad):
-            expected = reference.rollout(x)
-            result = chunked.rollout(x)
-        torch.testing.assert_close(result, expected)
-
-        if test_grad:
-            expected.square().sum().backward()
-            result.square().sum().backward()
-            for p_ref, p_chunked in zip(
-                reference.parameters(), chunked.parameters(), strict=True
-            ):
-                # Checkpointed chunks add per-step gradients in a different order,
-                # and conv biases before GroupNorm have zero true gradient (noise).
-                torch.testing.assert_close(
-                    p_chunked.grad, p_ref.grad, rtol=1e-4, atol=1e-4
-                )
+        with torch.no_grad():
+            module.rollout(x)
+        assert frames_per_call == expected_frames_per_call
 
     def test_non_positive_chunk_size_raises(self) -> None:
         with pytest.raises(ValueError, match="decode_chunk_size must be positive"):
