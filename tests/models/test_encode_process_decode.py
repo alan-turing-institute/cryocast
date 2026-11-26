@@ -1288,6 +1288,40 @@ class TestSkipAnchor:
 
         torch.testing.assert_close(logged["train_prediction_loss"], expected)
 
+    @pytest.mark.parametrize("skip_anchor", ["initial", "previous"])
+    def test_reconstruction_loss_anchors_on_observed_frames(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str,
+    ) -> None:
+        """Each reconstructed step uses an observed frame as its anchor, not a chain.
+
+        With a PREVIOUS anchor, step k uses the observed frame k - 1 (teacher forcing).
+        """
+        n_forecast_steps = 3
+        model = self._model(
+            cfg_loss,
+            cfg_metrics,
+            skip_anchor,
+            loss_weights={"reconstruction": 1.0, "prediction": 0.0},
+            processor=DictConfig(
+                {"_target_": f"{__name__}.{_OracleProcessor.__name__}"}
+            ),
+            n_forecast_steps=n_forecast_steps,
+        )
+        model.train()
+        batch = _oracle_batch(n_forecast_steps)
+        anchors = batch["sic"][:, -1:, 1:2].expand_as(batch["target"])
+        if skip_anchor == "previous":
+            anchors = torch.cat([batch["sic"][:, -1:, 1:2], batch["target"][:, :-1]], 1)
+        deltas = self.SCALE * batch["future_sic"][:, :, 1:2]
+        expected = model.loss((anchors + deltas).clamp(0.0, 1.0), batch["target"])
+
+        _, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(logged["train_reconstruction_loss"], expected)
+
     @pytest.mark.parametrize(
         ("rollout_space", "expected"),
         [
@@ -1451,15 +1485,14 @@ class TestRelaxationInLatentLossTraining:
         self,
         observation: TensorNTCHW,
         deltas: TensorNTCHW,
-        rate: float | None,
+        rate: float,
     ) -> TensorNTCHW:
-        """Apply the skip connection, and the relaxation if `rate` is set, by hand."""
+        """Apply the skip connection and the relaxation by hand."""
         anchor = observation[:, -1, 1:2]
         outputs = []
         for delta in (self.SCALE * deltas[:, :, 1:2]).unbind(dim=1):
             output = (anchor + delta).clamp(0.0, 1.0)
-            if rate is not None:
-                output = output + rate * (self.CLIMATOLOGY - output)
+            output = output + rate * (self.CLIMATOLOGY - output)
             outputs.append(output)
             anchor = output
         return torch.stack(outputs, dim=1)
@@ -1518,9 +1551,10 @@ class TestRelaxationInLatentLossTraining:
         model = self._model(cfg_loss, cfg_metrics, loss_weights={"reconstruction": 1.0})
         model.train()
         batch = self._batch()
-        expected = model.loss(
-            self._expected(batch["sic"], batch["future_sic"], None), batch["target"]
-        )
+        # Each step is anchored on the observed frame before it (teacher forcing)
+        anchors = torch.cat([batch["sic"][:, -1:, 1:2], batch["target"][:, :-1]], 1)
+        deltas = self.SCALE * batch["future_sic"][:, :, 1:2]
+        expected = model.loss((anchors + deltas).clamp(0.0, 1.0), batch["target"])
 
         _, logged = _training_step(model, batch)
 

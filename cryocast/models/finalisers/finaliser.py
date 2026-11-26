@@ -170,7 +170,9 @@ class Finaliser(Freezable):
             x: TensorNTCHW raw decoder output with (batch_size, n_timeslices,
                 output_channels, output_height, output_width).
             anchor: TensorNTCHW with (batch_size, 1, output_channels, output_height,
-                output_width) to use as the skip connection anchor, or None.
+                output_width) to use as the skip connection anchor, or None. With an
+                INITIAL anchor type, it can also have n_timeslices steps, to give each
+                step its own anchor.
             anchor_type: SkipAnchorType that sets the anchor for each step after the
                 first (default: INITIAL).
             relaxation: Relaxation to apply, or None.
