@@ -195,14 +195,17 @@ class LatentObjective(TrainingObjective):
                 model.log_per_epoch(f"train_{name}_loss", value)
 
         # Decode the prediction in evaluation mode and without gradients, so that
-        # we do not affect BatchNorm running statistics.
-        training_mode = model.decoder.training
-        model.decoder.eval()
+        # we do not affect BatchNorm running statistics in the decoder or finaliser.
+        decode_modules = (model.decoder, model.finaliser)
+        training_modes = [module.training for module in decode_modules]
+        for module in decode_modules:
+            module.eval()
         with torch.no_grad():
             prediction = model._decode_forecast(
                 processor_output.prediction, anchor, equilibrium
             )
-        model.decoder.train(training_mode)
+        for module, training_mode in zip(decode_modules, training_modes, strict=True):
+            module.train(training_mode)
         # If the latent prediction has fewer forecast steps than the target, repeat
         # the last one until we have the correct number
         steps = torch.arange(model.n_forecast_steps, device=prediction.device)
