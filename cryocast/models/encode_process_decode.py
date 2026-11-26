@@ -7,8 +7,11 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
-from cryocast.models.common import ExponentialRelaxation, checkpoint_activations
-from cryocast.models.common.normalisations import verify_no_batchnorm
+from cryocast.models.common import (
+    ExponentialRelaxation,
+    checkpoint_activations,
+    verify_no_batchnorm,
+)
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
 from cryocast.models.finalisers import Finaliser

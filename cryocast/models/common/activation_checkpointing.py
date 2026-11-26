@@ -55,3 +55,22 @@ def checkpointed_chunks(
             for chunk in frames.split(chunk_size)
         ]
     )
+
+
+def verify_no_batchnorm(module: nn.Module, option: str) -> None:
+    """Raise a ValueError if the module has batch normalisation.
+
+    Activation checkpointing runs the forward pass again in the backward pass. This
+    would update the running statistics of batch normalisation layers a second time.
+
+    Args:
+        module: The module to check, with its submodules.
+        option: The name of the checkpointing option, for the error message.
+
+    """
+    if any(isinstance(m, nn.modules.batchnorm._BatchNorm) for m in module.modules()):
+        msg = (
+            f"{option} cannot be used with batch normalisation in "
+            f"{type(module).__name__}. Use a different norm_type, for example groupnorm."
+        )
+        raise ValueError(msg)

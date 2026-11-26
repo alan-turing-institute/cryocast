@@ -1,4 +1,8 @@
-from .activation_checkpointing import checkpoint_activations, checkpointed_chunks
+from .activation_checkpointing import (
+    checkpoint_activations,
+    checkpointed_chunks,
+    verify_no_batchnorm,
+)
 from .channel_adaptor import ChannelAdaptor
 from .conv_block_common import CommonConvBlock
 from .conv_block_downsample import ConvBlockDownsample
@@ -51,4 +55,5 @@ __all__ = [
     "WeightedUpsample",
     "checkpoint_activations",
     "checkpointed_chunks",
+    "verify_no_batchnorm",
 ]
