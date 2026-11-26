@@ -331,11 +331,6 @@ class RolloutStrategy:
         """Return True if the forecast loop runs in physical space."""
         return self.space == RolloutSpace.PHYSICAL
 
-    @property
-    def uses_default_anchor(self) -> bool:
-        """Return True if the anchor is the default for the rollout space."""
-        return self.anchor == self.default_anchor(self.space)
-
 
 class Timespan:
     """A span of time."""

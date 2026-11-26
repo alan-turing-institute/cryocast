@@ -26,7 +26,6 @@ The properties tested here, in order of importance:
 * No future information can enter through either option.
 """
 
-import logging
 from pathlib import Path
 from typing import Any, cast
 
@@ -518,29 +517,6 @@ class TestConfigValidation:
                     "computes_loss_in_latent_space": True,
                 },
             )
-
-    @pytest.mark.parametrize(
-        ("rollout_space", "skip_anchor", "warns"),
-        [
-            pytest.param("latent", "previous", True, id="latent-previous-warns"),
-            pytest.param("latent", "initial", False, id="latent-default-is-silent"),
-            pytest.param(
-                "physical", "previous", False, id="physical-default-is-silent"
-            ),
-        ],
-    )
-    def test_anchor_without_skip_connection_warns_unless_default(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        rollout_space: str,
-        skip_anchor: str,
-        warns: bool,  # noqa: FBT001
-    ) -> None:
-        """Warn only if the anchor differs from the default for the rollout space."""
-        with caplog.at_level(logging.WARNING):
-            model = _build_model(rollout_space=rollout_space, skip_anchor=skip_anchor)
-        assert model.rollout_strategy.anchor == skip_anchor
-        assert ("has no effect" in caplog.text) is warns
 
     def test_residual_accepts_a_bounded_decoder(self) -> None:
         """A bounded output works for a residual (additive-skip) physical model.

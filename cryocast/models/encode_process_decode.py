@@ -213,15 +213,6 @@ class EncodeProcessDecode(BaseModel):
                 "relaxation."
             )
             raise ValueError(msg)
-        if (
-            self.finaliser.skip_connection is None
-            and not self.rollout_strategy.uses_default_anchor
-        ):
-            log.warning(
-                "skip_anchor='%s' has no effect because the finaliser has no skip "
-                "connection.",
-                self.rollout_strategy.anchor.value,
-            )
 
         self.finaliser.relaxation = (
             None

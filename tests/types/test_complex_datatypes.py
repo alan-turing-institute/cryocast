@@ -219,18 +219,15 @@ class TestRolloutStrategy:
     """Tests for RolloutStrategy."""
 
     @pytest.mark.parametrize(
-        ("options", "space", "anchor", "is_default"),
+        ("options", "space", "anchor"),
         [
-            pytest.param((), "latent", "initial", True, id="defaults"),
-            pytest.param(("latent",), "latent", "initial", True, id="latent-default"),
-            pytest.param(
-                ("physical",), "physical", "previous", True, id="physical-default"
-            ),
+            pytest.param((), "latent", "initial", id="defaults"),
+            pytest.param(("latent",), "latent", "initial", id="latent-default"),
+            pytest.param(("physical",), "physical", "previous", id="physical-default"),
             pytest.param(
                 ("latent", "previous"),
                 "latent",
                 "previous",
-                False,
                 id="latent-previous",
             ),
         ],
@@ -240,8 +237,6 @@ class TestRolloutStrategy:
         options: tuple[()] | tuple[str] | tuple[str, str],
         space: str,
         anchor: str,
-        *,
-        is_default: bool,
     ) -> None:
         """Convert strings to enums, using the default anchor for the space if unset."""
         strategy = RolloutStrategy.from_options(*options)
@@ -249,7 +244,6 @@ class TestRolloutStrategy:
         assert strategy.space is RolloutSpace(space)
         assert strategy.anchor is SkipAnchorType(anchor)
         assert strategy.is_physical is (space == "physical")
-        assert strategy.uses_default_anchor is is_default
 
     @pytest.mark.parametrize(
         ("space", "anchor"),

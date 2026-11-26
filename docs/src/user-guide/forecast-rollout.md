@@ -69,7 +69,6 @@ If you set `skip_anchor: initial` with `rollout_space: physical`, the model rais
 
 !!! note
     `skip_anchor` has no effect if the finaliser has no skip connection (`skip_connection: none`).
-    In this case, the model writes a warning to the log.
 
 With `previous` in a latent rollout, the decoder still decodes all lead times together.
 Only the finaliser runs once for each lead time, so the extra cost is small.
