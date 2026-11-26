@@ -7,7 +7,7 @@ Three options in the model config control the rollout:
 | Option | Values | Default | Effect |
 |--------|--------|---------|--------|
 | `rollout_space` | `latent`, `physical` | `latent` | Where the forecast loop runs |
-| `skip_anchor` | `initial`, `previous` | `initial` for `latent`, `previous` for `physical` | The frame that the skip connection adds to each lead time |
+| `skip_anchor` | `initial`, `previous` | `initial` for `latent`, `previous` for `physical` | The frame that the skip connection adds to each lead time. A `physical` rollout accepts only `previous`. |
 | `relaxation_tau` | a positive number of lead times, or `null` | `null` (off) | Relax each lead time towards climatology |
 
 All three options are top-level keys of the model config, next to `encoders`, `processor`, `decoder` and `finaliser`.
@@ -21,7 +21,7 @@ The rollout space sets where the model advances the forecast from one lead time 
 | Value | Each forecast | Requirements |
 |-------|---------------|--------------|
 | `latent` | The encoders encode the input window once. The processor makes all lead times in latent space. The decoder decodes all lead times together. | None |
-| `physical` | For each lead time, the encoders encode the window, the processor makes one step, and the decoder decodes it. The forecast goes into the window for the next lead time. | The target dataset must also be a model input. The processor must implement `forward()` for one step. |
+| `physical` | For each lead time, the encoders encode the window, the processor makes one step, and the decoder decodes it. The forecast goes into the window for the next lead time. | The target dataset must also be a model input. The processor must implement `forward()` for one step. `skip_anchor` must be `previous`. |
 
 A physical rollout encodes the window once for each lead time, so it is slower than a latent rollout.
 In a physical rollout, the inputs that are not the target dataset keep their last observed frame for all lead times.
@@ -63,6 +63,9 @@ In [multistage training](../how-to/train-multistage.md), the decoder stage train
 Thus the decoder learns the change over one day.
 A latent rollout with `initial` then uses the same decoder with the last observed frame as its anchor for every lead time.
 With `previous`, the forecast uses the decoder in the same way as the decoder stage trained it.
+
+A physical rollout always uses `previous`.
+If you set `skip_anchor: initial` with `rollout_space: physical`, the model raises a `ValueError` when you make it.
 
 !!! note
     `skip_anchor` has no effect if the finaliser has no skip connection (`skip_connection: none`).
@@ -155,7 +158,6 @@ For a latent rollout, train the model with `skip_anchor: previous` first.
 | Multistage model with a pre-trained decoder | `skip_anchor: previous`, so the forecast uses the decoder as the decoder stage trained it |
 | Forecast for lead times longer than the training lead times, or a forecast bias that increases with lead time | `skip_anchor: previous` and `relaxation_tau` |
 | Physical rollout | Keep the default anchor (`previous`). Add `relaxation_tau` for long lead times. |
-| Ablation of the anchor in a physical rollout | `skip_anchor: initial`, without `relaxation_tau` |
 
 To select `tau`, compare values on the validation split (2022–2023).
 

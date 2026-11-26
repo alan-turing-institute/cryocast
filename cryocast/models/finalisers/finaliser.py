@@ -100,12 +100,14 @@ class Finaliser(Freezable):
             mask_type=mask_type, output_shape=data_space.shape, mask_dir=mask_dir
         )
 
+        # Relaxation has no weights, so the owning model sets it from its own options
+        self.relaxation: ExponentialRelaxation | None = None
+
     def forward(
         self,
         x: TensorNCHW,
         *,
         anchor: TensorNCHW | None = None,
-        relaxation: ExponentialRelaxation | None = None,
         equilibrium: TensorNCHW | None = None,
     ) -> TensorNCHW:
         """Turn raw decoder output for one step into a valid forecast state.
@@ -114,8 +116,8 @@ class Finaliser(Freezable):
             x: TensorNCHW raw decoder output for one step.
             anchor: TensorNCHW skip connection anchor. Required if the finaliser has a
                 skip connection.
-            relaxation: Relaxation to apply, or None.
             equilibrium: TensorNCHW to relax towards, or None for no relaxation.
+                Relaxation applies only if `relaxation` is set.
 
         Raises:
             ValueError: If the finaliser has a skip connection but there is no anchor.
@@ -138,8 +140,8 @@ class Finaliser(Freezable):
 
         # Relax towards the equilibrium. The result is between two values in the valid
         # range, so it is also in the valid range.
-        if relaxation is not None and equilibrium is not None:
-            bounded = relaxation(bounded, equilibrium)
+        if self.relaxation is not None and equilibrium is not None:
+            bounded = self.relaxation(bounded, equilibrium)
 
         # Mask last, so that masked cells are exactly 0
         return self.mask(bounded)
@@ -150,7 +152,6 @@ class Finaliser(Freezable):
         *,
         anchor: TensorNTCHW | None = None,
         anchor_type: SkipAnchorType = SkipAnchorType.INITIAL,
-        relaxation: ExponentialRelaxation | None = None,
         equilibrium: TensorNTCHW | None = None,
     ) -> TensorNTCHW:
         """Turn raw decoder output for several steps into valid forecast states.
@@ -175,9 +176,8 @@ class Finaliser(Freezable):
                 step its own anchor.
             anchor_type: SkipAnchorType that sets the anchor for each step after the
                 first (default: INITIAL).
-            relaxation: Relaxation to apply, or None.
             equilibrium: TensorNTCHW with the same shape as `x` to relax towards, or
-                None for no relaxation.
+                None for no relaxation. Relaxation applies only if `relaxation` is set.
 
         Returns:
             TensorNTCHW with the same shape as `x`.
@@ -191,7 +191,6 @@ class Finaliser(Freezable):
                 anchor_nchw = self(
                     x[:, t],
                     anchor=anchor_nchw,
-                    relaxation=relaxation,
                     equilibrium=None if equilibrium is None else equilibrium[:, t],
                 )
                 outputs.append(anchor_nchw)
@@ -202,6 +201,5 @@ class Finaliser(Freezable):
         return self(
             x.flatten(0, 1),
             anchor=None if anchor is None else anchor.expand_as(x).flatten(0, 1),
-            relaxation=relaxation,
             equilibrium=None if equilibrium is None else equilibrium.flatten(0, 1),
         ).unflatten(0, batch_and_time)

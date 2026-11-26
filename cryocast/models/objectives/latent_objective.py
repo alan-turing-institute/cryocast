@@ -87,7 +87,7 @@ class LatentObjective(TrainingObjective):
 
         # Only the auxiliary losses use the decoder and the finaliser. If they are all
         # off, freeze both.
-        if not self.trains_decoder:
+        if not any(self.loss_weights.values()):
             model.decoder.freeze()
             model.finaliser.freeze()
 
@@ -103,23 +103,6 @@ class LatentObjective(TrainingObjective):
                 "decoder are trainable. Without the reconstruction loss, the latent "
                 "space can drift away from what the decoder expects."
             )
-
-    @property
-    def trains_decoder(self) -> bool:
-        """Whether an auxiliary loss goes through the decoder and the finaliser."""
-        return any(self.loss_weights.values())
-
-    @override
-    def verify_single_stage_trainable(self) -> None:
-        if not self.trains_decoder:
-            msg = (
-                "The decoder is frozen, so single-stage training cannot train it. "
-                "This happens if the processor computes its loss in latent space and "
-                "loss_weights.reconstruction and loss_weights.prediction are both 0. "
-                "Either set one of these weights to a value greater than 0, or train "
-                "with `--multistage`."
-            )
-            raise ValueError(msg)
 
     @override
     def training_step(
@@ -201,12 +184,14 @@ class LatentObjective(TrainingObjective):
         }
         for module in training_modes:
             module.eval()
-        with torch.no_grad():
-            prediction = model._decode_forecast(
-                processor_output.prediction, anchor, equilibrium
-            )
-        for module, training_mode in training_modes.items():
-            module.train(training_mode)
+        try:
+            with torch.no_grad():
+                prediction = model._decode_forecast(
+                    processor_output.prediction, anchor, equilibrium
+                )
+        finally:
+            for module, training_mode in training_modes.items():
+                module.train(training_mode)
         # If the latent prediction has fewer forecast steps than the target, repeat
         # the last one until we have the correct number
         steps = torch.arange(model.n_forecast_steps, device=prediction.device)

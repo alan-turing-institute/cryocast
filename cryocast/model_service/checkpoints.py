@@ -10,8 +10,9 @@ from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
+import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.serialization import get_unsafe_globals_in_checkpoint
@@ -23,6 +24,11 @@ from cryocast.exceptions import (
 )
 from cryocast.types import DataSpace
 from cryocast.utils import to_plain_types
+
+if TYPE_CHECKING:
+    from cryocast.models import BaseModel
+
+_ModelT = TypeVar("_ModelT", bound="BaseModel")
 
 log = logging.getLogger(__name__)
 
@@ -38,19 +44,18 @@ _FINALISER_KEYS = (
 _LEGACY_SKIP_CONNECTION_PREFIX = "decoder.skip_connection."
 
 
-def _pop_finaliser_options(decoder: MutableMapping[str, Any]) -> dict[str, Any]:
-    """Remove the finaliser options from decoder settings.
+def _legacy_finaliser_options(
+    decoder: MutableMapping[str, Any], *, remove: bool = False
+) -> dict[str, Any]:
+    """Return the finaliser options that are set in decoder settings.
 
-    Returns:
-        The removed options.
+    Args:
+        decoder: The decoder settings.
+        remove: Whether to also remove these options from the decoder settings.
 
     """
-    return {key: decoder.pop(key) for key in _FINALISER_KEYS if key in decoder}
-
-
-def _legacy_finaliser_options(decoder: Mapping[str, Any]) -> list[str]:
-    """Return the finaliser options that are set in decoder settings."""
-    return [key for key in _FINALISER_KEYS if key in decoder]
+    get = decoder.pop if remove else decoder.get
+    return {key: get(key) for key in _FINALISER_KEYS if key in decoder}
 
 
 def _legacy_skip_connection_keys(state_dict: Mapping[str, Any]) -> list[str]:
@@ -228,6 +233,25 @@ class CheckpointFile:
             raise OutdatedCheckpointError(msg)
         return ckpt_state
 
+    def load_model(self, model_cls: type[_ModelT], **kwargs: Any) -> _ModelT:
+        """Load a model from the checkpoint, refusing one that must be upgraded first.
+
+        Args:
+            model_cls: The class of the model that the checkpoint holds.
+            **kwargs: Passed to `load_from_checkpoint`.
+
+        Raises:
+            OutdatedCheckpointError: If the checkpoint must be upgraded first.
+
+        """
+        self.load()
+        return model_cls.load_from_checkpoint(
+            self.path,
+            map_location="cpu",  # Lightning will move this to the correct device
+            weights_only=True,
+            **kwargs,
+        )
+
     def merge_config(self, config: DictConfig) -> DictConfig:
         """Combine the current config with the config that the checkpoint was trained with.
 
@@ -237,8 +261,9 @@ class CheckpointFile:
         - "model" and "window": each checkpoint value replaces the current value, but
           "window.batch_size" keeps the current value. If the current config names a
           different model, the full "model" section comes from the checkpoint.
-          A configured "model.relaxation_tau" keeps the current value, and a
-          "model.skip_anchor" that the checkpoint does not set is removed.
+          Each key in the "checkpoint_overrides" of the model class (for example
+          "model.relaxation_tau") keeps the current value, and a "model.skip_anchor"
+          that the checkpoint does not set is removed.
         - "variables" and "data.allow_missing": the checkpoint section replaces the
           current section. If the checkpoint has no "data.allow_missing", it was
           trained with every input required, so "data.allow_missing.groups" is set
@@ -301,10 +326,17 @@ class CheckpointFile:
                 configured_model,
             )
             sections.remove("model")
-        # Relaxation has no weights, so the configured relaxation can be added to,
-        # changed for, or removed (null) from any trained model
-        if "relaxation_tau" in (configured := config.get("model", {})):
-            combined["model"]["relaxation_tau"] = configured["relaxation_tau"]
+        # Options without weights, such as relaxation, can be added to, changed for, or
+        # removed (null) from any trained model
+        if target := OmegaConf.select(combined, "model._target_"):
+            model_cls: type[BaseModel] = hydra.utils.get_class(target)
+            configured = config.get("model", {})
+            combined["model"].update(
+                {
+                    key: configured[key]
+                    for key in model_cls.checkpoint_overrides & configured.keys()
+                }
+            )
         # The anchor changes what the trained model sees, so it must match training.
         # A checkpoint config without one was trained with the default anchor.
         if "skip_anchor" not in ckpt_config.get("model", {}):
@@ -435,7 +467,9 @@ class LegacyCheckpointFile:
                 optimizer_state["state"] = {}
             log.warning("Reset the optimizer state, as the parameter order changed.")
         hyper_parameters = ckpt_state.get("hyper_parameters", {})
-        options = _pop_finaliser_options(hyper_parameters.get("decoder") or {})
+        options = _legacy_finaliser_options(
+            hyper_parameters.get("decoder") or {}, remove=True
+        )
         # Only an EncoderStage saves an 'encoder' hyperparameter
         if options and "encoder" not in hyper_parameters:
             hyper_parameters["finaliser"] = options
@@ -542,7 +576,7 @@ class LegacyCheckpointFile:
                     "n_history_steps": predict.get("n_history_steps", 1),
                 }
         decoder = OmegaConf.select(config, "model.decoder") or {}
-        if moved := _pop_finaliser_options(decoder):
+        if moved := _legacy_finaliser_options(decoder, remove=True):
             # The legacy decoder applied these options, so they override any
             # finaliser settings that are already in the config
             config.model.finaliser = OmegaConf.merge(

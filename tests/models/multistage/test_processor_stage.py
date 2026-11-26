@@ -1,11 +1,9 @@
-from collections.abc import Callable
 from typing import Any
 
 import pytest
 import torch
 from omegaconf import DictConfig
 
-from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
 from cryocast.models.objectives import LatentObjective
 from cryocast.models.processors import BaseProcessor
@@ -33,48 +31,6 @@ class _CaptureLatentLossProcessor(BaseProcessor):
 
 
 class TestProcessorStage:
-    @pytest.fixture
-    def make_full_model(
-        self,
-        *,
-        cfg_decoder: DictConfig,
-        cfg_encoders: DictConfig,
-        cfg_processor: DictConfig,
-        cfg_input_space: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
-    ) -> Callable[..., EncodeProcessDecode]:
-        """Make the full model that supplies the rollout strategy to from_template.
-
-        The target dataset is also the input, so that a physical rollout is possible.
-        """
-
-        def make(**kwargs: Any) -> EncodeProcessDecode:
-            return EncodeProcessDecode(
-                name="full-model",
-                encoders=cfg_encoders,
-                processor=cfg_processor,
-                decoder=cfg_decoder,
-                hemisphere="north",
-                input_spaces=[cfg_input_space],
-                n_forecast_steps=1,
-                n_history_steps=2,
-                output_space={
-                    "channels": 1,
-                    "name": cfg_input_space["name"],
-                    "shape": cfg_input_space["shape"],
-                },
-                optimizer=DictConfig({}),
-                scheduler=DictConfig({}),
-                lr_scheduler=DictConfig({}),
-                loss=cfg_loss,
-                metrics=cfg_metrics,
-                target_variable_indices=[2],
-                **kwargs,
-            )
-
-        return make
-
     @pytest.fixture
     def skip_decoder_stage(
         self, encoder_stage: EncoderStage, cfg_output_space: DictConfig
@@ -212,7 +168,6 @@ class TestProcessorStage:
     def test_latent_target_encodes_future_inputs(
         self,
         encoder_stage: EncoderStage,
-        make_full_model: Callable[..., EncodeProcessDecode],
         *,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
@@ -231,7 +186,7 @@ class TestProcessorStage:
                 {"_target_": f"{__name__}.{_CaptureLatentLossProcessor.__name__}"}
             ),
             decoder_model=decoder_stage,
-            full_model=make_full_model(),
+            rollout_strategy=RolloutStrategy.from_options(),
         )
 
         name = cfg_input_space["name"]
@@ -251,39 +206,29 @@ class TestProcessorStage:
         assert capture.target.shape[2] == processor_stage.processor.data_space.channels
 
     @pytest.mark.parametrize(
-        ("full_model_options", "expected"),
+        "expected",
         [
             pytest.param(
-                {},
                 RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.INITIAL),
-                id="default",
+                id="latent-initial",
             ),
             pytest.param(
-                {"skip_anchor": "previous"},
                 RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.PREVIOUS),
                 id="latent-previous",
             ),
             pytest.param(
-                {"rollout_space": "physical"},
                 RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
                 id="physical-previous",
-            ),
-            pytest.param(
-                {"rollout_space": "physical", "skip_anchor": "initial"},
-                RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.INITIAL),
-                id="physical-initial",
             ),
         ],
     )
     def test_from_template_forwards_rollout_strategy(
         self,
         encoder_stage: EncoderStage,
-        make_full_model: Callable[..., EncodeProcessDecode],
         *,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_processor: DictConfig,
-        full_model_options: dict[str, Any],
         expected: RolloutStrategy,
     ) -> None:
         # Physical rollout requires the target dataset to also be a model input
@@ -299,7 +244,7 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            full_model=make_full_model(**full_model_options),
+            rollout_strategy=expected,
         )
 
         assert processor_stage.rollout_strategy == expected
@@ -310,7 +255,6 @@ class TestProcessorStage:
     def test_from_template_copies_frozen_finaliser_from_decoder_stage(
         self,
         skip_decoder_stage: DecoderStage,
-        make_full_model: Callable[..., EncodeProcessDecode],
         *,
         cfg_processor: DictConfig,
         cfg_output_space: DictConfig,
@@ -318,7 +262,7 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=skip_decoder_stage,
-            full_model=make_full_model(),
+            rollout_strategy=RolloutStrategy.from_options(),
         )
         target = torch.rand(
             2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]
@@ -365,13 +309,12 @@ class TestProcessorStage:
     def test_from_template_builds_processor_stage_from_decoder_stage(
         self,
         decoder_stage: DecoderStage,
-        make_full_model: Callable[..., EncodeProcessDecode],
         cfg_processor: DictConfig,
     ) -> None:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            full_model=make_full_model(),
+            rollout_strategy=RolloutStrategy.from_options(),
         )
 
         assert processor_stage.hemisphere == decoder_stage.hemisphere

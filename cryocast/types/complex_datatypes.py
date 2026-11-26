@@ -266,6 +266,7 @@ class RolloutStrategy:
             where each step is decoded and re-encoded.
         anchor: The frame that a decoder skip connection adds to each forecast step:
             the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
+            A physical rollout needs a PREVIOUS anchor.
         relaxation_tau: The folding time, in forecast steps, of the relaxation of each
             forecast step towards climatology, or None for no relaxation. Relaxation
             needs a PREVIOUS anchor, so that it carries over between steps.
@@ -277,9 +278,17 @@ class RolloutStrategy:
     relaxation_tau: float | None = None
 
     def __post_init__(self) -> None:
-        """Convert strings to enums and validate the relaxation."""
-        object.__setattr__(self, "space", RolloutSpace(self.space))
-        object.__setattr__(self, "anchor", SkipAnchorType(self.anchor))
+        """Validate the anchor and the relaxation."""
+        if (
+            self.space == RolloutSpace.PHYSICAL
+            and self.anchor != SkipAnchorType.PREVIOUS
+        ):
+            msg = (
+                f"rollout_space='physical' requires skip_anchor='previous', but it is "
+                f"'{self.anchor.value}'. A physical rollout anchors each step on the "
+                f"previous forecast step."
+            )
+            raise ValueError(msg)
         if self.relaxation_tau is not None and self.anchor != SkipAnchorType.PREVIOUS:
             msg = (
                 f"relaxation requires skip_anchor='previous', but it is "
@@ -295,7 +304,10 @@ class RolloutStrategy:
         anchor: SkipAnchorType | str | None = None,
         relaxation_tau: float | None = None,
     ) -> Self:
-        """Create a RolloutStrategy, using the default anchor for the space if unset."""
+        """Create a RolloutStrategy from enums or strings.
+
+        If the anchor is unset, use the default anchor for the space.
+        """
         space = RolloutSpace(space)
         return cls(
             space=space,

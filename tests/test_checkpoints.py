@@ -19,6 +19,9 @@ from cryocast.model_service.checkpoints import (
     OutdatedCheckpointError,
 )
 
+# A model config whose class allows 'relaxation_tau' to be overridden
+_EPD_MODEL = {"_target_": "cryocast.models.EncodeProcessDecode", "name": "dc-gsta-dc"}
+
 
 def _save_run_config(run_dir: Path, config: DictConfig) -> CheckpointFile:
     """Save a run's model_config.yaml and return a checkpoint file in the run."""
@@ -456,8 +459,8 @@ class TestMergeConfig:
         expected: float | None,
     ) -> None:
         """The configured relaxation replaces the checkpoint relaxation."""
-        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", **ckpt_model}})
-        config = DictConfig({"model": {"name": "dc-gsta-dc", **configured_model}})
+        ckpt_config = DictConfig({"model": {**_EPD_MODEL, **ckpt_model}})
+        config = DictConfig({"model": {**_EPD_MODEL, **configured_model}})
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)
 
@@ -488,7 +491,7 @@ class TestMergeConfig:
 
         The default config names quick-test, so this is the usual evaluate case.
         """
-        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", **ckpt_model}})
+        ckpt_config = DictConfig({"model": {**_EPD_MODEL, **ckpt_model}})
         config = DictConfig({"model": {"name": "quick-test", **configured_model}})
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)

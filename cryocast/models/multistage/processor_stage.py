@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 from omegaconf import DictConfig
 
 from cryocast.models import EncodeProcessDecode
+from cryocast.types import RolloutStrategy
 
 from .decoder_stage import DecoderStage
 
@@ -50,20 +51,20 @@ class ProcessorStage(EncodeProcessDecode):
         *,
         processor: DictConfig,
         decoder_model: DecoderStage,
-        full_model: EncodeProcessDecode,
+        rollout_strategy: RolloutStrategy,
         mask_dir: str | None = None,
     ) -> "ProcessorStage":
-        """Create a ProcessorStage from a trained DecoderStage and the full model.
+        """Create a ProcessorStage from a trained DecoderStage.
 
-        The encoders, decoder and training settings come from the DecoderStage. The
-        rollout strategy comes from the full model, so that the processor trains in the
-        same mode as the full model is finetuned and evaluated.
+        The encoders, decoder and training settings come from the DecoderStage. Give the
+        rollout strategy of the full model, so that the processor trains in the same
+        mode as the full model is finetuned and evaluated.
 
         Args:
             processor: Config for the trainable processor.
             decoder_model: Trained DecoderStage that supplies the frozen encoders and
                 decoder.
-            full_model: EncodeProcessDecode model that supplies the rollout strategy.
+            rollout_strategy: The rollout strategy of the full model.
             mask_dir: Directory that contains the masks for the finaliser, if any.
 
         """
@@ -80,9 +81,9 @@ class ProcessorStage(EncodeProcessDecode):
             optimizer=copy.deepcopy(decoder_model.optimizer_cfg),
             output_space=decoder_model.output_space.to_dict(),
             processor=processor,
-            rollout_space=full_model.rollout_strategy.space,
-            skip_anchor=full_model.rollout_strategy.anchor,
-            relaxation_tau=full_model.rollout_strategy.relaxation_tau,
+            rollout_space=rollout_strategy.space,
+            skip_anchor=rollout_strategy.anchor,
+            relaxation_tau=rollout_strategy.relaxation_tau,
             scheduler=copy.deepcopy(decoder_model.scheduler_cfg),
             metrics=copy.deepcopy(list(decoder_model.metric_cfgs.values())),
         )

@@ -21,14 +21,6 @@ class TrainingObjective(ABC):
     # Whether training batches must hold `future_<input>` keys
     needs_future_inputs: ClassVar[bool] = False
 
-    def verify_single_stage_trainable(self) -> None:  # noqa: B027
-        """Check that single-stage training can train the model with this objective.
-
-        Raises:
-            ValueError: If single-stage training cannot train the model.
-
-        """
-
     @abstractmethod
     def training_step(
         self,

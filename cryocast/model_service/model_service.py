@@ -522,10 +522,19 @@ class ModelService:
         If this ModelService was loaded from a checkpoint, training resumes from it.
 
         Raises:
-            ValueError: If single-stage training cannot train the model.
+            ValueError: If the model has a frozen decoder, which single-stage training
+                cannot train.
 
         """
-        self.model.verify_single_stage_trainable()
+        if isinstance(self.model, EncodeProcessDecode) and self.model.decoder.frozen:
+            msg = (
+                "The decoder is frozen, so single-stage training cannot train it. "
+                "This happens if the processor computes its loss in latent space and "
+                "loss_weights.reconstruction and loss_weights.prediction are both 0. "
+                "Either set one of these weights to a value greater than 0, or train "
+                "with `--multistage`."
+            )
+            raise ValueError(msg)
         if self.checkpoint_file:
             log.info(
                 "Resuming single-stage training from %s.", self.checkpoint_file.path
@@ -605,18 +614,15 @@ class ModelService:
                 "Skipping training for decoder. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            checkpoint_file.load()  # raises OutdatedCheckpointError if needed
-            return DecoderStage.load_from_checkpoint(
-                checkpoint_file.path,
+            return checkpoint_file.load_model(
+                DecoderStage,
                 decoder=self.config["model"]["decoder"],
                 finaliser=self.config["model"].get("finaliser"),
                 encoders=encoder_models,
-                map_location="cpu",  # Lightning will move this to the correct device
                 mask_dir=str(self.data_module.mask_directory),
                 metrics=self.config["reporting"]["metrics"],
                 target_dataset_name=self.data_module.target_group_name,
                 target_variable_indices=self.data_module.target_variable_indices,
-                weights_only=True,
             )
 
         decoder_model = DecoderStage.from_template(
@@ -663,15 +669,12 @@ class ModelService:
                     encoder.name,
                     checkpoint_file.path,
                 )
-                checkpoint_file.load()  # raises OutdatedCheckpointError if needed
                 encoder_models.append(
-                    EncoderStage.load_from_checkpoint(
-                        checkpoint_file.path,
+                    checkpoint_file.load_model(
+                        EncoderStage,
                         latitudes_fn=lambda: self.data_module.latitudes,
                         longitudes_fn=lambda: self.data_module.longitudes,
-                        map_location="cpu",  # Lightning will move this to the correct device
                         metrics=self.config["reporting"]["metrics"],
-                        weights_only=True,
                     )
                 )
                 continue
@@ -748,20 +751,17 @@ class ModelService:
                 "Skipping training for processor. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            checkpoint_file.load()  # raises OutdatedCheckpointError if needed
-            return ProcessorStage.load_from_checkpoint(
-                checkpoint_file.path,
+            return checkpoint_file.load_model(
+                ProcessorStage,
                 decoder_model=decoder_model,
-                map_location="cpu",  # Lightning will move this to the correct device
                 mask_dir=str(self.data_module.mask_directory),
                 metrics=self.config["reporting"]["metrics"],
                 processor=self.config["model"]["processor"],
-                weights_only=True,
             )
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,
-            full_model=cast("EncodeProcessDecode", self.model),
+            rollout_strategy=cast("EncodeProcessDecode", self.model).rollout_strategy,
             mask_dir=str(self.data_module.mask_directory),
         )
         log.info(

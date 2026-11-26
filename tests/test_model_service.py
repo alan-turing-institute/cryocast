@@ -137,7 +137,7 @@ def _build_stages(
     processor_stage = ProcessorStage.from_template(
         processor=processor,
         decoder_model=decoder_stage,
-        full_model=model,
+        rollout_strategy=model.rollout_strategy,
     )
     return model, input_stage, decoder_stage, processor_stage
 
@@ -888,6 +888,7 @@ class TestModelService:
     def test_train_single_stage_encode_process_decode(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
+        service.model_.decoder = MagicMock(frozen=False)
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -898,12 +899,10 @@ class TestModelService:
 
         mock_fit.assert_called_once_with(config="train_config", checkpoint_file=None)
 
-    def test_train_single_stage_rejects_untrainable_model(self) -> None:
+    def test_train_single_stage_rejects_frozen_decoder(self) -> None:
         service = ModelService.__new__(ModelService)
         service.model_ = MagicMock(spec=EncodeProcessDecode)
-        service.model_.verify_single_stage_trainable.side_effect = ValueError(
-            "decoder is frozen"
-        )
+        service.model_.decoder = MagicMock(frozen=True)
         service.config_ = DictConfig({"train": "train_config"})
         service.checkpoint_file = None
 
@@ -1457,7 +1456,7 @@ class TestModelService:
         mock_from_template.assert_called_once_with(
             processor=service.config_["model"]["processor"],
             decoder_model=decoder_model,
-            full_model=service.model_,
+            rollout_strategy=service.model_.rollout_strategy,
             mask_dir=str(tmp_path),
         )
         processor_model.load_state_dict.assert_called_once_with("processor_state")

@@ -219,29 +219,37 @@ class TestRolloutStrategy:
     """Tests for RolloutStrategy."""
 
     @pytest.mark.parametrize(
-        ("space", "anchor"),
+        ("options", "space", "anchor", "is_default"),
         [
-            pytest.param("latent", "initial", id="latent-initial"),
-            pytest.param("latent", "previous", id="latent-previous"),
-            pytest.param("physical", "initial", id="physical-initial"),
-            pytest.param("physical", "previous", id="physical-previous"),
+            pytest.param((), "latent", "initial", True, id="defaults"),
+            pytest.param(("latent",), "latent", "initial", True, id="latent-default"),
+            pytest.param(
+                ("physical",), "physical", "previous", True, id="physical-default"
+            ),
+            pytest.param(
+                ("latent", "previous"),
+                "latent",
+                "previous",
+                False,
+                id="latent-previous",
+            ),
         ],
     )
-    def test_converts_strings_to_enums(self, space: str, anchor: str) -> None:
-        """Accept strings and store them as enums."""
-        strategy = RolloutStrategy(space=space, anchor=anchor)  # type: ignore[arg-type]
+    def test_from_options(
+        self,
+        options: tuple[()] | tuple[str] | tuple[str, str],
+        space: str,
+        anchor: str,
+        *,
+        is_default: bool,
+    ) -> None:
+        """Convert strings to enums, using the default anchor for the space if unset."""
+        strategy = RolloutStrategy.from_options(*options)
 
         assert strategy.space is RolloutSpace(space)
         assert strategy.anchor is SkipAnchorType(anchor)
-
-    def test_accepts_physical_with_initial_anchor(self) -> None:
-        """A physical rollout can anchor every step on the last observed frame."""
-        strategy = RolloutStrategy(
-            space=RolloutSpace.PHYSICAL, anchor=SkipAnchorType.INITIAL
-        )
-
-        assert strategy.is_physical
-        assert not strategy.uses_default_anchor
+        assert strategy.is_physical is (space == "physical")
+        assert strategy.uses_default_anchor is is_default
 
     @pytest.mark.parametrize(
         ("space", "anchor"),
@@ -253,54 +261,13 @@ class TestRolloutStrategy:
     def test_rejects_unknown_values(self, space: str, anchor: str) -> None:
         """Reject values that are not valid enum members."""
         with pytest.raises(ValueError, match="sideways"):
-            RolloutStrategy(space=space, anchor=anchor)  # type: ignore[arg-type]
+            RolloutStrategy.from_options(space, anchor)
 
-    @pytest.mark.parametrize(
-        ("space", "expected"),
-        [
-            pytest.param(RolloutSpace.LATENT, SkipAnchorType.INITIAL, id="latent"),
-            pytest.param(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS, id="physical"),
-        ],
-    )
-    def test_from_options_uses_default_anchor(
-        self, space: RolloutSpace, expected: SkipAnchorType
-    ) -> None:
-        """Use the default anchor for the rollout space if the anchor is unset."""
-        strategy = RolloutStrategy.from_options(space)
-
-        assert strategy.anchor is expected
-        assert strategy.uses_default_anchor
-
-    def test_from_options_defaults_to_latent(self) -> None:
-        """With no options, roll out in latent space anchored on the initial frame."""
-        assert RolloutStrategy.from_options() == RolloutStrategy(
-            space=RolloutSpace.LATENT, anchor=SkipAnchorType.INITIAL
-        )
-
-    @pytest.mark.parametrize(
-        ("space", "anchor"),
-        [
-            pytest.param("latent", "previous", id="latent-previous"),
-            pytest.param("physical", "initial", id="physical-initial"),
-        ],
-    )
-    def test_from_options_keeps_explicit_anchor(self, space: str, anchor: str) -> None:
-        """Keep an explicit anchor, and report that it is not the default."""
-        strategy = RolloutStrategy.from_options(space, anchor)
-
-        assert strategy.anchor is SkipAnchorType(anchor)
-        assert not strategy.uses_default_anchor
-
-    @pytest.mark.parametrize(
-        ("space", "expected"),
-        [
-            pytest.param(RolloutSpace.LATENT, False, id="latent"),
-            pytest.param(RolloutSpace.PHYSICAL, True, id="physical"),
-        ],
-    )
-    def test_is_physical(self, space: RolloutSpace, *, expected: bool) -> None:
-        """Report whether the forecast loop runs in physical space."""
-        assert RolloutStrategy.from_options(space).is_physical is expected
+    def test_physical_rollout_requires_previous_anchor(self) -> None:
+        with pytest.raises(
+            ValueError, match="rollout_space='physical' requires skip_anchor='previous'"
+        ):
+            RolloutStrategy.from_options("physical", "initial")
 
     def test_immutable(self) -> None:
         """Prevent changes after creation, which could bypass validation."""
@@ -308,23 +275,14 @@ class TestRolloutStrategy:
         with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.anchor = SkipAnchorType.INITIAL  # type: ignore[misc]
 
-    def test_from_options_sets_relaxation(self) -> None:
+    def test_sets_relaxation(self) -> None:
         strategy = RolloutStrategy.from_options("physical", None, 5.0)
 
         assert strategy.relaxation_tau == pytest.approx(5.0)
 
-    @pytest.mark.parametrize(
-        ("space", "anchor"),
-        [
-            pytest.param("latent", None, id="latent-default"),
-            pytest.param("physical", "initial", id="physical-initial"),
-        ],
-    )
-    def test_relaxation_requires_previous_anchor(
-        self, space: str, anchor: str | None
-    ) -> None:
-        with pytest.raises(ValueError, match="requires skip_anchor='previous'"):
-            RolloutStrategy.from_options(space, anchor, 5.0)
+    def test_relaxation_requires_previous_anchor(self) -> None:
+        with pytest.raises(ValueError, match="relaxation requires skip_anchor"):
+            RolloutStrategy.from_options("latent", None, 5.0)
 
 
 class TestTimespan:

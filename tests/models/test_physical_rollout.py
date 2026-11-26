@@ -483,15 +483,13 @@ class TestNoFutureLeak:
 
 
 class TestConfigValidation:
-    def test_physical_rollout_accepts_initial_anchor(self) -> None:
-        """An INITIAL anchor in a physical rollout is a valid ablation."""
-        model = _build_model(
-            rollout_space="physical",
-            skip_anchor="initial",
-            finaliser=ADDITIVE_SKIP_FINALISER,
-        )
-        assert model.rollout_strategy.is_physical
-        assert model.rollout_strategy.anchor is SkipAnchorType.INITIAL
+    def test_physical_rollout_rejects_initial_anchor(self) -> None:
+        with pytest.raises(ValueError, match="requires skip_anchor='previous'"):
+            _build_model(
+                rollout_space="physical",
+                skip_anchor="initial",
+                finaliser=ADDITIVE_SKIP_FINALISER,
+            )
 
     def test_latent_relaxation_requires_skip_connection(self) -> None:
         """Without a skip connection, latent relaxation does not carry over steps."""
@@ -505,7 +503,7 @@ class TestConfigValidation:
     def test_physical_relaxation_accepts_no_skip_connection(self) -> None:
         """A physical rollout re-encodes each relaxed step, so no skip is needed."""
         model = _build_model(rollout_space="physical", relaxation_tau=30.0)
-        assert model.relaxation is not None
+        assert model.finaliser.relaxation is not None
 
     def test_physical_rollout_requires_target_as_input(self) -> None:
         with pytest.raises(ValueError, match="to also be a model input"):
@@ -526,7 +524,6 @@ class TestConfigValidation:
         [
             pytest.param("latent", "previous", True, id="latent-previous-warns"),
             pytest.param("latent", "initial", False, id="latent-default-is-silent"),
-            pytest.param("physical", "initial", True, id="physical-initial-warns"),
             pytest.param(
                 "physical", "previous", False, id="physical-default-is-silent"
             ),
@@ -602,7 +599,6 @@ class TestAnchorSemantics:
             pytest.param(
                 "physical", "previous", True, id="physical-previous-accumulates"
             ),
-            pytest.param("physical", "initial", False, id="physical-initial-is-static"),
             pytest.param("latent", None, False, id="latent-default-is-static"),
             pytest.param("latent", "initial", False, id="latent-initial-is-static"),
             pytest.param("latent", "previous", True, id="latent-previous-accumulates"),
@@ -655,41 +651,6 @@ class TestAnchorSemantics:
         # space when the checkpoint is loaded
         assert model.hparams["skip_anchor"] is None
 
-    def test_physical_initial_differs_from_latent_initial_only_by_feedback(
-        self,
-    ) -> None:
-        """With an INITIAL anchor, only the rollout space separates the two models.
-
-        Both models anchor every lead on the last observed frame and share weights, so
-        their first lead is the same. After that, the physical rollout re-encodes its
-        own predictions while the latent rollout feeds back raw latents, so the later
-        leads differ. Needs a processor that reads the whole window, hence the ViT.
-        """
-        latent = _build_model(
-            rollout_space="latent",
-            skip_anchor="initial",
-            finaliser=ADDITIVE_SKIP_FINALISER,
-            processor=VIT_PROCESSOR,
-        )
-        physical = _build_model(
-            rollout_space="physical",
-            skip_anchor="initial",
-            finaliser=ADDITIVE_SKIP_FINALISER,
-            processor=VIT_PROCESSOR,
-        )
-        _small_tendency(latent)
-        physical.load_state_dict(latent.state_dict())
-        latent.eval()
-        physical.eval()
-        inputs = _inputs(latent, seed=5)
-        with torch.no_grad():
-            from_latent = latent(inputs)
-            from_physical = physical(dict(inputs))
-
-        assert float(from_physical.max()) < 1.0, "clamp saturated; not a valid regime"
-        torch.testing.assert_close(from_physical[:, 0], from_latent[:, 0])
-        assert not torch.allclose(from_physical[:, -1], from_latent[:, -1])
-
 
 class TestTrainEvalParity:
     """training_step must score the SAME architecture that validation scores.
@@ -715,18 +676,10 @@ class TestTrainEvalParity:
         )
         return batch
 
-    @pytest.mark.parametrize(
-        "skip_anchor",
-        [None, "initial"],
-        ids=["default-anchor", "initial-anchor"],
-    )
-    def test_training_step_matches_forward_physical(
-        self, skip_anchor: str | None
-    ) -> None:
+    def test_training_step_matches_forward_physical(self) -> None:
         """Both the prediction and the loss come from the physical forward pass."""
         model = _build_model(
             rollout_space="physical",
-            skip_anchor=skip_anchor,
             finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _small_tendency(model)
@@ -806,14 +759,14 @@ class TestClimatologyRelaxation:
     def test_off_by_default(self) -> None:
         model = _build_model()
         assert model.rollout_strategy.relaxation_tau is None
-        assert model.relaxation is None
+        assert model.finaliser.relaxation is None
 
     @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
     def test_zero_tendency_is_damped_anomaly_persistence(
         self, rollout_space: str
     ) -> None:
         model = self._model(rollout_space, 2.0)
-        assert model.relaxation is not None
+        assert model.finaliser.relaxation is not None
         model.eval()
         inputs = _inputs(model)
         climatology = 0.3
@@ -823,7 +776,7 @@ class TestClimatologyRelaxation:
                 {**inputs, "climatology": _climatology(model, climatology)}
             )
         for lead in range(model.n_forecast_steps):
-            decay = (1.0 - model.relaxation.rate) ** (lead + 1)
+            decay = (1.0 - model.finaliser.relaxation.rate) ** (lead + 1)
             expected = climatology + decay * (observation - climatology)
             assert torch.allclose(prediction[:, lead], expected, atol=1e-6), (
                 f"lead {lead + 1} is not damped anomaly persistence"

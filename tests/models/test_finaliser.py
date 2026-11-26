@@ -331,7 +331,7 @@ class TestFinaliserSkipAnchor(_FinaliserBase):
 
 
 class TestFinaliserRelaxation(_FinaliserBase):
-    """The relaxation and equilibrium arguments to Finaliser.rollout()."""
+    """The relaxation of a Finaliser and the equilibrium argument to rollout()."""
 
     _EQUILIBRIUM = 0.3
     _RELAXATION = ExponentialRelaxation(tau=2.0)
@@ -345,11 +345,11 @@ class TestFinaliserRelaxation(_FinaliserBase):
         self, finaliser: Finaliser, anchor_type: SkipAnchorType
     ) -> tuple[torch.Tensor, torch.Tensor]:
         persistence = self._persistence()
+        finaliser.relaxation = self._RELAXATION
         out = finaliser.rollout(
             self._raw(0.0, self._N_FORECAST_STEPS),
             anchor=persistence,
             anchor_type=anchor_type,
-            relaxation=self._RELAXATION,
             equilibrium=self._equilibrium(),
         )
         return out, persistence
@@ -393,13 +393,11 @@ class TestFinaliserRelaxation(_FinaliserBase):
         raw = self._raw(0.1, self._N_FORECAST_STEPS)
         persistence = self._persistence()
 
-        relaxed = finaliser.rollout(
-            raw,
-            anchor=persistence,
-            anchor_type=SkipAnchorType.PREVIOUS,
-            relaxation=self._RELAXATION,
-        )
         plain = finaliser.rollout(
+            raw, anchor=persistence, anchor_type=SkipAnchorType.PREVIOUS
+        )
+        finaliser.relaxation = self._RELAXATION
+        relaxed = finaliser.rollout(
             raw, anchor=persistence, anchor_type=SkipAnchorType.PREVIOUS
         )
 

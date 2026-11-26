@@ -223,7 +223,7 @@ class EncodeProcessDecode(BaseModel):
                 self.rollout_strategy.anchor.value,
             )
 
-        self.relaxation = (
+        self.finaliser.relaxation = (
             None
             if relaxation_tau is None
             else ExponentialRelaxation(tau=relaxation_tau)
@@ -255,10 +255,6 @@ class EncodeProcessDecode(BaseModel):
     @override
     def needs_future_inputs(self) -> bool:
         return self.objective.needs_future_inputs
-
-    @override
-    def verify_single_stage_trainable(self) -> None:
-        self.objective.verify_single_stage_trainable()
 
     def _anchor_nchw(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the target variables from the most recent frame.
@@ -318,7 +314,6 @@ class EncodeProcessDecode(BaseModel):
             self.decoder.rollout(latent),
             anchor=anchor,
             anchor_type=anchor_type,
-            relaxation=self.relaxation,
             equilibrium=equilibrium,
         )
 
@@ -336,7 +331,7 @@ class EncodeProcessDecode(BaseModel):
             ValueError: If relaxation is on but the batch has no climatology.
 
         """
-        if self.relaxation is None:
+        if self.finaliser.relaxation is None:
             return None
         if (climatology := batch.get("climatology")) is None:
             msg = (
@@ -409,11 +404,8 @@ class EncodeProcessDecode(BaseModel):
         residual and the state advances as `x_{k+1} = clamp(x_k + residual_k, 0, 1)`, so
         a zero-output network reproduces persistence exactly.
 
-        The skip connection anchor depends on `rollout_strategy.anchor`:
-        - PREVIOUS (default): the most recent frame in the target window, which is the
-          previous forecast step.
-        - INITIAL: the last observed frame, for every forecast step. The target window
-          still advances, so only the skip connection changes.
+        The skip connection anchor is the most recent frame in the target window, which
+        is the previous forecast step (a PREVIOUS anchor).
 
         If relaxation is on, each step is relaxed towards climatology before it goes
         into the window.
@@ -445,10 +437,6 @@ class EncodeProcessDecode(BaseModel):
         }
         target_window = inputs[target_name].clone()  # (B, n_history, C_t, H_t, W_t)
 
-        # With an INITIAL anchor, every step uses the last observed frame
-        # -> (B, C_out, H_out, W_out) or None
-        initial_anchor = self._anchor_nchw(target_window)
-
         # Relax each step towards climatology, if required
         # -> (B, n_forecast, C_out, H_out, W_out) or None
         equilibrium = self._equilibrium(inputs)
@@ -477,18 +465,10 @@ class EncodeProcessDecode(BaseModel):
             # -> (B, C_out, H_out, W_out)
             raw_output: TensorNCHW = self.decoder(step_latent)
 
-            # Use the last observed frame or the evolving rollout state as the
-            # skip-connection anchor, if required.
-            # -> (B, C_out, H_out, W_out)
-            anchor = (
-                initial_anchor
-                if self.rollout_strategy.anchor == SkipAnchorType.INITIAL
-                else self._anchor_nchw(target_window)
-            )
+            # Use the evolving rollout state as the skip-connection anchor
             output = self.finaliser(
                 raw_output,
-                anchor=anchor,
-                relaxation=self.relaxation,
+                anchor=self._anchor_nchw(target_window),
                 equilibrium=None if equilibrium is None else equilibrium[:, step],
             )
             outputs.append(output)

@@ -1175,8 +1175,7 @@ class TestPredictionLoss:
         """Freeze the decoder only if both weights are 0.
 
         Warn if the reconstruction weight is 0 while the encoders or decoder are trainable.
-        The encoders are always trainable here. Single-stage training rejects a model
-        with a frozen decoder.
+        The encoders are always trainable here.
         """
         with caplog.at_level(logging.WARNING):
             model = self._model(cfg_loss, cfg_metrics, test_weights)
@@ -1185,11 +1184,6 @@ class TestPredictionLoss:
         assert model.decoder.training is not expected_frozen
         assert model.finaliser.frozen is expected_frozen
         assert ("latent space can drift" in caplog.text) is expected_warning
-        if expected_frozen:
-            with pytest.raises(ValueError, match="decoder is frozen"):
-                model.verify_single_stage_trainable()
-        else:
-            model.verify_single_stage_trainable()
 
     def test_rejects_prediction_without_gradients(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
@@ -1204,6 +1198,49 @@ class TestPredictionLoss:
             model.training_step(_oracle_batch(), 0)
 
 
+_SKIP_SCALE = 0.1
+
+
+def _skip_model(
+    cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]], **kwargs: Any
+) -> EncodeProcessDecode:
+    """Build an oracle model whose decoder adds 0.1 * the target channel to its anchor.
+
+    The processor defaults to _RepeatLastProcessor.
+    """
+    kwargs.setdefault(
+        "processor",
+        DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
+    )
+    return _oracle_model(
+        cfg_loss=cfg_loss,
+        cfg_metrics=cfg_metrics,
+        decoder_scale=_SKIP_SCALE,
+        skip_connection={"method": "additive"},
+        **kwargs,
+    )
+
+
+def _expected_skip(
+    observation: TensorNTCHW,
+    deltas: TensorNTCHW,
+    *,
+    skip_anchor: str | None,
+    rate: float = 0.0,
+    climatology: float = 0.0,
+) -> TensorNTCHW:
+    """Apply the additive skip connection and the relaxation by hand for each step."""
+    anchor = observation[:, -1, 1:2]
+    outputs = []
+    for delta in (_SKIP_SCALE * deltas[:, :, 1:2]).unbind(dim=1):
+        output = (anchor + delta).clamp(0.0, 1.0)
+        output = output + rate * (climatology - output)
+        outputs.append(output)
+        if skip_anchor == "previous":
+            anchor = output
+    return torch.stack(outputs, dim=1)
+
+
 class TestSkipAnchor:
     """`skip_anchor` sets the skip-connection anchor wherever the latent rollout decodes.
 
@@ -1211,41 +1248,6 @@ class TestSkipAnchor:
         initial   ->  output_k = clamp(observation + delta_k)
         previous  ->  output_k = clamp(output_{k-1} + delta_k)
     """
-
-    SCALE = 0.1
-
-    def _model(
-        self,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
-        skip_anchor: str | None,
-        **kwargs: Any,
-    ) -> EncodeProcessDecode:
-        kwargs.setdefault(
-            "processor",
-            DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
-        )
-        return _oracle_model(
-            cfg_loss=cfg_loss,
-            cfg_metrics=cfg_metrics,
-            decoder_scale=self.SCALE,
-            skip_connection={"method": "additive"},
-            skip_anchor=skip_anchor,
-            **kwargs,
-        )
-
-    def _expected(
-        self, observation: TensorNTCHW, deltas: TensorNTCHW, skip_anchor: str | None
-    ) -> TensorNTCHW:
-        """Apply the additive skip connection by hand for each forecast step."""
-        anchor = observation[:, -1, 1:2]
-        outputs = []
-        for delta in (self.SCALE * deltas[:, :, 1:2]).unbind(dim=1):
-            output = (anchor + delta).clamp(0.0, 1.0)
-            outputs.append(output)
-            if skip_anchor == "previous":
-                anchor = output
-        return torch.stack(outputs, dim=1)
 
     @pytest.mark.parametrize("skip_anchor", [None, "initial", "previous"])
     def test_training_step_matches_forward(
@@ -1255,14 +1257,14 @@ class TestSkipAnchor:
         skip_anchor: str | None,
     ) -> None:
         """The latent-loss metrics decode uses the same anchor as the forward pass."""
-        model = self._model(cfg_loss, cfg_metrics, skip_anchor)
+        model = _skip_model(cfg_loss, cfg_metrics, skip_anchor=skip_anchor)
         model.train()
         batch = _oracle_batch()
         # The processor repeats the last history latent at every forecast step
-        expected = self._expected(
+        expected = _expected_skip(
             batch["sic"],
             batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
-            skip_anchor,
+            skip_anchor=skip_anchor,
         )
 
         result, _ = _training_step(model, batch)
@@ -1281,10 +1283,10 @@ class TestSkipAnchor:
         skip_anchor: str,
     ) -> None:
         """The prediction loss decodes the processor output with the same anchor."""
-        model = self._model(
+        model = _skip_model(
             cfg_loss,
             cfg_metrics,
-            skip_anchor,
+            skip_anchor=skip_anchor,
             loss_weights={"reconstruction": 0.0, "prediction": 1.0},
             processor=DictConfig(
                 {
@@ -1297,7 +1299,8 @@ class TestSkipAnchor:
         batch = _oracle_batch()
         # The processor returns the last n_forecast_steps history latents
         expected = model.loss(
-            self._expected(batch["sic"], batch["sic"], skip_anchor), batch["target"]
+            _expected_skip(batch["sic"], batch["sic"], skip_anchor=skip_anchor),
+            batch["target"],
         )
 
         _, logged = _training_step(model, batch)
@@ -1316,10 +1319,10 @@ class TestSkipAnchor:
         With a PREVIOUS anchor, step k uses the observed frame k - 1 (teacher forcing).
         """
         n_forecast_steps = 3
-        model = self._model(
+        model = _skip_model(
             cfg_loss,
             cfg_metrics,
-            skip_anchor,
+            skip_anchor=skip_anchor,
             loss_weights={"reconstruction": 1.0, "prediction": 0.0},
             processor=DictConfig(
                 {"_target_": f"{__name__}.{_OracleProcessor.__name__}"}
@@ -1329,7 +1332,7 @@ class TestSkipAnchor:
         model.train()
         batch = _oracle_batch(n_forecast_steps)
         expected = model.loss(
-            _expected_reconstruction(batch, self.SCALE, skip_anchor), batch["target"]
+            _expected_reconstruction(batch, _SKIP_SCALE, skip_anchor), batch["target"]
         )
 
         _, logged = _training_step(model, batch)
@@ -1452,8 +1455,8 @@ class TestSkipAnchor:
             weights_only=False,
         )
 
-        assert loaded.relaxation is not None
-        assert loaded.relaxation.tau == pytest.approx(30.0)
+        assert loaded.finaliser.relaxation is not None
+        assert loaded.finaliser.relaxation.tau == pytest.approx(30.0)
         assert loaded.hparams["relaxation_tau"] == pytest.approx(30.0)
 
 
@@ -1466,29 +1469,14 @@ class TestRelaxationInLatentLossTraining:
     The reconstruction loss decodes observations, not a forecast, so it is not relaxed.
     """
 
-    SCALE = 0.1
     CLIMATOLOGY = 0.2
     TAU = 2.0
 
     def _model(
-        self,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
-        **kwargs: Any,
+        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]], **kwargs: Any
     ) -> EncodeProcessDecode:
-        kwargs.setdefault(
-            "processor",
-            DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
-        )
         kwargs.setdefault("relaxation_tau", self.TAU)
-        return _oracle_model(
-            cfg_loss=cfg_loss,
-            cfg_metrics=cfg_metrics,
-            decoder_scale=self.SCALE,
-            skip_connection={"method": "additive"},
-            skip_anchor="previous",
-            **kwargs,
-        )
+        return _skip_model(cfg_loss, cfg_metrics, skip_anchor="previous", **kwargs)
 
     def _batch(self) -> dict[str, TensorNTCHW]:
         batch = _oracle_batch()
@@ -1496,31 +1484,26 @@ class TestRelaxationInLatentLossTraining:
         return batch
 
     def _expected(
-        self,
-        observation: TensorNTCHW,
-        deltas: TensorNTCHW,
-        rate: float,
+        self, observation: TensorNTCHW, deltas: TensorNTCHW, rate: float
     ) -> TensorNTCHW:
-        """Apply the skip connection and the relaxation by hand."""
-        anchor = observation[:, -1, 1:2]
-        outputs = []
-        for delta in (self.SCALE * deltas[:, :, 1:2]).unbind(dim=1):
-            output = (anchor + delta).clamp(0.0, 1.0)
-            output = output + rate * (self.CLIMATOLOGY - output)
-            outputs.append(output)
-            anchor = output
-        return torch.stack(outputs, dim=1)
+        return _expected_skip(
+            observation,
+            deltas,
+            skip_anchor="previous",
+            rate=rate,
+            climatology=self.CLIMATOLOGY,
+        )
 
     def test_metrics_decode_matches_forward(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
     ) -> None:
         model = self._model(cfg_loss, cfg_metrics)
-        assert model.relaxation is not None
+        assert model.finaliser.relaxation is not None
         batch = self._batch()
         expected = self._expected(
             batch["sic"],
             batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
-            model.relaxation.rate,
+            model.finaliser.relaxation.rate,
         )
 
         model.train()
@@ -1546,12 +1529,12 @@ class TestRelaxationInLatentLossTraining:
                 }
             ),
         )
-        assert model.relaxation is not None
+        assert model.finaliser.relaxation is not None
         model.train()
         batch = self._batch()
         # The processor returns the last n_forecast_steps history latents
         expected = model.loss(
-            self._expected(batch["sic"], batch["sic"], model.relaxation.rate),
+            self._expected(batch["sic"], batch["sic"], model.finaliser.relaxation.rate),
             batch["target"],
         )
 
@@ -1566,7 +1549,7 @@ class TestRelaxationInLatentLossTraining:
         model.train()
         batch = self._batch()
         expected = model.loss(
-            _expected_reconstruction(batch, self.SCALE, "previous"), batch["target"]
+            _expected_reconstruction(batch, _SKIP_SCALE, "previous"), batch["target"]
         )
 
         _, logged = _training_step(model, batch)
