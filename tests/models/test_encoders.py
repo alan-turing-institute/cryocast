@@ -295,3 +295,54 @@ class TestVerifyOutputChannels:
         running_mean_after, running_var_after = self._running_stats(batch_norm)
         assert torch.equal(running_mean_after, running_mean_before)
         assert torch.equal(running_var_after, running_var_before)
+
+
+class TestEncoderCheckpointing:
+    input_space = DataSpace(name="input", channels=2, shape=(16, 16))
+
+    def _encoder(
+        self, encode_chunk_size: int | None, norm_type: str = "groupnorm"
+    ) -> CNNEncoder:
+        torch.manual_seed(0)
+        return CNNEncoder(
+            encode_chunk_size=encode_chunk_size,
+            data_space_in=self.input_space,
+            latent_space=(8, 8),
+            n_layers=1,
+            norm_type=norm_type,
+        )
+
+    @pytest.mark.parametrize(
+        "test_chunk_size", [1, 3, 10], ids=["chunk1", "chunk3", "chunk10"]
+    )
+    @pytest.mark.parametrize("test_grad", [True, False], ids=["grad", "no_grad"])
+    def test_matches_unchunked_rollout(
+        self, test_chunk_size: int, *, test_grad: bool
+    ) -> None:
+        reference = self._encoder(None)
+        chunked = self._encoder(test_chunk_size)
+        x = torch.randn(2, 3, self.input_space.channels, *self.input_space.shape)
+
+        with torch.set_grad_enabled(test_grad):
+            expected = reference.rollout(x)
+            result = chunked.rollout(x)
+        torch.testing.assert_close(result, expected)
+
+        if test_grad:
+            expected.square().sum().backward()
+            result.square().sum().backward()
+            for p_ref, p_chunked in zip(
+                reference.parameters(), chunked.parameters(), strict=True
+            ):
+                torch.testing.assert_close(p_chunked.grad, p_ref.grad)
+
+    def test_non_positive_chunk_size_raises(self) -> None:
+        with pytest.raises(ValueError, match="encode_chunk_size must be positive"):
+            self._encoder(0)
+
+    def test_batchnorm_raises(self) -> None:
+        encoder = self._encoder(2, norm_type="batchnorm")
+        x = torch.randn(1, 3, self.input_space.channels, *self.input_space.shape)
+
+        with pytest.raises(ValueError, match="batch normalisation"):
+            encoder.rollout(x)

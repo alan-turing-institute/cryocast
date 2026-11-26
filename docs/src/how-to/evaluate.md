@@ -85,6 +85,8 @@ The file is written incrementally during evaluation, so the full test period doe
 
 If the target dataset has generated masks, the static `land_mask` and `active_mask` variables are included on the `(y, x)` grid (1 = ocean/active, 0 = land/inactive) and linked to the data variables via `ancillary_variables`. Masked models output zero over land, so use these masks to distinguish land from open water.
 
+The file size increases with `n_forecast_steps`. For a 90-day horizon, see [Prediction file size](../user-guide/forecast-rollout.md#prediction-file-size).
+
 Prediction export uses the existing `data.split.test` date ranges. To export a smaller date range, change the test split in the config rather than running a separate prediction pass.
 
 NetCDF export currently supports single-process evaluation. If the evaluation config uses multiple devices, set `evaluate.trainer.devices=1` for the export run.

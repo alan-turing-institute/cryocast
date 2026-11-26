@@ -218,6 +218,21 @@ A smaller chunk size uses less memory.
     `decode_chunk_size` cannot be used with a decoder that has batch normalisation (`norm_type: batchnorm`).
     The first rollout then raises a `ValueError`.
 
+A latent diffusion model with a non-zero `loss_weights.reconstruction` also encodes the inputs for all lead times with gradients.
+The `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc` model configs set `reconstruction: 1.0`.
+Thus encoder memory also increases linearly with `n_forecast_steps`.
+To decrease encoder memory in the same way, set `encode_chunk_size` for each encoder:
+
+```bash
+uv run cryocast train --config-name <your-config>.local \
+  +model.encoders.sic-osisaf.encode_chunk_size=10 +model.encoders.era5.encode_chunk_size=10
+```
+
+!!! note
+    `encode_chunk_size` cannot be used with an encoder that has batch normalisation.
+    `CNNEncoder` uses `batchnorm` by default, so also set `norm_type: groupnorm` for each encoder.
+    A model with `groupnorm` encoders cannot load a checkpoint from a model with `batchnorm` encoders.
+
 A processor that predicts one lead time at a time also keeps its activations for each lead time.
 This applies to `UNetProcessor`, `VitProcessor`, `NullProcessor` and `ConvLSTMProcessor`.
 To recompute them in the backward pass in the same way, set `recompute_steps` in the processor config:
@@ -281,3 +296,42 @@ uv run cryocast train --config-name <your-config>.local +train.trainer.check_val
 
 You can also decrease `timesteps`.
 For a latent diffusion processor, you can set `ddim_steps` to sample with fewer DDIM steps.
+
+## Long forecast horizons
+
+The `window/forecast-90-history-4` config makes 90-day forecasts from 4 days of history:
+
+```bash
+uv run cryocast train --config-name <your-config>.local window=forecast-90-history-4
+```
+
+Read the sections above about [fixed horizons](#processors-with-a-fixed-horizon) and [memory use](#memory-use-for-long-rollouts) before you train with a long horizon.
+
+### Fewer and season-skewed start dates
+
+A sample is valid only if its full window (history and all lead times) is inside the split.
+Thus a longer window gives fewer start dates at the end of each split.
+
+For the 2024 test year (366 days):
+
+| Window | Start dates | Last valid time of lead time 1 |
+|--------|-------------|--------------------------------|
+| `forecast-14-history-3` | 350 | 18 December |
+| `forecast-90-history-4` | 273 | 3 October |
+
+The embargo on 2025 does not change, because no window goes past the end of the split.
+But with a 90-day horizon, no forecast starts in the autumn freeze-up.
+Also, each lead time has a different seasonal mix: lead time 1 has valid times from January to early October, and lead time 90 has valid times from April to December.
+
+Thus:
+
+- Do not compare per-lead metrics from a 90-day run directly with per-lead metrics from a 14-day run.
+  Evaluate both models on the same start dates, or compare only lead times with the same valid-time range.
+- Write the window in the run-log entry and with each result.
+
+### Prediction file size
+
+`--save-predictions` writes one 432 × 432 `float32` field for each lead time, and the same again for the ground truth (`_observed`).
+Without compression, this is approximately 134 MB for each start date with 90 lead times, or approximately 37 GB for the 2024 test year.
+The writer uses zlib compression, so the file on disk is smaller, but plan for tens of GB.
+To export less data, decrease the date range in `data.split.test`.

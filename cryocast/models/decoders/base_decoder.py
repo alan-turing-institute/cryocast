@@ -1,8 +1,4 @@
-import torch
-from torch.utils.checkpoint import checkpoint
-
-from cryocast.models.common import Freezable
-from cryocast.models.common.normalisations import verify_no_batchnorm
+from cryocast.models.common import Freezable, checkpointed_chunks
 from cryocast.types import DataSpace, TensorNCHW, TensorNTCHW
 
 
@@ -94,11 +90,7 @@ class BaseDecoder(Freezable):
         if self.decode_chunk_size is None:
             decoded = self(frames)
         else:
-            verify_no_batchnorm(self, "decode_chunk_size")
-            decoded = torch.cat(
-                [
-                    checkpoint(self, chunk, use_reentrant=False)
-                    for chunk in frames.split(self.decode_chunk_size)
-                ]
+            decoded = checkpointed_chunks(
+                self, frames, self.decode_chunk_size, "decode_chunk_size"
             )
         return decoded.unflatten(0, x.shape[:2])
