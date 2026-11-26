@@ -859,20 +859,32 @@ class TestTradeComputeForMemory:
         assert recompute_bytes < reference_bytes / 2
 
     @pytest.mark.parametrize(
-        ("encoder_extra", "decoder_extra", "option"),
+        ("trade_compute_for_memory", "encoder_extra", "decoder_extra", "option"),
         [
-            ({"encode_chunk_size": 2}, GROUPNORM, "encode_chunk_size"),
-            (GROUPNORM, {"decode_chunk_size": 2}, "decode_chunk_size"),
+            (False, {"encode_chunk_size": 2}, GROUPNORM, "encode_chunk_size"),
+            (False, GROUPNORM, {"decode_chunk_size": 2}, "decode_chunk_size"),
+            (True, None, GROUPNORM, "trade_compute_for_memory"),
+            (True, GROUPNORM, None, "trade_compute_for_memory"),
         ],
-        ids=["encoder", "decoder"],
+        ids=["encode_chunk", "decode_chunk", "physical-encoder", "physical-decoder"],
     )
-    def test_rejects_batchnorm_in_chunk_options(
-        self, encoder_extra: dict[str, Any], decoder_extra: dict[str, Any], option: str
+    def test_rejects_batchnorm(
+        self,
+        encoder_extra: dict[str, Any] | None,
+        decoder_extra: dict[str, Any] | None,
+        option: str,
+        *,
+        trade_compute_for_memory: bool,
     ) -> None:
         # The options are checked when the model is created, not in the first
         # rollout, so that a bad configuration fails before training starts.
         with pytest.raises(ValueError, match=f"{option} cannot be used with batch"):
-            _build_model(encoder_extra=encoder_extra, decoder_extra=decoder_extra)
+            _build_model(
+                rollout_space="physical",
+                trade_compute_for_memory=trade_compute_for_memory,
+                encoder_extra=encoder_extra,
+                decoder_extra=decoder_extra,
+            )
 
     def test_latent_rollout_recomputes_processor_steps(self) -> None:
         # Only the processor runs again, so batch normalisation in the encoders and
@@ -884,48 +896,34 @@ class TestTradeComputeForMemory:
         )
         assert model.processor.recompute_steps
 
-    def test_latent_rollout_rejects_batchnorm_processor(self) -> None:
-        processor = {
-            "_target_": "cryocast.models.processors.UNetProcessor",
-            "norm_type": "batchnorm",
-            "start_out_channels": 4,
-        }
-        with pytest.raises(
-            ValueError, match="trade_compute_for_memory cannot be used with batch"
-        ):
-            _build_model(
-                rollout_space="latent",
-                trade_compute_for_memory=True,
-                processor=processor,
-            )
-
-    def test_latent_rollout_rejects_unsupported_processor(self) -> None:
-        processor = {
-            "_target_": "cryocast.models.processors.GSTAProcessor",
-            "hid_channels": 8,
-            "n_blocks": 2,
-        }
-        with pytest.raises(ValueError, match="GSTAProcessor does not support"):
-            _build_model(
-                rollout_space="latent",
-                trade_compute_for_memory=True,
-                processor=processor,
-            )
-
     @pytest.mark.parametrize(
-        ("encoder_extra", "decoder_extra"),
-        [(None, GROUPNORM), (GROUPNORM, None)],
-        ids=["encoder", "decoder"],
+        ("processor", "match"),
+        [
+            (
+                {
+                    "_target_": "cryocast.models.processors.UNetProcessor",
+                    "norm_type": "batchnorm",
+                    "start_out_channels": 4,
+                },
+                "trade_compute_for_memory cannot be used with batch",
+            ),
+            (
+                {
+                    "_target_": "cryocast.models.processors.GSTAProcessor",
+                    "hid_channels": 8,
+                    "n_blocks": 2,
+                },
+                "GSTAProcessor does not support",
+            ),
+        ],
+        ids=["batchnorm", "no-per-step-loop"],
     )
-    def test_rejects_batchnorm(
-        self,
-        encoder_extra: dict[str, Any] | None,
-        decoder_extra: dict[str, Any] | None,
+    def test_latent_rollout_rejects_processor(
+        self, processor: dict[str, Any], match: str
     ) -> None:
-        with pytest.raises(ValueError, match="batch normalisation"):
+        with pytest.raises(ValueError, match=match):
             _build_model(
-                rollout_space="physical",
+                rollout_space="latent",
                 trade_compute_for_memory=True,
-                encoder_extra=encoder_extra,
-                decoder_extra=decoder_extra,
+                processor=processor,
             )

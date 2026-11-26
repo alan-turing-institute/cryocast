@@ -91,20 +91,20 @@ class EncodeProcessDecode(BaseModel):
                 each forecast step towards climatology, or None for no relaxation.
                 Relaxation needs a PREVIOUS skip anchor and a `climatology` entry in
                 each batch.
-            trade_compute_for_memory: If True, run each forecast step again in the backward
-                pass, instead of keeping its activations. This decreases memory use for
-                long rollouts, but makes training slower. A physical rollout recomputes
-                the full step (encoders, processor, decoder and finaliser), and needs
-                a model with no batch normalisation. A latent rollout recomputes only
-                the processor steps, and needs a processor with no batch normalisation
-                and with a per-step rollout.
+            trade_compute_for_memory: If True, run each forecast step again in the
+                backward pass, instead of keeping its activations. This decreases
+                memory use for long rollouts, but makes training slower. A physical
+                rollout recomputes the full step (encoders, processor, decoder and
+                finaliser), and needs a model with no batch normalisation. A latent
+                rollout recomputes only the processor steps, and needs a processor
+                with no batch normalisation and with a per-step rollout.
             **kwargs: forwarded to ``BaseModel``.
 
         Raises:
             ValueError: If a checkpointing option (`trade_compute_for_memory`,
-                `encode_chunk_size` or `decode_chunk_size`) is set on a component with
-                batch normalisation, or if `trade_compute_for_memory` is set for a latent
-                rollout with a processor that does not support it.
+                `encode_chunk_size` or `decode_chunk_size`) is set on a component
+                with batch normalisation, or if `trade_compute_for_memory` is set for
+                a latent rollout with a processor that does not support it.
 
         """
         super().__init__(
@@ -232,12 +232,13 @@ class EncodeProcessDecode(BaseModel):
 
         Checkpointing runs a module again in the backward pass. The checks run here,
         and not in the first rollout, so that a bad configuration fails before
-        training starts.
+        training starts. For a latent rollout, this also sets `recompute_steps` on
+        the processor.
 
         Raises:
             ValueError: If a checkpointing option is set on a module with batch
-                normalisation, or if `trade_compute_for_memory` is set for a latent rollout
-                with a processor that does not support it.
+                normalisation, or if `trade_compute_for_memory` is set for a latent
+                rollout with a processor that does not support it.
 
         """
         # A physical rollout recomputes each full step in its own loop. A latent
@@ -249,8 +250,8 @@ class EncodeProcessDecode(BaseModel):
                 if not self.processor.supports_recompute_steps:
                     msg = (
                         f"{type(self.processor).__name__} does not support "
-                        "trade_compute_for_memory with rollout_space='latent': its rollout has "
-                        "no per-step loop to recompute."
+                        "trade_compute_for_memory with rollout_space='latent': its "
+                        "rollout has no per-step loop to recompute."
                     )
                     raise ValueError(msg)
                 verify_no_batchnorm(self.processor, "trade_compute_for_memory")
@@ -461,8 +462,8 @@ class EncodeProcessDecode(BaseModel):
         If relaxation is on, each step is relaxed towards climatology before it goes
         into the window.
 
-        If `trade_compute_for_memory` is set, it checkpoints each step. The backward pass then
-        runs the step again, instead of keeping its activations.
+        If `trade_compute_for_memory` is set, it checkpoints each step. The backward
+        pass then runs the step again, instead of keeping its activations.
 
         Non-target input groups hold their most recent OBSERVED frame for every forecast
         step. No future information enters. Only the input groups (the n_history_steps

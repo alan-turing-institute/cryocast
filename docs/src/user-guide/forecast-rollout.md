@@ -247,8 +247,8 @@ In these cases, the model raises a `ValueError` when you create it.
 
 ### Physical rollout
 
-A physical rollout does not use `encode_chunk_size` or `decode_chunk_size`.
-For each lead time, it encodes the input window, runs one processor step, decodes one frame and applies the finaliser.
+For each lead time, a physical rollout encodes the input window, runs one processor step, decodes one frame and applies the finaliser.
+Thus `decode_chunk_size` has no effect, and `encode_chunk_size` applies only to the `n_history_steps` frames of each window.
 For training, it keeps the activations of the encoders, the processor and the decoder for each lead time.
 Thus a physical rollout uses the most memory for each lead time.
 
@@ -284,11 +284,8 @@ Thus the denoiser activation memory does not change when you increase `n_forecas
 
 For the pixel-space `ddpm` model, this is all of the training memory that depends on the horizon.
 
-For the latent diffusion models, the training objective also encodes the inputs for all lead times.
-When `loss_weights.reconstruction` is more than 0, it decodes all lead times with gradients.
-The `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc` model configs set `reconstruction: 1.0`.
-Thus encoder and decoder memory increases with `n_forecast_steps`.
-To decrease this memory, set `encode_chunk_size` and `decode_chunk_size` as given in [Memory use for long rollouts](#memory-use-for-long-rollouts).
+For the latent diffusion models, a non-zero `loss_weights.reconstruction` also encodes and decodes all lead times with gradients.
+To decrease this memory, set `encode_chunk_size` and `decode_chunk_size` as given in [Encoders](#encoders) and [Decoder](#decoder).
 
 Validation and test are different.
 They sample each lead time with a full reverse diffusion, thus they run `n_forecast_steps × timesteps` denoising steps.

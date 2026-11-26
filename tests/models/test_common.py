@@ -75,7 +75,7 @@ class TestCheckpointedChunks:
 
         def output_and_grads(
             chunk_size: int | None,
-        ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        ) -> tuple[torch.Tensor, list[torch.Tensor | None]]:
             module.zero_grad(set_to_none=True)
             with torch.set_grad_enabled(test_grad):
                 output = checkpointed_chunks(module, frames, chunk_size)

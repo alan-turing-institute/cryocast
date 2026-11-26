@@ -1197,22 +1197,19 @@ class TestConvLSTMProcessor:
 class TestRecomputeSteps:
     latent_space = DataSpace(name="latent", channels=2, shape=(32, 32))
 
-    def _processor(self, name: str, **kwargs: Any) -> BaseProcessor:
+    def _processor(self, name: str) -> BaseProcessor:
         torch.manual_seed(0)
-        common = {
+        common: dict[str, Any] = {
             "data_space": self.latent_space,
             "n_forecast_steps": 5,
             "n_history_steps": 3,
-            **kwargs,
         }
         if name == "convlstm":
             return ConvLSTMProcessor(
                 dropout=0.2, hidden_channels=4, n_layers=2, **common
             )
         if name == "unet":
-            return UNetProcessor(
-                **{"norm_type": "groupnorm", "start_out_channels": 4, **common}
-            )
+            return UNetProcessor(norm_type="groupnorm", start_out_channels=4, **common)
         return VitProcessor(
             depth=1,
             dropout=0.2,
@@ -1227,7 +1224,7 @@ class TestRecomputeSteps:
         self, name: str, *, recompute_steps: bool
     ) -> tuple[int, torch.Tensor, list[torch.Tensor | None]]:
         processor = self._processor(name)
-        # EncodeProcessDecode sets this from its own recompute_steps option
+        # EncodeProcessDecode sets this from its trade_compute_for_memory option
         processor.recompute_steps = recompute_steps
         x = torch.randn(1, 3, self.latent_space.channels, *self.latent_space.shape)
         saved_bytes = 0
