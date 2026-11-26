@@ -207,22 +207,6 @@ def _oracle_batch(n_forecast_steps: int = 2) -> dict[str, TensorNTCHW]:
     }
 
 
-def _expected_reconstruction(
-    batch: dict[str, TensorNTCHW], scale: float, skip_anchor: str
-) -> TensorNTCHW:
-    """Reconstruct the target, with each step anchored on an observed frame.
-
-    With a PREVIOUS anchor, step k uses the observed frame k - 1 (teacher forcing).
-    """
-    observation = batch["sic"][:, -1:, 1:2]
-    anchors = (
-        torch.cat([observation, batch["target"][:, :-1]], 1)
-        if skip_anchor == "previous"
-        else observation.expand_as(batch["target"])
-    )
-    return (anchors + scale * batch["future_sic"][:, :, 1:2]).clamp(0.0, 1.0)
-
-
 def _training_step(
     model: EncodeProcessDecode, batch: dict[str, TensorNTCHW]
 ) -> tuple[ModelStepOutput, dict[str, torch.Tensor]]:
@@ -1199,6 +1183,13 @@ class TestPredictionLoss:
 
 
 _SKIP_SCALE = 0.1
+_CLIMATOLOGY = 0.2
+# (skip_anchor, relaxation_tau) for the latent-loss training paths that decode a forecast
+_ANCHOR_CASES = [
+    pytest.param("initial", None, id="initial"),
+    pytest.param("previous", None, id="previous"),
+    pytest.param("previous", 2.0, id="previous-relaxed"),
+]
 
 
 def _skip_model(
@@ -1221,20 +1212,28 @@ def _skip_model(
     )
 
 
+def _skip_batch(n_forecast_steps: int = 2) -> dict[str, TensorNTCHW]:
+    """Build an oracle batch with a constant climatology, for relaxation."""
+    batch = _oracle_batch(n_forecast_steps)
+    batch["climatology"] = torch.full_like(batch["target"], _CLIMATOLOGY)
+    return batch
+
+
 def _expected_skip(
+    model: EncodeProcessDecode,
     observation: TensorNTCHW,
     deltas: TensorNTCHW,
     *,
     skip_anchor: str | None,
-    rate: float = 0.0,
-    climatology: float = 0.0,
 ) -> TensorNTCHW:
     """Apply the additive skip connection and the relaxation by hand for each step."""
+    relaxation = model.finaliser.relaxation
+    rate = 0.0 if relaxation is None else relaxation.rate
     anchor = observation[:, -1, 1:2]
     outputs = []
     for delta in (_SKIP_SCALE * deltas[:, :, 1:2]).unbind(dim=1):
         output = (anchor + delta).clamp(0.0, 1.0)
-        output = output + rate * (climatology - output)
+        output = output + rate * (_CLIMATOLOGY - output)
         outputs.append(output)
         if skip_anchor == "previous":
             anchor = output
@@ -1244,24 +1243,35 @@ def _expected_skip(
 class TestSkipAnchor:
     """`skip_anchor` sets the skip-connection anchor wherever the latent rollout decodes.
 
-    The decoder adds 0.1 * the target channel of each latent step to its anchor, so:
+    The decoder adds 0.1 * the target channel of each latent step to its anchor, and
+    relaxation (if on) then moves each step towards a constant climatology c:
         initial   ->  output_k = clamp(observation + delta_k)
-        previous  ->  output_k = clamp(output_{k-1} + delta_k)
+        previous  ->  output_k = lerp(clamp(output_{k-1} + delta_k), c, rate)
     """
 
-    @pytest.mark.parametrize("skip_anchor", [None, "initial", "previous"])
+    @pytest.mark.parametrize(
+        ("skip_anchor", "relaxation_tau"),
+        [pytest.param(None, None, id="default"), *_ANCHOR_CASES],
+    )
     def test_training_step_matches_forward(
         self,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
         skip_anchor: str | None,
+        relaxation_tau: float | None,
     ) -> None:
         """The latent-loss metrics decode uses the same anchor as the forward pass."""
-        model = _skip_model(cfg_loss, cfg_metrics, skip_anchor=skip_anchor)
+        model = _skip_model(
+            cfg_loss,
+            cfg_metrics,
+            skip_anchor=skip_anchor,
+            relaxation_tau=relaxation_tau,
+        )
         model.train()
-        batch = _oracle_batch()
+        batch = _skip_batch()
         # The processor repeats the last history latent at every forecast step
         expected = _expected_skip(
+            model,
             batch["sic"],
             batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
             skip_anchor=skip_anchor,
@@ -1275,18 +1285,20 @@ class TestSkipAnchor:
         torch.testing.assert_close(result.prediction, expected)
         torch.testing.assert_close(forward, expected)
 
-    @pytest.mark.parametrize("skip_anchor", ["initial", "previous"])
+    @pytest.mark.parametrize(("skip_anchor", "relaxation_tau"), _ANCHOR_CASES)
     def test_prediction_loss_uses_skip_anchor(
         self,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
         skip_anchor: str,
+        relaxation_tau: float | None,
     ) -> None:
         """The prediction loss decodes the processor output with the same anchor."""
         model = _skip_model(
             cfg_loss,
             cfg_metrics,
             skip_anchor=skip_anchor,
+            relaxation_tau=relaxation_tau,
             loss_weights={"reconstruction": 0.0, "prediction": 1.0},
             processor=DictConfig(
                 {
@@ -1296,10 +1308,10 @@ class TestSkipAnchor:
             ),
         )
         model.train()
-        batch = _oracle_batch()
+        batch = _skip_batch()
         # The processor returns the last n_forecast_steps history latents
         expected = model.loss(
-            _expected_skip(batch["sic"], batch["sic"], skip_anchor=skip_anchor),
+            _expected_skip(model, batch["sic"], batch["sic"], skip_anchor=skip_anchor),
             batch["target"],
         )
 
@@ -1307,22 +1319,25 @@ class TestSkipAnchor:
 
         torch.testing.assert_close(logged["train_prediction_loss"], expected)
 
-    @pytest.mark.parametrize("skip_anchor", ["initial", "previous"])
+    @pytest.mark.parametrize(("skip_anchor", "relaxation_tau"), _ANCHOR_CASES)
     def test_reconstruction_loss_anchors_on_observed_frames(
         self,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
         skip_anchor: str,
+        relaxation_tau: float | None,
     ) -> None:
         """Each reconstructed step uses an observed frame as its anchor, not a chain.
 
         With a PREVIOUS anchor, step k uses the observed frame k - 1 (teacher forcing).
+        The reconstruction decodes observations, not a forecast, so it is not relaxed.
         """
         n_forecast_steps = 3
         model = _skip_model(
             cfg_loss,
             cfg_metrics,
             skip_anchor=skip_anchor,
+            relaxation_tau=relaxation_tau,
             loss_weights={"reconstruction": 1.0, "prediction": 0.0},
             processor=DictConfig(
                 {"_target_": f"{__name__}.{_OracleProcessor.__name__}"}
@@ -1330,10 +1345,15 @@ class TestSkipAnchor:
             n_forecast_steps=n_forecast_steps,
         )
         model.train()
-        batch = _oracle_batch(n_forecast_steps)
-        expected = model.loss(
-            _expected_reconstruction(batch, _SKIP_SCALE, skip_anchor), batch["target"]
+        batch = _skip_batch(n_forecast_steps)
+        observation = batch["sic"][:, -1:, 1:2]
+        anchors = (
+            torch.cat([observation, batch["target"][:, :-1]], 1)
+            if skip_anchor == "previous"
+            else observation.expand_as(batch["target"])
         )
+        reconstruction = anchors + _SKIP_SCALE * batch["future_sic"][:, :, 1:2]
+        expected = model.loss(reconstruction.clamp(0.0, 1.0), batch["target"])
 
         _, logged = _training_step(model, batch)
 
@@ -1404,100 +1424,3 @@ class TestSkipAnchor:
         assert loaded.rollout_strategy.space is rollout_space
         assert loaded.rollout_strategy.anchor is expected
         assert loaded.rollout_strategy.relaxation_tau is None
-
-
-class TestRelaxationInLatentLossTraining:
-    """Relaxation applies wherever the latent-loss training step decodes a forecast.
-
-    The decoder adds 0.1 * the target channel of each latent step to the previous
-    output, then each step is relaxed towards a constant climatology c:
-        output_k = lerp(clamp(output_{k-1} + delta_k), c, rate)
-    The reconstruction loss decodes observations, not a forecast, so it is not relaxed.
-    """
-
-    CLIMATOLOGY = 0.2
-    TAU = 2.0
-
-    def _model(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]], **kwargs: Any
-    ) -> EncodeProcessDecode:
-        kwargs.setdefault("relaxation_tau", self.TAU)
-        return _skip_model(cfg_loss, cfg_metrics, skip_anchor="previous", **kwargs)
-
-    def _batch(self) -> dict[str, TensorNTCHW]:
-        batch = _oracle_batch()
-        batch["climatology"] = torch.full_like(batch["target"], self.CLIMATOLOGY)
-        return batch
-
-    def _expected(
-        self, observation: TensorNTCHW, deltas: TensorNTCHW, rate: float
-    ) -> TensorNTCHW:
-        return _expected_skip(
-            observation,
-            deltas,
-            skip_anchor="previous",
-            rate=rate,
-            climatology=self.CLIMATOLOGY,
-        )
-
-    def test_metrics_decode_matches_forward(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        model = self._model(cfg_loss, cfg_metrics)
-        assert model.finaliser.relaxation is not None
-        batch = self._batch()
-        expected = self._expected(
-            batch["sic"],
-            batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
-            model.finaliser.relaxation.rate,
-        )
-
-        model.train()
-        result, _ = _training_step(model, batch)
-        model.eval()
-        with torch.no_grad():
-            forward = model(batch)
-
-        torch.testing.assert_close(result.prediction, expected)
-        torch.testing.assert_close(forward, expected)
-
-    def test_prediction_loss_is_relaxed(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        model = self._model(
-            cfg_loss,
-            cfg_metrics,
-            loss_weights={"reconstruction": 0.0, "prediction": 1.0},
-            processor=DictConfig(
-                {
-                    "_target_": f"{__name__}.{_PredictionProcessor.__name__}",
-                    "use_autoregressive": False,
-                }
-            ),
-        )
-        assert model.finaliser.relaxation is not None
-        model.train()
-        batch = self._batch()
-        # The processor returns the last n_forecast_steps history latents
-        expected = model.loss(
-            self._expected(batch["sic"], batch["sic"], model.finaliser.relaxation.rate),
-            batch["target"],
-        )
-
-        _, logged = _training_step(model, batch)
-
-        torch.testing.assert_close(logged["train_prediction_loss"], expected)
-
-    def test_reconstruction_loss_is_not_relaxed(
-        self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
-    ) -> None:
-        model = self._model(cfg_loss, cfg_metrics, loss_weights={"reconstruction": 1.0})
-        model.train()
-        batch = self._batch()
-        expected = model.loss(
-            _expected_reconstruction(batch, _SKIP_SCALE, "previous"), batch["target"]
-        )
-
-        _, logged = _training_step(model, batch)
-
-        torch.testing.assert_close(logged["train_reconstruction_loss"], expected)

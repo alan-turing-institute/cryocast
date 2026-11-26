@@ -96,7 +96,7 @@ train:
     accelerator: auto
 ```
 
-By default, the models apply an active grid cell mask to the decoder output, which sets all grid cells where ice is never found (either because they are on land, or because they are too warm) to zero.
+By default, the models apply an active grid cell mask to the model output, which sets all grid cells where ice is never found (either because they are on land, or because they are too warm) to zero.
 This is controlled by `mask_type`, set in the `finaliser` section of the model config (at the top level for `ddpm`, which has no separate decoder):
 
 ```yaml

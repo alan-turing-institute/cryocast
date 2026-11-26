@@ -1,5 +1,6 @@
 import dataclasses
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 import torch
@@ -219,24 +220,27 @@ class TestRolloutStrategy:
     """Tests for RolloutStrategy."""
 
     @pytest.mark.parametrize(
-        ("options", "space", "anchor"),
+        ("options", "space", "anchor", "relaxation_tau"),
         [
-            pytest.param((), "latent", "initial", id="defaults"),
-            pytest.param(("latent",), "latent", "initial", id="latent-default"),
-            pytest.param(("physical",), "physical", "previous", id="physical-default"),
+            pytest.param((), "latent", "initial", None, id="defaults"),
+            pytest.param(("latent",), "latent", "initial", None, id="latent-default"),
             pytest.param(
-                ("latent", "previous"),
-                "latent",
-                "previous",
-                id="latent-previous",
+                ("physical",), "physical", "previous", None, id="physical-default"
+            ),
+            pytest.param(
+                ("latent", "previous"), "latent", "previous", None, id="latent-previous"
+            ),
+            pytest.param(
+                ("physical", None, 5.0), "physical", "previous", 5.0, id="relaxation"
             ),
         ],
     )
     def test_from_options(
         self,
-        options: tuple[()] | tuple[str] | tuple[str, str],
+        options: tuple[Any, ...],
         space: str,
         anchor: str,
+        relaxation_tau: float | None,
     ) -> None:
         """Convert strings to enums, using the default anchor for the space if unset."""
         strategy = RolloutStrategy.from_options(*options)
@@ -244,39 +248,36 @@ class TestRolloutStrategy:
         assert strategy.space is RolloutSpace(space)
         assert strategy.anchor is SkipAnchorType(anchor)
         assert strategy.is_physical is (space == "physical")
+        assert strategy.relaxation_tau == relaxation_tau
 
     @pytest.mark.parametrize(
-        ("space", "anchor"),
+        ("options", "match"),
         [
-            pytest.param("sideways", "initial", id="bad-space"),
-            pytest.param("latent", "sideways", id="bad-anchor"),
+            pytest.param(("sideways", "initial"), "sideways", id="bad-space"),
+            pytest.param(("latent", "sideways"), "sideways", id="bad-anchor"),
+            pytest.param(
+                ("physical", "initial"),
+                "rollout_space='physical' requires skip_anchor='previous'",
+                id="physical-initial",
+            ),
+            pytest.param(
+                ("latent", None, 5.0),
+                "relaxation requires skip_anchor",
+                id="relaxation-initial",
+            ),
         ],
     )
-    def test_rejects_unknown_values(self, space: str, anchor: str) -> None:
-        """Reject values that are not valid enum members."""
-        with pytest.raises(ValueError, match="sideways"):
-            RolloutStrategy.from_options(space, anchor)
-
-    def test_physical_rollout_requires_previous_anchor(self) -> None:
-        with pytest.raises(
-            ValueError, match="rollout_space='physical' requires skip_anchor='previous'"
-        ):
-            RolloutStrategy.from_options("physical", "initial")
+    def test_rejects_invalid_options(
+        self, options: tuple[Any, ...], match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            RolloutStrategy.from_options(*options)
 
     def test_immutable(self) -> None:
         """Prevent changes after creation, which could bypass validation."""
         strategy = RolloutStrategy.from_options(RolloutSpace.PHYSICAL)
         with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.anchor = SkipAnchorType.INITIAL  # type: ignore[misc]
-
-    def test_sets_relaxation(self) -> None:
-        strategy = RolloutStrategy.from_options("physical", None, 5.0)
-
-        assert strategy.relaxation_tau == pytest.approx(5.0)
-
-    def test_relaxation_requires_previous_anchor(self) -> None:
-        with pytest.raises(ValueError, match="relaxation requires skip_anchor"):
-            RolloutStrategy.from_options("latent", None, 5.0)
 
 
 class TestTimespan:

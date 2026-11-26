@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import torch
 from typing_extensions import override
 
-from cryocast.types import TensorNTCHW
+from cryocast.types import SkipAnchorType, TensorNTCHW
 
 from .training_objective import TrainingObjective
 
@@ -149,12 +149,20 @@ class LatentObjective(TrainingObjective):
         # Calculate each auxiliary loss that has a non-zero weight.
         losses: dict[str, torch.Tensor] = {}
         if self.loss_weights["reconstruction"] > 0:
-            # Decode the encoded forecast-step inputs and compare them to the target,
-            # using the ground truth rather than the forecast as each PREVIOUS anchor
-            losses["reconstruction"] = model.loss(
-                model._decode_forecast(future_latent, anchor, None, teacher=target),
-                target,
+            # Decode the encoded forecast-step inputs and compare them to the target.
+            # With a PREVIOUS anchor, we use teacher forcing: each step after the first
+            # uses the ground-truth for the previous forecast step, not the output of
+            # the previous step.
+            teacher_anchor = anchor
+            if (
+                anchor is not None
+                and model.rollout_strategy.anchor == SkipAnchorType.PREVIOUS
+            ):
+                teacher_anchor = torch.cat([anchor, target[:, :-1]], dim=1)
+            reconstruction = model.finaliser.rollout(
+                model.decoder.rollout(future_latent), anchor=teacher_anchor
             )
+            losses["reconstruction"] = model.loss(reconstruction, target)
         if self.loss_weights["prediction"] > 0:
             # Decode the differentiable prediction and compare it to the target
             losses["prediction"] = self._prediction_loss(

@@ -192,10 +192,13 @@ class TestFinaliserSkipConnection(_FinaliserBase):
 
         assert torch.allclose(out, torch.ones_like(out))
 
-    def test_skip_connection_without_anchor_raises(self) -> None:
+    @pytest.mark.parametrize("anchor_type", list(SkipAnchorType))
+    def test_skip_connection_without_anchor_raises(
+        self, anchor_type: SkipAnchorType
+    ) -> None:
         finaliser = self._finaliser(method="additive")
         with pytest.raises(ValueError, match="no anchor was provided"):
-            finaliser.rollout(self._raw(0.0))
+            finaliser.rollout(self._raw(0.0), anchor_type=anchor_type)
 
 
 class TestFinaliserSkipAnchor(_FinaliserBase):
@@ -309,11 +312,6 @@ class TestFinaliserSkipAnchor(_FinaliserBase):
         expected = (persistence + 0.1 * self._steps()).clamp(0, 1)
         assert torch.allclose(out[..., 4:, :], expected[..., 4:, :], atol=1e-6)
 
-    def test_previous_without_anchor_raises(self) -> None:
-        finaliser = self._finaliser(method="additive")
-        with pytest.raises(ValueError, match="no anchor was provided"):
-            finaliser.rollout(self._raw(0.0), anchor_type=SkipAnchorType.PREVIOUS)
-
     def test_previous_gradients_flow_through_every_step(self) -> None:
         finaliser = self._finaliser(method="additive", restrict_range="none")
         persistence = self._persistence().requires_grad_()
@@ -331,62 +329,30 @@ class TestFinaliserSkipAnchor(_FinaliserBase):
 
 
 class TestFinaliserRelaxation(_FinaliserBase):
-    """The relaxation of a Finaliser and the equilibrium argument to rollout()."""
+    """The relaxation of a Finaliser and the equilibrium argument to rollout().
 
-    _EQUILIBRIUM = 0.3
+    The relaxed PREVIOUS-anchor rollout and masking are tested through the model in
+    test_physical_rollout.py (TestClimatologyRelaxation).
+    """
+
     _RELAXATION = ExponentialRelaxation(tau=2.0)
-
-    def _equilibrium(self) -> torch.Tensor:
-        return torch.full(
-            (1, self._N_FORECAST_STEPS, *self._OUTPUT_SPACE.chw), self._EQUILIBRIUM
-        )
-
-    def _rollout(
-        self, finaliser: Finaliser, anchor_type: SkipAnchorType
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        persistence = self._persistence()
-        finaliser.relaxation = self._RELAXATION
-        out = finaliser.rollout(
-            self._raw(0.0, self._N_FORECAST_STEPS),
-            anchor=persistence,
-            anchor_type=anchor_type,
-            equilibrium=self._equilibrium(),
-        )
-        return out, persistence
-
-    def test_previous_with_zero_tendency_is_damped_anomaly_persistence(self) -> None:
-        finaliser = self._finaliser(method="additive", restrict_range="none")
-
-        out, persistence = self._rollout(finaliser, SkipAnchorType.PREVIOUS)
-
-        decay = (1.0 - self._RELAXATION.rate) ** self._steps()
-        expected = self._EQUILIBRIUM + decay * (persistence - self._EQUILIBRIUM)
-        assert torch.allclose(out, expected, atol=1e-6)
 
     def test_initial_relaxes_every_step_from_the_same_anchor(self) -> None:
         finaliser = self._finaliser(method="additive", restrict_range="none")
+        finaliser.relaxation = self._RELAXATION
+        persistence = self._persistence()
+        equilibrium = 0.3
 
-        out, persistence = self._rollout(finaliser, SkipAnchorType.INITIAL)
+        out = finaliser.rollout(
+            self._raw(0.0, self._N_FORECAST_STEPS),
+            anchor=persistence,
+            anchor_type=SkipAnchorType.INITIAL,
+            equilibrium=self._raw(equilibrium, self._N_FORECAST_STEPS),
+        )
 
         # Each step is one relaxation step away from the observation
-        expected = persistence + self._RELAXATION.rate * (
-            self._EQUILIBRIUM - persistence
-        )
+        expected = persistence + self._RELAXATION.rate * (equilibrium - persistence)
         assert torch.allclose(out, expected.expand_as(out), atol=1e-6)
-
-    def test_masked_cells_stay_at_zero(self, tmp_path: Path) -> None:
-        finaliser = self._finaliser(
-            method="additive",
-            restrict_range="none",
-            mask_dir=self._top_half_mask(tmp_path),
-            mask_type="active",
-        )
-
-        out, _ = self._rollout(finaliser, SkipAnchorType.PREVIOUS)
-
-        # The equilibrium is not 0 in masked cells, but they stay at 0
-        assert torch.all(out[..., :4, :] == 0).item()
-        assert torch.all(out[..., 4:, :] != 0).item()
 
     def test_without_equilibrium_does_not_relax(self) -> None:
         finaliser = self._finaliser(method="additive", restrict_range="none")

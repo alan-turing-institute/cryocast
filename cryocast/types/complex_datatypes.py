@@ -264,7 +264,7 @@ class RolloutStrategy:
     Attributes:
         space: Where the forecast loop runs: in latent space, or in physical space
             where each step is decoded and re-encoded.
-        anchor: The frame that a decoder skip connection adds to each forecast step:
+        anchor: The frame that a finaliser skip connection adds to each forecast step:
             the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
             A physical rollout needs a PREVIOUS anchor.
         relaxation_tau: The folding time, in forecast steps, of the relaxation of each

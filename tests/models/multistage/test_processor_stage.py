@@ -32,22 +32,6 @@ class _CaptureLatentLossProcessor(BaseProcessor):
 
 class TestProcessorStage:
     @pytest.fixture
-    def skip_decoder_stage(
-        self, encoder_stage: EncoderStage, cfg_output_space: DictConfig
-    ) -> DecoderStage:
-        """A DecoderStage whose finaliser has a gated skip connection, with weights."""
-        return DecoderStage.from_template(
-            decoder=DictConfig(
-                {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
-            ),
-            finaliser={"skip_connection": {"method": "gated"}},
-            encoders=[encoder_stage],
-            output_space=DataSpace.from_dict(cfg_output_space),
-            target_dataset_name="target",
-            target_variable_indices=[0],
-        )
-
-    @pytest.fixture
     def processor_stage(
         self,
         decoder_stage: DecoderStage,
@@ -254,14 +238,25 @@ class TestProcessorStage:
 
     def test_from_template_copies_frozen_finaliser_from_decoder_stage(
         self,
-        skip_decoder_stage: DecoderStage,
+        encoder_stage: EncoderStage,
         *,
         cfg_processor: DictConfig,
         cfg_output_space: DictConfig,
     ) -> None:
+        # The gated skip connection has weights
+        decoder_stage = DecoderStage.from_template(
+            decoder=DictConfig(
+                {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
+            ),
+            finaliser={"skip_connection": {"method": "gated"}},
+            encoders=[encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
+            target_dataset_name="target",
+            target_variable_indices=[0],
+        )
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
-            decoder_model=skip_decoder_stage,
+            decoder_model=decoder_stage,
             rollout_strategy=RolloutStrategy.from_options(),
         )
         target = torch.rand(
@@ -273,7 +268,7 @@ class TestProcessorStage:
         # The skip connection comes from the DecoderStage, so there is an anchor
         assert anchor is not None
         assert torch.equal(anchor, target[:, -1, [0]])
-        # The gated skip connection has weights, which must not train
+        # The skip connection weights must not train
         assert processor_stage.finaliser.frozen
         assert all(
             not param.requires_grad for param in processor_stage.finaliser.parameters()

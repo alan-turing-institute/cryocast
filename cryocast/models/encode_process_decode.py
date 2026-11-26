@@ -197,13 +197,15 @@ class EncodeProcessDecode(BaseModel):
                     f"{sorted(input_names)}."
                 )
                 raise ValueError(msg)
+
+        # Without a skip connection, no step carries over to the next step in a
+        # latent rollout. Each step is then a fixed blend with climatology.
+        tau = self.rollout_strategy.relaxation_tau
         if (
-            self.rollout_strategy.relaxation_tau is not None
+            tau is not None
             and not self.rollout_strategy.is_physical
             and self.finaliser.skip_connection is None
         ):
-            # Without a skip connection, no step carries over to the next step in a
-            # latent rollout. Each step is then a fixed blend with climatology.
             msg = (
                 "relaxation in a latent rollout requires a finaliser skip connection, "
                 "so that each relaxed step carries over to the next step. Set "
@@ -211,12 +213,7 @@ class EncodeProcessDecode(BaseModel):
                 "relaxation."
             )
             raise ValueError(msg)
-
-        self.finaliser.relaxation = (
-            None
-            if relaxation_tau is None
-            else ExponentialRelaxation(tau=relaxation_tau)
-        )
+        self.finaliser.relaxation = None if tau is None else ExponentialRelaxation(tau)
 
         # Choose how to calculate the training loss
         self.objective: TrainingObjective = build_training_objective(self, loss_weights)
@@ -277,7 +274,6 @@ class EncodeProcessDecode(BaseModel):
         latent: TensorNTCHW,
         anchor: TensorNTCHW | None,
         equilibrium: TensorNTCHW | None,
-        teacher: TensorNTCHW | None = None,
     ) -> TensorNTCHW:
         """Decode a latent forecast with the skip anchor and relaxation of the strategy.
 
@@ -286,23 +282,12 @@ class EncodeProcessDecode(BaseModel):
             anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
             equilibrium: Climatology to relax towards, with shape (batch, T, C_out, H,
                 W), or None.
-            teacher: Ground truth with the same shape as the forecast, or None. With a
-                PREVIOUS anchor, each step after the first uses the ground truth of the
-                step before it as its anchor, not the forecast (teacher forcing).
 
         """
-        anchor_type = self.rollout_strategy.anchor
-        if (
-            teacher is not None
-            and anchor is not None
-            and anchor_type == SkipAnchorType.PREVIOUS
-        ):
-            anchor = torch.cat([anchor, teacher[:, :-1]], dim=1)
-            anchor_type = SkipAnchorType.INITIAL
         return self.finaliser.rollout(
             self.decoder.rollout(latent),
             anchor=anchor,
-            anchor_type=anchor_type,
+            anchor_type=self.rollout_strategy.anchor,
             equilibrium=equilibrium,
         )
 
