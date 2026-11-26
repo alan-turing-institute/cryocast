@@ -250,7 +250,10 @@ To decrease encoder and decoder memory, set `encode_chunk_size` and `decode_chun
 
 !!! note
     `trade_compute_for_memory` cannot be used with a processor that has batch normalisation (`norm_type: batchnorm`).
-    The `UNetProcessor` default is `batchnorm`, but the `UNetProcessor` model configs set `norm_type: groupnorm`.
+    The `UNetProcessor` default is `batchnorm`.
+    The `cnn_unet_cnn`, `dc_unet_dc` and `quick_test` model configs set `norm_type: groupnorm`.
+    The `unet` model config uses the `batchnorm` default, and `piecewise_unet_piecewise_conv` and `piecewise_unet_piecewise_linear` set `norm_type: batchnorm`.
+    To use `trade_compute_for_memory` with these models, also set `++model.processor.norm_type=groupnorm`.
     `GSTAProcessor` and the diffusion processors do not predict one lead time at a time, so they do not support `trade_compute_for_memory` in a latent rollout.
     In these cases, the model raises a `ValueError` when you create it.
 
@@ -286,9 +289,16 @@ The forecasts and gradients do not change, but each training step is slower.
 
 ### Diffusion models
 
-With `use_autoregressive: true`, a diffusion model trains only on the first lead time.
-Thus training memory does not change when you increase `n_forecast_steps`.
-This applies to the latent diffusion processors and to the pixel-space `ddpm` model.
+With `use_autoregressive: true`, the diffusion denoiser trains only on the first lead time.
+Thus the denoiser activation memory does not change when you increase `n_forecast_steps`.
+
+For the pixel-space `ddpm` model, this is all of the training memory that depends on the horizon.
+
+For the latent diffusion models, the training objective also encodes the inputs for all lead times.
+When `loss_weights.reconstruction` is more than 0, it decodes all lead times with gradients.
+The `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc` model configs set `reconstruction: 1.0`.
+Thus encoder and decoder memory increases with `n_forecast_steps`.
+To decrease this memory, set `encode_chunk_size` and `decode_chunk_size` as given in [Memory use for long rollouts](#memory-use-for-long-rollouts).
 
 Validation and test are different.
 They sample each lead time with a full reverse diffusion, thus they run `n_forecast_steps × timesteps` denoising steps.
