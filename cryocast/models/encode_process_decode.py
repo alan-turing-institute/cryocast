@@ -268,11 +268,11 @@ class EncodeProcessDecode(BaseModel):
         # Without a skip connection, no step carries over to the next step in a
         # latent rollout. Each step is then a fixed blend with climatology.
         tau = self.rollout_strategy.relaxation_tau
-        if (
-            tau is not None
-            and not self.rollout_strategy.is_physical
+        needs_skip = (
+            not self.rollout_strategy.is_physical
             and self.finaliser.skip_connection is None
-        ):
+        )
+        if tau is not None and needs_skip:
             msg = (
                 "relaxation in a latent rollout requires a finaliser skip connection, "
                 "so that each relaxed step carries over to the next step. Set "
@@ -285,8 +285,11 @@ class EncodeProcessDecode(BaseModel):
             log.warning(
                 "This model makes %d lead times with no relaxation towards "
                 "climatology. For long rollouts, the recommended settings are "
-                "skip_anchor='previous' and relaxation_tau=10.",
+                "skip_anchor='previous' and relaxation_tau=10%s.",
                 self.n_forecast_steps,
+                ", with a finaliser.skip_connection for a latent rollout"
+                if needs_skip
+                else "",
             )
 
     @override

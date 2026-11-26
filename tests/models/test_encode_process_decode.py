@@ -1454,3 +1454,18 @@ class TestSkipAnchor:
             )
 
         assert ("no relaxation towards climatology" in caplog.text) is expected_warning
+        assert "finaliser.skip_connection" not in caplog.text
+
+    def test_long_rollout_warning_mentions_skip_connection_when_missing(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A latent rollout with no skip connection also needs one for relaxation."""
+        with caplog.at_level(logging.WARNING):
+            _oracle_model(
+                cfg_loss=cfg_loss, cfg_metrics=cfg_metrics, n_forecast_steps=30
+            )
+
+        assert "finaliser.skip_connection" in caplog.text
