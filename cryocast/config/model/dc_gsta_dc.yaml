@@ -63,5 +63,3 @@ finaliser:
   restrict_range: sigmoid
   skip_connection:
     method: additive
-
-# Rollout stabilisation (skip_anchor, relaxation_tau): see docs/src/user-guide/forecast-rollout.md
