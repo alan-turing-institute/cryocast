@@ -7,6 +7,7 @@ import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from cryocast.model_service.checkpoints import CheckpointFile, LegacyCheckpointFile
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import EncoderStage
 from cryocast.types import DataSpace
@@ -69,6 +70,40 @@ class TestEncoderStage:
 
         assert isinstance(encoder_stage.hparams["data_space_in"], dict)
         assert loaded.encoder.data_space_in == encoder_stage.encoder.data_space_in
+
+    def test_upgraded_legacy_checkpoint_loads(
+        self,
+        encoder_stage: EncoderStage,
+        cfg_metrics: list[dict[str, Any]],
+        tmp_path: Path,
+    ) -> None:
+        """Finaliser options in the decoder of an encoder stage are removed."""
+        hyper_parameters = dict(encoder_stage.hparams)
+        hyper_parameters["decoder"] = {
+            **hyper_parameters["decoder"],
+            "mask_type": "active",
+            "restrict_range": "sigmoid",
+            "skip_connection": {"method": "additive"},
+        }
+        path = tmp_path / "checkpoints" / "encoder-test-input.epoch=1-step=1.ckpt"
+        path.parent.mkdir()
+        torch.save(
+            {
+                "hyper_parameters": hyper_parameters,
+                "pytorch-lightning_version": lightning.__version__,
+                "state_dict": encoder_stage.state_dict(),
+            },
+            path,
+        )
+
+        checkpoint_file = LegacyCheckpointFile(CheckpointFile(path)).upgrade()
+        checkpoint_file.load()
+        loaded = EncoderStage.load_from_checkpoint(
+            checkpoint_file.path, metrics=cfg_metrics, weights_only=True
+        )
+
+        assert "finaliser" not in loaded.hparams
+        assert loaded.hparams["decoder"] == encoder_stage.hparams["decoder"]
 
     def test_dataset_name_returns_input_space_name(
         self, encoder_stage: EncoderStage

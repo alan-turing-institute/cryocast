@@ -469,18 +469,34 @@ class TestMergeConfig:
         assert OmegaConf.select(combined, "model.relaxation_tau") == expected
         assert not caplog.records
 
-    def test_relaxation_from_checkpoint_for_a_different_model(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("ckpt_model", "configured_model", "expected"),
+        [
+            ({}, {"relaxation_tau": 30}, 30),
+            ({"relaxation_tau": 30}, {}, 30),
+        ],
+        ids=["add", "unset-keeps-checkpoint"],
+    )
+    def test_relaxation_from_config_for_a_different_model(
+        self,
+        tmp_path: Path,
+        ckpt_model: dict[str, Any],
+        configured_model: dict[str, Any],
+        expected: float,
     ) -> None:
-        """A different configured model does not change the checkpoint relaxation."""
-        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc"}})
-        config = DictConfig({"model": {"name": "quick-test", "relaxation_tau": 3}})
+        """The configured relaxation also applies when the config names another model.
+
+        The default config names quick-test, so this is the usual evaluate case.
+        """
+        ckpt_config = DictConfig({"model": {"name": "dc-gsta-dc", **ckpt_model}})
+        config = DictConfig({"model": {"name": "quick-test", **configured_model}})
 
         checkpoint_file = _save_run_config(tmp_path, ckpt_config)
 
         combined = checkpoint_file.merge_config(config)
 
-        assert "relaxation_tau" not in combined["model"]
+        assert combined["model"]["name"] == "dc-gsta-dc"
+        assert combined["model"]["relaxation_tau"] == expected
 
     @pytest.mark.parametrize(
         ("ckpt_model", "expected"),
@@ -771,7 +787,7 @@ class TestUpgrade:
         self, tmp_path: Path
     ) -> None:
         """Move options that the decoder no longer accepts to the finaliser."""
-        path = tmp_path / "checkpoints" / "encoder-osisaf.epoch=1-step=1.ckpt"
+        path = tmp_path / "checkpoints" / "decoder.epoch=1-step=1.ckpt"
         path.parent.mkdir()
         decoder = {"_target_": "cryocast.models.decoders.CNNDecoder", "n_layers": 1}
         torch.save(

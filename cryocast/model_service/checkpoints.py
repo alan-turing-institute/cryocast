@@ -237,7 +237,7 @@ class CheckpointFile:
         - "model" and "window": each checkpoint value replaces the current value, but
           "window.batch_size" keeps the current value. If the current config names a
           different model, the full "model" section comes from the checkpoint.
-          For the same model, "model.relaxation_tau" keeps the current value, and a
+          A configured "model.relaxation_tau" keeps the current value, and a
           "model.skip_anchor" that the checkpoint does not set is removed.
         - "variables" and "data.allow_missing": the checkpoint section replaces the
           current section. If the checkpoint has no "data.allow_missing", it was
@@ -301,15 +301,14 @@ class CheckpointFile:
                 configured_model,
             )
             sections.remove("model")
-        else:
-            # Relaxation has no weights, so the configured relaxation can be added to,
-            # changed for, or removed (null) from a trained model
-            if "relaxation_tau" in (configured := config.get("model", {})):
-                combined["model"]["relaxation_tau"] = configured["relaxation_tau"]
-            # The anchor changes what the trained model sees, so it must match training.
-            # A checkpoint config without one was trained with the default anchor.
-            if "skip_anchor" not in ckpt_config.get("model", {}):
-                combined["model"].pop("skip_anchor", None)
+        # Relaxation has no weights, so the configured relaxation can be added to,
+        # changed for, or removed (null) from any trained model
+        if "relaxation_tau" in (configured := config.get("model", {})):
+            combined["model"]["relaxation_tau"] = configured["relaxation_tau"]
+        # The anchor changes what the trained model sees, so it must match training.
+        # A checkpoint config without one was trained with the default anchor.
+        if "skip_anchor" not in ckpt_config.get("model", {}):
+            combined["model"].pop("skip_anchor", None)
 
         self._warn_replaced(config, combined, sections)
         return combined
@@ -419,7 +418,9 @@ class LegacyCheckpointFile:
         per-parameter optimizer state is cleared but the parameter groups are kept.
 
         Finaliser options move from the saved decoder hyperparameters to the finaliser
-        hyperparameters, as the decoder no longer accepts them.
+        hyperparameters, as the decoder no longer accepts them. An encoder stage has
+        no finaliser, because its disposable decoder did not use these options, so they
+        are removed.
 
         Returns:
             Whether the checkpoint changed.
@@ -434,7 +435,9 @@ class LegacyCheckpointFile:
                 optimizer_state["state"] = {}
             log.warning("Reset the optimizer state, as the parameter order changed.")
         hyper_parameters = ckpt_state.get("hyper_parameters", {})
-        if options := _pop_finaliser_options(hyper_parameters.get("decoder") or {}):
+        options = _pop_finaliser_options(hyper_parameters.get("decoder") or {})
+        # Only an EncoderStage saves an 'encoder' hyperparameter
+        if options and "encoder" not in hyper_parameters:
             hyper_parameters["finaliser"] = options
         return bool(keys or options)
 
