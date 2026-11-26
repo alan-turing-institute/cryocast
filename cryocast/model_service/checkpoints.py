@@ -540,7 +540,11 @@ class LegacyCheckpointFile:
                 }
         decoder = OmegaConf.select(config, "model.decoder") or {}
         if moved := _pop_finaliser_options(decoder):
-            config.model.finaliser = moved
+            # The legacy decoder applied these options, so they override any
+            # finaliser settings that are already in the config
+            config.model.finaliser = OmegaConf.merge(
+                config.model.get("finaliser") or {}, moved
+            )
         if predict is not None or moved or self._PACKAGE_PATTERN.search(text):
             self._replace(config_path, lambda tmp_pth: OmegaConf.save(config, tmp_pth))
         else:

@@ -707,6 +707,30 @@ class TestUpgrade:
         # The upgraded config loads without suggesting another upgrade
         assert checkpoint_file._load_config() is not None
 
+    def test_merges_finaliser_options_into_existing_finaliser(
+        self, tmp_path: Path
+    ) -> None:
+        """Keep existing 'model.finaliser' settings that the decoder does not set."""
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
+        legacy_config = {
+            "model": {
+                "decoder": {"restrict_range": "sigmoid"},
+                "finaliser": {"mask_type": "active", "restrict_range": "clamp"},
+            },
+        }
+        _save_legacy_config(checkpoint_file, OmegaConf.to_yaml(legacy_config))
+
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
+
+        assert OmegaConf.load(checkpoint_file.config_path) == {
+            "model": {
+                "decoder": {},
+                "finaliser": {"mask_type": "active", "restrict_range": "sigmoid"},
+            },
+        }
+
     def test_moves_skip_connection_weights_from_decoder(self, tmp_path: Path) -> None:
         """Rename skip connection weights and clear the optimizer state that uses them.
 
