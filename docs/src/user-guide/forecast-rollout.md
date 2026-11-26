@@ -261,3 +261,23 @@ The forecasts and gradients do not change, but each training step is slower.
     ```
 
     A model with `groupnorm` encoders cannot load a checkpoint from a model with `batchnorm` encoders.
+
+### Diffusion models
+
+With `use_autoregressive: true`, a diffusion model trains only on the first lead time.
+Thus training memory does not change when you increase `n_forecast_steps`.
+This applies to the latent diffusion processors and to the pixel-space `ddpm` model.
+
+Validation and test are different.
+They sample each lead time with a full reverse diffusion, thus they run `n_forecast_steps × timesteps` denoising steps.
+For example, validation with 90 lead times takes approximately 6 times longer than with 14 lead times.
+This uses more of the wall-clock limit of a training job.
+
+To validate less frequently, set `check_val_every_n_epoch` in the trainer config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +train.trainer.check_val_every_n_epoch=5
+```
+
+You can also decrease `timesteps`.
+For a latent diffusion processor, you can set `ddim_steps` to sample with fewer DDIM steps.
