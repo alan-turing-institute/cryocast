@@ -86,12 +86,12 @@
 | cryocast/metrics/spatial\_mean\_trace.py                           |        8 |        0 |    100% |           |
 | cryocast/metrics/ssim.py                                           |       43 |        2 |     95% |     55-56 |
 | cryocast/model\_service/\_\_init\_\_.py                            |        3 |        0 |    100% |           |
-| cryocast/model\_service/checkpoints.py                             |      170 |        0 |    100% |           |
-| cryocast/model\_service/model\_service.py                          |      267 |        4 |     99% |59-60, 219-220 |
+| cryocast/model\_service/checkpoints.py                             |      203 |        0 |    100% |           |
+| cryocast/model\_service/model\_service.py                          |      266 |        4 |     98% |59-60, 219-220 |
 | cryocast/models/\_\_init\_\_.py                                    |        6 |        0 |    100% |           |
 | cryocast/models/base\_model.py                                     |      156 |        2 |     99% |  207, 211 |
 | cryocast/models/climatology.py                                     |       14 |        0 |    100% |           |
-| cryocast/models/common/\_\_init\_\_.py                             |       24 |        0 |    100% |           |
+| cryocast/models/common/\_\_init\_\_.py                             |       25 |        0 |    100% |           |
 | cryocast/models/common/activations.py                              |        2 |        0 |    100% |           |
 | cryocast/models/common/channel\_adaptor.py                         |       18 |        0 |    100% |           |
 | cryocast/models/common/conv\_block\_common.py                      |        8 |        0 |    100% |           |
@@ -100,6 +100,7 @@
 | cryocast/models/common/conv\_lstm\_cell.py                         |       26 |        0 |    100% |           |
 | cryocast/models/common/conv\_norm\_act.py                          |        9 |        0 |    100% |           |
 | cryocast/models/common/conv\_norm\_act\_upsample.py                |       10 |        0 |    100% |           |
+| cryocast/models/common/exponential\_relaxation.py                  |       18 |        0 |    100% |           |
 | cryocast/models/common/freezable.py                                |       13 |        0 |    100% |           |
 | cryocast/models/common/gated\_attention.py                         |       52 |       27 |     48% |23-46, 49-50, 92-116, 124-130, 135-136, 139-141 |
 | cryocast/models/common/glumb\_conv.py                              |       23 |        1 |     96% |        71 |
@@ -121,7 +122,7 @@
 | cryocast/models/common/weighted\_upsample.py                       |       16 |        0 |    100% |           |
 | cryocast/models/ddpm.py                                            |      140 |        1 |     99% |       594 |
 | cryocast/models/decoders/\_\_init\_\_.py                           |        6 |        0 |    100% |           |
-| cryocast/models/decoders/base\_decoder.py                          |       36 |        2 |     94% |   123-124 |
+| cryocast/models/decoders/base\_decoder.py                          |       13 |        2 |     85% |     36-37 |
 | cryocast/models/decoders/cnn\_decoder.py                           |       44 |        4 |     91% |91-92, 152-153 |
 | cryocast/models/decoders/deep\_compression\_decoder.py             |       42 |        6 |     86% |60-61, 63-64, 66-67 |
 | cryocast/models/decoders/naive\_linear\_decoder.py                 |       15 |        0 |    100% |           |
@@ -129,18 +130,24 @@
 | cryocast/models/diffusion/\_\_init\_\_.py                          |        3 |        0 |    100% |           |
 | cryocast/models/diffusion/gaussian\_diffusion.py                   |       52 |        2 |     96% |     46-50 |
 | cryocast/models/diffusion/unet\_diffusion.py                       |       78 |        1 |     99% |       269 |
-| cryocast/models/encode\_process\_decode.py                         |      164 |       14 |     91% |106-111, 123-127, 173-179, 183-188, 422-427, 577-581 |
+| cryocast/models/encode\_process\_decode.py                         |      117 |        8 |     93% |116-121, 133-137, 431-436 |
 | cryocast/models/encoders/\_\_init\_\_.py                           |        7 |        0 |    100% |           |
-| cryocast/models/encoders/base\_encoder.py                          |       36 |        2 |     94% |     59-60 |
+| cryocast/models/encoders/base\_encoder.py                          |       35 |        2 |     94% |     59-60 |
 | cryocast/models/encoders/cnn\_encoder.py                           |       25 |        0 |    100% |           |
 | cryocast/models/encoders/deep\_compression\_encoder.py             |       42 |        6 |     86% |61-62, 64-65, 67-68 |
 | cryocast/models/encoders/naive\_linear\_encoder.py                 |       15 |        0 |    100% |           |
 | cryocast/models/encoders/piecewise\_encoder.py                     |       20 |        0 |    100% |           |
 | cryocast/models/encoders/reprojection\_encoder.py                  |       36 |        0 |    100% |           |
+| cryocast/models/finalisers/\_\_init\_\_.py                         |        2 |        0 |    100% |           |
+| cryocast/models/finalisers/finaliser.py                            |       39 |        0 |    100% |           |
 | cryocast/models/multistage/\_\_init\_\_.py                         |        4 |        0 |    100% |           |
-| cryocast/models/multistage/decoder\_stage.py                       |       39 |        0 |    100% |           |
+| cryocast/models/multistage/decoder\_stage.py                       |       42 |        0 |    100% |           |
 | cryocast/models/multistage/encoder\_stage.py                       |       30 |        0 |    100% |           |
 | cryocast/models/multistage/processor\_stage.py                     |       16 |        0 |    100% |           |
+| cryocast/models/objectives/\_\_init\_\_.py                         |       15 |        0 |    100% |           |
+| cryocast/models/objectives/latent\_objective.py                    |       85 |        2 |     98% |   127-131 |
+| cryocast/models/objectives/physical\_objective.py                  |       10 |        0 |    100% |           |
+| cryocast/models/objectives/training\_objective.py                  |        8 |        0 |    100% |           |
 | cryocast/models/persistence.py                                     |       16 |        0 |    100% |           |
 | cryocast/models/processors/\_\_init\_\_.py                         |        8 |        0 |    100% |           |
 | cryocast/models/processors/base\_processor.py                      |       25 |        0 |    100% |           |
@@ -159,9 +166,9 @@
 | cryocast/synthetic/trajectories.py                                 |       77 |        9 |     88% |180-191, 207-211 |
 | cryocast/types/\_\_init\_\_.py                                     |        7 |        0 |    100% |           |
 | cryocast/types/annotations.py                                      |       12 |        0 |    100% |           |
-| cryocast/types/complex\_datatypes.py                               |      132 |        0 |    100% |           |
+| cryocast/types/complex\_datatypes.py                               |      151 |        0 |    100% |           |
 | cryocast/types/constants.py                                        |        6 |        0 |    100% |           |
-| cryocast/types/enums.py                                            |       28 |        0 |    100% |           |
+| cryocast/types/enums.py                                            |       31 |        0 |    100% |           |
 | cryocast/types/protocols.py                                        |       17 |        0 |    100% |           |
 | cryocast/types/simple\_datatypes.py                                |       26 |        0 |    100% |           |
 | cryocast/utils.py                                                  |       77 |        0 |    100% |           |
@@ -174,7 +181,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      113 |        1 |     99% |       182 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6744** |  **340** | **95%** |           |
+| **TOTAL**                                                          | **6908** |  **336** | **95%** |           |
 
 
 ## Setup coverage badge
