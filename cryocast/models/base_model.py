@@ -47,8 +47,6 @@ class BaseModel(LightningModule, ABC):
     ignored_hparams: ClassVar[frozenset[str]] = frozenset(
         ("latitudes_fn", "longitudes_fn", "mask_dir", "metrics")
     )
-    # Saved parameters that the current config can change when a checkpoint is loaded
-    checkpoint_overrides: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(  # noqa: PLR0913
         self,

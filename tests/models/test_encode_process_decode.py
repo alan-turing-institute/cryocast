@@ -1405,60 +1405,6 @@ class TestSkipAnchor:
         assert loaded.rollout_strategy.anchor is expected
         assert loaded.rollout_strategy.relaxation_tau is None
 
-    def test_relaxation_can_be_added_to_a_trained_model(
-        self,
-        cfg_decoder: DictConfig,
-        cfg_encoders: DictConfig,
-        cfg_input_space: DictConfig,
-        cfg_output_space: DictConfig,
-        cfg_processor: DictConfig,
-        tmp_path: Path,
-    ) -> None:
-        """A model trained without relaxation loads with it, and saves it again."""
-        assert "relaxation_tau" in EncodeProcessDecode.checkpoint_overrides
-        model = EncodeProcessDecode(
-            name="no-relaxation",
-            encoders=cfg_encoders,
-            processor=cfg_processor,
-            decoder=cfg_decoder,
-            hemisphere=Hemisphere.NORTH,
-            input_spaces=[cfg_input_space],
-            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
-            metrics=[],
-            n_forecast_steps=1,
-            n_history_steps=1,
-            # A physical rollout needs the prediction target to be a model input
-            output_space={**cfg_output_space, "name": cfg_input_space["name"]},
-            optimizer=DictConfig({"_target_": "torch.optim.Adam", "lr": 1e-3}),
-            scheduler=DictConfig({}),
-            lr_scheduler=DictConfig({}),
-            rollout_space=RolloutSpace.PHYSICAL,
-            target_variable_indices=[0],
-        )
-        checkpoint_file = tmp_path / "model.ckpt"
-        torch.save(
-            {
-                "state_dict": model.state_dict(),
-                "hyper_parameters": dict(model.hparams),
-                "pytorch-lightning_version": lightning.__version__,
-            },
-            checkpoint_file,
-        )
-
-        loaded = EncodeProcessDecode.load_from_checkpoint(
-            checkpoint_file,
-            encoders=cfg_encoders,
-            processor=cfg_processor,
-            decoder=cfg_decoder,
-            metrics=[],
-            relaxation_tau=30.0,
-            weights_only=False,
-        )
-
-        assert loaded.finaliser.relaxation is not None
-        assert loaded.finaliser.relaxation.tau == pytest.approx(30.0)
-        assert loaded.hparams["relaxation_tau"] == pytest.approx(30.0)
-
 
 class TestRelaxationInLatentLossTraining:
     """Relaxation applies wherever the latent-loss training step decodes a forecast.

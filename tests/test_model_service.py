@@ -39,7 +39,6 @@ class FakeCommonDataModule:
 
 
 class FakeModel:
-    checkpoint_overrides: ClassVar[frozenset[str]] = frozenset()
     ignored_hparams: ClassVar[frozenset[str]] = frozenset()
     metrics: list[dict[str, Any]] | None = None
     # Matches the data described by FakeCommonDataModule
@@ -314,53 +313,6 @@ class TestModelService:
         assert service.config["model"]["name"] == "mock-model"
         assert service.config["window"]["n_history_steps"] == 3
         assert service.checkpoint_file == checkpoint_file
-
-    def test_from_checkpoint_passes_configured_relaxation(
-        self, cfg_model_service: DictConfig, tmp_path: Path
-    ) -> None:
-        """Pass the configured relaxation to the model, not the checkpoint value."""
-        checkpoint_dir = tmp_path / "checkpoints"
-        checkpoint_dir.mkdir(parents=True)
-        path = checkpoint_dir / "last.ckpt"
-        path.write_text("checkpoint")
-        checkpoint_file = CheckpointFile(path)
-
-        files_dir = tmp_path / "files"
-        files_dir.mkdir(parents=True)
-        OmegaConf.save(cfg_model_service, files_dir / "model_config.yaml")
-
-        config = cfg_model_service.copy()
-        config["model"]["relaxation_tau"] = 30.0
-        load_kwargs: dict[str, Any] = {}
-
-        class RelaxedFakeModel(FakeModel):
-            checkpoint_overrides: ClassVar[frozenset[str]] = frozenset(
-                {"relaxation_tau"}
-            )
-
-            @classmethod
-            def load_from_checkpoint(  # type: ignore[override]
-                cls, checkpoint_file: str | Path, **kwargs: Any
-            ) -> "FakeModel":
-                del checkpoint_file
-                load_kwargs.update(kwargs)
-                return cls()
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "cryocast.model_service.model_service.CommonDataModule",
-                FakeCommonDataModule,
-            )
-            mp.setattr(
-                "cryocast.model_service.model_service.hydra.utils.get_class",
-                lambda _target: RelaxedFakeModel,
-            )
-            mp.setattr(
-                "cryocast.model_service.model_service.torch.load", lambda *_a, **_k: {}
-            )
-            ModelService.from_checkpoint(config, checkpoint_file)
-
-        assert load_kwargs["relaxation_tau"] == pytest.approx(30.0)
 
     def test_from_checkpoint_falls_back_to_provided_config_when_ckpt_config_missing(
         self,

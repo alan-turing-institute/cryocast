@@ -175,7 +175,7 @@ def cfg_model_service() -> DictConfig:
             "hemisphere": "north",
             "loss": {"_target_": "torch.nn.HuberLoss", "delta": 0.5},
             "model": {
-                "_target_": "cryocast.models.Persistence",
+                "_target_": "MockModel",
                 "name": "mock-model",
             },
             "reporting": {

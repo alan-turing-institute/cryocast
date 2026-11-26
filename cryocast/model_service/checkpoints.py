@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.serialization import get_unsafe_globals_in_checkpoint
@@ -261,9 +260,6 @@ class CheckpointFile:
         - "model" and "window": each checkpoint value replaces the current value, but
           "window.batch_size" keeps the current value. If the current config names a
           different model, the full "model" section comes from the checkpoint.
-          Each key in the "checkpoint_overrides" of the model class (for example
-          "model.relaxation_tau") keeps the current value, and a "model.skip_anchor"
-          that the checkpoint does not set is removed.
         - "variables" and "data.allow_missing": the checkpoint section replaces the
           current section. If the checkpoint has no "data.allow_missing", it was
           trained with every input required, so "data.allow_missing.groups" is set
@@ -326,21 +322,6 @@ class CheckpointFile:
                 configured_model,
             )
             sections.remove("model")
-        # Options without weights, such as relaxation, can be added to, changed for, or
-        # removed (null) from any trained model
-        if target := OmegaConf.select(combined, "model._target_"):
-            model_cls: type[BaseModel] = hydra.utils.get_class(target)
-            configured = config.get("model", {})
-            combined["model"].update(
-                {
-                    key: configured[key]
-                    for key in model_cls.checkpoint_overrides & configured.keys()
-                }
-            )
-        # The anchor changes what the trained model sees, so it must match training.
-        # A checkpoint config without one was trained with the default anchor.
-        if "skip_anchor" not in ckpt_config.get("model", {}):
-            combined["model"].pop("skip_anchor", None)
 
         self._warn_replaced(config, combined, sections)
         return combined

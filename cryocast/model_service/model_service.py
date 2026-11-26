@@ -113,11 +113,10 @@ class ModelService:
         """Build a new ModelService by loading a model from a checkpoint.
 
         The model is loaded with the "model", "variables" and "window" configs that
-        it was trained with, apart from "window.batch_size" and "model.relaxation_tau".
-        Everything else is taken from the current config. Calling `train` on the
-        resulting ModelService will resume training from the checkpoint. To resume from
-        a directory of checkpoints, find its checkpoint file with
-        `CheckpointFile.find_last` first.
+        it was trained with, apart from "window.batch_size". Everything else is taken
+        from the current config. Calling `train` on the resulting ModelService will
+        resume training from the checkpoint. To resume from a directory of
+        checkpoints, find its checkpoint file with `CheckpointFile.find_last` first.
 
         Args:
             config: The current configuration.
@@ -141,11 +140,11 @@ class ModelService:
             builder.config["model"]["_target_"]
         )
         log.info("Loading a trained %s model...", builder.config["model"]["name"])
-        # Load the keyword arguments that this model class does not save, or that the
-        # config can override, from the model config rather than the checkpoint.
+        # For each of the keyword arguments that we know this model class ignores, we
+        # attempt to load them from the model config rather than the checkpoint.
         non_checkpoint_kwargs = {
             key: builder.config["model"][key]
-            for key in model_cls.ignored_hparams | model_cls.checkpoint_overrides
+            for key in model_cls.ignored_hparams
             if key in builder.config["model"]
         }
         builder.model_ = model_cls.load_from_checkpoint(

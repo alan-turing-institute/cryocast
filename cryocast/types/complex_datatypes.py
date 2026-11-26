@@ -306,25 +306,20 @@ class RolloutStrategy:
     ) -> Self:
         """Create a RolloutStrategy from enums or strings.
 
-        If the anchor is unset, use the default anchor for the space.
+        If the anchor is unset, use the default anchor for the space. A latent rollout
+        anchors every step on the last observed frame. A physical rollout anchors each
+        step on the previous forecast step.
         """
         space = RolloutSpace(space)
+        if anchor is None:
+            anchor = (
+                SkipAnchorType.PREVIOUS
+                if space == RolloutSpace.PHYSICAL
+                else SkipAnchorType.INITIAL
+            )
         return cls(
-            space=space,
-            anchor=SkipAnchorType(anchor) if anchor else cls.default_anchor(space),
-            relaxation_tau=relaxation_tau,
+            space=space, anchor=SkipAnchorType(anchor), relaxation_tau=relaxation_tau
         )
-
-    @staticmethod
-    def default_anchor(space: RolloutSpace) -> SkipAnchorType:
-        """Return the default anchor for a rollout space.
-
-        A latent rollout anchors every step on the last observed frame. A physical
-        rollout anchors each step on the previous forecast step.
-        """
-        if space == RolloutSpace.PHYSICAL:
-            return SkipAnchorType.PREVIOUS
-        return SkipAnchorType.INITIAL
 
     @property
     def is_physical(self) -> bool:

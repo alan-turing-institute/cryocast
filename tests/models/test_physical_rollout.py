@@ -482,14 +482,6 @@ class TestNoFutureLeak:
 
 
 class TestConfigValidation:
-    def test_physical_rollout_rejects_initial_anchor(self) -> None:
-        with pytest.raises(ValueError, match="requires skip_anchor='previous'"):
-            _build_model(
-                rollout_space="physical",
-                skip_anchor="initial",
-                finaliser=ADDITIVE_SKIP_FINALISER,
-            )
-
     def test_latent_relaxation_requires_skip_connection(self) -> None:
         """Without a skip connection, latent relaxation does not carry over steps."""
         with pytest.raises(ValueError, match="requires a finaliser skip connection"):
@@ -549,9 +541,9 @@ class TestConfigValidation:
 class TestAnchorSemantics:
     """Static and moving anchors are one mechanism differing only in the anchor frame.
 
-    The static anchor (#405) and the moving anchor (#410) are the same additive skip
-    connection; only the frame supplied as the anchor differs. `skip_anchor` selects
-    it, and when it is unset each rollout space keeps its historical anchor.
+    The static and the moving anchor use the same additive skip connection. Only the
+    frame given as the anchor is different. `skip_anchor` selects it. If it is unset,
+    each rollout space uses its default anchor.
 
     Each case drives the decoder to emit a CONSTANT tendency c, which makes the two
     anchor choices analytically separable:

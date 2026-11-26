@@ -132,23 +132,6 @@ A large `tau` gives a weak pull, and the effect is small at short lead times.
   Thus the climatology does not contain information from the forecast period.
   If the batch has no climatology, the forward pass raises a `ValueError`.
 
-### Relaxation for a trained model
-
-Relaxation has no weights, so you can add it to a trained model, change `tau`, or turn it off when you load a checkpoint.
-The `model.relaxation_tau` value in the current config replaces the value in the checkpoint:
-
-```bash
-uv run cryocast evaluate --checkpoint PATH_TO_A_CHECKPOINT +model.relaxation_tau=30
-```
-
-To turn relaxation off, set `++model.relaxation_tau=null`.
-The change also applies when you resume training from the checkpoint.
-
-`skip_anchor` always comes from the checkpoint, because it changes the inputs that the model learned from.
-Thus you can add relaxation only to a model that was trained with `skip_anchor: previous`.
-This is the default for a physical rollout.
-For a latent rollout, train the model with `skip_anchor: previous` first.
-
 ## When to use each option
 
 | Situation | Recommended settings |
