@@ -118,7 +118,10 @@ class DiffusionProcessor(BaseProcessor):
             time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
             timesteps (int): Number of diffusion timesteps. Default is 1000.
             use_autoregressive (bool): Whether to use autoregressive sampling and
-                one-step training. Default is True.
+                one-step training. Default is True. If False, the UNet denoises
+                all lead times together. The model then has a fixed horizon: a
+                checkpoint does not load into a model with a different
+                ``n_forecast_steps``.
             **kwargs: Additional arguments passed to ``BaseProcessor``.
 
         """

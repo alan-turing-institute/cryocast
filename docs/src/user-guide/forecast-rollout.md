@@ -172,6 +172,31 @@ uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previ
 
 To turn relaxation off, remove the `relaxation_tau` key or set it to `null`.
 
+## Processors with a fixed horizon
+
+Most processors make one lead time at a time, and use it as the input for the next lead time.
+You can run them for more lead times than in training.
+
+Two processors make all lead times in one step:
+
+- `GSTAProcessor` (the `cnn_gsta_cnn` and `dc_gsta_dc` model configs).
+  The last gated attention block has `n_forecast_steps × latent channels` output channels.
+- The diffusion processors with `use_autoregressive: false`.
+  The UNet denoises all lead times together, as `n_forecast_steps × latent channels`.
+
+These processors have a fixed horizon:
+
+- The size of the last layer comes from `n_forecast_steps`.
+  If you make the model with a different `n_forecast_steps`, the checkpoint does not load.
+  Thus the model cannot forecast past the horizon that it was trained on.
+- A longer horizon puts more lead times into the same layers.
+  Increase the capacity with the horizon, for example `hid_channels` for `GSTAProcessor`.
+  Do not copy the settings from a short-horizon run to a long-horizon run without a test.
+- With `n_blocks: 1`, `GSTAProcessor` has one layer from the history to all lead times, and no hidden channels.
+
+All diffusion model configs (`cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc`, `dc_ddim_dc`) set `use_autoregressive: true`.
+Thus they do not have a fixed horizon.
+
 ## Memory use for long rollouts
 
 The decoder decodes all lead times together, at the full output resolution.
