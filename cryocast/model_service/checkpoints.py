@@ -6,7 +6,7 @@ import re
 import reprlib
 import shutil
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,6 +34,28 @@ _FINALISER_KEYS = (
     "restrict_range_min",
     "skip_connection",
 )
+# Prefix of skip connection weights that moved from the decoder to the finaliser
+_LEGACY_SKIP_CONNECTION_PREFIX = "decoder.skip_connection."
+
+
+def _pop_finaliser_options(decoder: MutableMapping[str, Any]) -> dict[str, Any]:
+    """Remove the finaliser options from decoder settings.
+
+    Returns:
+        The removed options.
+
+    """
+    return {key: decoder.pop(key) for key in _FINALISER_KEYS if key in decoder}
+
+
+def _legacy_finaliser_options(decoder: Mapping[str, Any]) -> list[str]:
+    """Return the finaliser options that are set in decoder settings."""
+    return [key for key in _FINALISER_KEYS if key in decoder]
+
+
+def _legacy_skip_connection_keys(state_dict: Mapping[str, Any]) -> list[str]:
+    """Return the skip connection weights that are saved in the decoder."""
+    return [key for key in state_dict if key.startswith(_LEGACY_SKIP_CONNECTION_PREFIX)]
 
 
 @dataclass(frozen=True)
@@ -135,7 +157,7 @@ class CheckpointFile:
         # Configs from before the finaliser was split from the decoder must be upgraded,
         # since the decoder no longer accepts these keys.
         decoder_config = OmegaConf.select(ckpt_config, "model.decoder") or {}
-        if moved := [key for key in _FINALISER_KEYS if key in decoder_config]:
+        if moved := _legacy_finaliser_options(decoder_config):
             msg = (
                 f"Checkpoint configuration {self.config_path} sets "
                 f"{', '.join(moved)} under the legacy 'model.decoder' key. Upgrade it "
@@ -180,7 +202,11 @@ class CheckpointFile:
 
         """
         try:
-            ckpt_state = torch.load(self.path, map_location="cpu", weights_only=True)
+            # Memory-map the file, so that a caller that only checks the checkpoint
+            # does not read every tensor from disk
+            ckpt_state = torch.load(
+                self.path, map_location="cpu", mmap=True, weights_only=True
+            )
         except pickle.UnpicklingError as exc:
             msg = (
                 f"Checkpoint {self.path} contains objects that cannot be loaded "
@@ -191,9 +217,8 @@ class CheckpointFile:
             )
             raise OutdatedCheckpointError(msg) from exc
         decoder = ckpt_state.get("hyper_parameters", {}).get("decoder") or {}
-        if any(key in decoder for key in _FINALISER_KEYS) or any(
-            key.startswith("decoder.skip_connection.")
-            for key in ckpt_state.get("state_dict", {})
+        if _legacy_finaliser_options(decoder) or _legacy_skip_connection_keys(
+            ckpt_state.get("state_dict", {})
         ):
             msg = (
                 f"Checkpoint {self.path} keeps finaliser weights or options in the "
@@ -277,14 +302,13 @@ class CheckpointFile:
             )
             sections.remove("model")
         else:
-            ckpt_model = ckpt_config.get("model", {})
             # Relaxation has no weights, so the configured relaxation can be added to,
             # changed for, or removed (null) from a trained model
             if "relaxation_tau" in (configured := config.get("model", {})):
                 combined["model"]["relaxation_tau"] = configured["relaxation_tau"]
             # The anchor changes what the trained model sees, so it must match training.
             # A checkpoint config without one was trained with the default anchor.
-            if "skip_anchor" not in ckpt_model:
+            if "skip_anchor" not in ckpt_config.get("model", {}):
                 combined["model"].pop("skip_anchor", None)
 
         self._warn_replaced(config, combined, sections)
@@ -394,23 +418,24 @@ class LegacyCheckpointFile:
         parameter order, which the optimizer state uses to identify parameters, so the
         per-parameter optimizer state is cleared but the parameter groups are kept.
 
-        Finaliser options are removed from the saved decoder hyperparameters, which the
-        encoder stage reloads its decoder from. They had no effect there.
+        Finaliser options move from the saved decoder hyperparameters to the finaliser
+        hyperparameters, as the decoder no longer accepts them.
 
         Returns:
             Whether the checkpoint changed.
 
         """
         state_dict = ckpt_state.get("state_dict", {})
-        keys = [key for key in state_dict if key.startswith("decoder.skip_connection.")]
+        keys = _legacy_skip_connection_keys(state_dict)
         for key in keys:
             state_dict[key.replace("decoder.", "finaliser.", 1)] = state_dict.pop(key)
         if keys and (optimizer_states := ckpt_state.get("optimizer_states")):
             for optimizer_state in optimizer_states:
                 optimizer_state["state"] = {}
             log.warning("Reset the optimizer state, as the parameter order changed.")
-        decoder = ckpt_state.get("hyper_parameters", {}).get("decoder") or {}
-        options = [decoder.pop(key) for key in _FINALISER_KEYS if key in decoder]
+        hyper_parameters = ckpt_state.get("hyper_parameters", {})
+        if options := _pop_finaliser_options(hyper_parameters.get("decoder") or {}):
+            hyper_parameters["finaliser"] = options
         return bool(keys or options)
 
     def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901, PLR0912
@@ -421,8 +446,8 @@ class LegacyCheckpointFile:
         The config is rewritten to reference ``cryocast``, to replace the legacy
         'predict' settings with 'variables' and 'window' ones, and to move the
         finaliser settings from 'model.decoder' to 'model.finaliser'. In the checkpoint,
-        learned skip connection weights move from the decoder to the finaliser, and
-        finaliser settings are removed from the saved decoder hyperparameters.
+        learned skip connection weights and finaliser settings move from the decoder to
+        the finaliser.
 
         Args:
             trusted: Whether the checkpoint comes from a trusted source. A checkpoint
@@ -514,9 +539,7 @@ class LegacyCheckpointFile:
                     "n_history_steps": predict.get("n_history_steps", 1),
                 }
         decoder = OmegaConf.select(config, "model.decoder") or {}
-        if moved := {
-            key: decoder.pop(key) for key in _FINALISER_KEYS if key in decoder
-        }:
+        if moved := _pop_finaliser_options(decoder):
             config.model.finaliser = moved
         if predict is not None or moved or self._PACKAGE_PATTERN.search(text):
             self._replace(config_path, lambda tmp_pth: OmegaConf.save(config, tmp_pth))

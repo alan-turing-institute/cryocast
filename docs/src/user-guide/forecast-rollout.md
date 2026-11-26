@@ -168,8 +168,8 @@ See [Metrics](metrics.md) for these metrics.
 
 ## Configure the options
 
-Each `EncodeProcessDecode` model config has these options as comments at the end of the file.
-To enable them, remove the comment characters:
+The model configs do not set these options.
+To enable them, add them to the `model` section of your `*.local.yaml` config:
 
 ```yaml
 skip_anchor: previous

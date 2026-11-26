@@ -207,6 +207,22 @@ def _oracle_batch(n_forecast_steps: int = 2) -> dict[str, TensorNTCHW]:
     }
 
 
+def _expected_reconstruction(
+    batch: dict[str, TensorNTCHW], scale: float, skip_anchor: str
+) -> TensorNTCHW:
+    """Reconstruct the target, with each step anchored on an observed frame.
+
+    With a PREVIOUS anchor, step k uses the observed frame k - 1 (teacher forcing).
+    """
+    observation = batch["sic"][:, -1:, 1:2]
+    anchors = (
+        torch.cat([observation, batch["target"][:, :-1]], 1)
+        if skip_anchor == "previous"
+        else observation.expand_as(batch["target"])
+    )
+    return (anchors + scale * batch["future_sic"][:, :, 1:2]).clamp(0.0, 1.0)
+
+
 def _training_step(
     model: EncodeProcessDecode, batch: dict[str, TensorNTCHW]
 ) -> tuple[ModelStepOutput, dict[str, torch.Tensor]]:
@@ -1312,11 +1328,9 @@ class TestSkipAnchor:
         )
         model.train()
         batch = _oracle_batch(n_forecast_steps)
-        anchors = batch["sic"][:, -1:, 1:2].expand_as(batch["target"])
-        if skip_anchor == "previous":
-            anchors = torch.cat([batch["sic"][:, -1:, 1:2], batch["target"][:, :-1]], 1)
-        deltas = self.SCALE * batch["future_sic"][:, :, 1:2]
-        expected = model.loss((anchors + deltas).clamp(0.0, 1.0), batch["target"])
+        expected = model.loss(
+            _expected_reconstruction(batch, self.SCALE, skip_anchor), batch["target"]
+        )
 
         _, logged = _training_step(model, batch)
 
@@ -1551,10 +1565,9 @@ class TestRelaxationInLatentLossTraining:
         model = self._model(cfg_loss, cfg_metrics, loss_weights={"reconstruction": 1.0})
         model.train()
         batch = self._batch()
-        # Each step is anchored on the observed frame before it (teacher forcing)
-        anchors = torch.cat([batch["sic"][:, -1:, 1:2], batch["target"][:, :-1]], 1)
-        deltas = self.SCALE * batch["future_sic"][:, :, 1:2]
-        expected = model.loss((anchors + deltas).clamp(0.0, 1.0), batch["target"])
+        expected = model.loss(
+            _expected_reconstruction(batch, self.SCALE, "previous"), batch["target"]
+        )
 
         _, logged = _training_step(model, batch)
 

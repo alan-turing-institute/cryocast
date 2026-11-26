@@ -743,10 +743,10 @@ class TestUpgrade:
             {"state": {}, "param_groups": param_groups}
         ]
 
-    def test_removes_finaliser_options_from_decoder_hyperparameters(
+    def test_moves_finaliser_options_from_decoder_hyperparameters(
         self, tmp_path: Path
     ) -> None:
-        """Remove options that the decoder no longer accepts, e.g. from encoder stages."""
+        """Move options that the decoder no longer accepts to the finaliser."""
         path = tmp_path / "checkpoints" / "encoder-osisaf.epoch=1-step=1.ckpt"
         path.parent.mkdir()
         decoder = {"_target_": "cryocast.models.decoders.CNNDecoder", "n_layers": 1}
@@ -766,7 +766,14 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade()
 
-        assert CheckpointFile(path).load()["hyper_parameters"]["decoder"] == decoder
+        assert CheckpointFile(path).load()["hyper_parameters"] == {
+            "decoder": decoder,
+            "finaliser": {
+                "mask_type": "active",
+                "restrict_range": "sigmoid",
+                "skip_connection": {"method": "additive"},
+            },
+        }
 
     def test_upgrades_several_checkpoints_from_one_run(self, tmp_path: Path) -> None:
         """Upgrade every checkpoint in a run, with its model config upgraded once."""

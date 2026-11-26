@@ -605,7 +605,7 @@ class ModelService:
                 "Skipping training for decoder. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            checkpoint_file.load()
+            checkpoint_file.load()  # raises OutdatedCheckpointError if needed
             return DecoderStage.load_from_checkpoint(
                 checkpoint_file.path,
                 decoder=self.config["model"]["decoder"],
@@ -663,7 +663,7 @@ class ModelService:
                     encoder.name,
                     checkpoint_file.path,
                 )
-                checkpoint_file.load()
+                checkpoint_file.load()  # raises OutdatedCheckpointError if needed
                 encoder_models.append(
                     EncoderStage.load_from_checkpoint(
                         checkpoint_file.path,
@@ -748,7 +748,7 @@ class ModelService:
                 "Skipping training for processor. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            checkpoint_file.load()
+            checkpoint_file.load()  # raises OutdatedCheckpointError if needed
             return ProcessorStage.load_from_checkpoint(
                 checkpoint_file.path,
                 decoder_model=decoder_model,
