@@ -6,12 +6,11 @@ import re
 import reprlib
 import shutil
 from collections import OrderedDict
-from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar, cast
 
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -25,7 +24,42 @@ from cryocast.exceptions import (
 from cryocast.types import DataSpace
 from cryocast.utils import to_plain_types
 
+if TYPE_CHECKING:
+    from cryocast.models import BaseModel
+
+_ModelT = TypeVar("_ModelT", bound="BaseModel")
+
 log = logging.getLogger(__name__)
+
+# Model config keys that moved from 'model.decoder' to 'model.finaliser'
+_FINALISER_KEYS = (
+    "mask_type",
+    "restrict_range",
+    "restrict_range_max",
+    "restrict_range_min",
+    "skip_connection",
+)
+# Prefix of skip connection weights that moved from the decoder to the finaliser
+_LEGACY_SKIP_CONNECTION_PREFIX = "decoder.skip_connection."
+
+
+def _legacy_finaliser_options(
+    decoder: MutableMapping[str, Any], *, remove: bool = False
+) -> dict[str, Any]:
+    """Return the finaliser options that are set in decoder settings.
+
+    Args:
+        decoder: The decoder settings.
+        remove: Whether to also remove these options from the decoder settings.
+
+    """
+    get = decoder.pop if remove else decoder.get
+    return {key: get(key) for key in _FINALISER_KEYS if key in decoder}
+
+
+def _legacy_skip_connection_keys(state_dict: Mapping[str, Any]) -> list[str]:
+    """Return the skip connection weights that are saved in the decoder."""
+    return [key for key in state_dict if key.startswith(_LEGACY_SKIP_CONNECTION_PREFIX)]
 
 
 @dataclass(frozen=True)
@@ -99,7 +133,8 @@ class CheckpointFile:
             The checkpoint config, or None (with a warning) if it could not be loaded.
 
         Raises:
-            OutdatedCheckpointError: If the config predates the current format.
+            OutdatedCheckpointError: If the config uses the legacy 'predict' key or
+                keeps finaliser options in the decoder.
 
         """
         try:
@@ -123,17 +158,99 @@ class CheckpointFile:
                 f"'cryocast checkpoint upgrade {self.path}'."
             )
             raise OutdatedCheckpointError(msg)
+        # A full model does not save its decoder in the checkpoint, so finaliser
+        # options that an older version kept in the decoder are only in this config
+        if _legacy_finaliser_options(
+            OmegaConf.select(ckpt_config, "model.decoder") or {}
+        ):
+            msg = (
+                f"Checkpoint configuration {self.config_path} keeps finaliser options "
+                "in 'model.decoder', because an older version of this code saved it. "
+                f"Upgrade it with 'cryocast checkpoint upgrade {self.path}'."
+            )
+            raise OutdatedCheckpointError(msg)
         return ckpt_config
 
-    def load(self) -> dict[str, Any]:
-        """Load the checkpoint, allowing only plain Python types and tensors.
+    def _warn_replaced(
+        self, config: DictConfig, combined: DictConfig, sections: Sequence[str]
+    ) -> None:
+        """Warn about each value in these config sections that the checkpoint replaces."""
+        replaced: dict[str, tuple[Any, Any]] = {}
+        for section in sections:
+            used = self._flatten(
+                OmegaConf.select(combined, section, default={}), section
+            )
+            replaced |= {
+                key: (value, used.get(key, "unset"))
+                for key, value in self._flatten(
+                    OmegaConf.select(config, section, default={}), section
+                ).items()
+                if value != used.get(key, "unset")
+            }
+        if replaced:
+            log.warning("Overriding config file with values from the checkpoint:")
+            for key, (configured, used) in replaced.items():
+                log.warning(
+                    "  %s=%s (config has %s)",
+                    key,
+                    reprlib.repr(used),
+                    reprlib.repr(configured),
+                )
+
+    def load_dict(self) -> dict[str, Any]:
+        """Load the checkpoint, refusing one that must be upgraded first.
 
         Raises:
-            OutdatedCheckpointError: If the checkpoint contains any other objects.
+            OutdatedCheckpointError: If the checkpoint contains objects other than plain
+                Python types and tensors, or keeps finaliser weights or options in the
+                decoder.
 
         """
-        with self.suggest_upgrade_on_failure():
-            return torch.load(self.path, map_location="cpu", weights_only=True)
+        try:
+            # Memory-map the file, so that a caller that only checks the checkpoint
+            # does not read every tensor from disk
+            ckpt_state = torch.load(
+                self.path, map_location="cpu", mmap=True, weights_only=True
+            )
+        except pickle.UnpicklingError as exc:
+            msg = (
+                f"Checkpoint {self.path} contains objects that cannot be loaded "
+                "safely, probably because it was saved by an older version of this "
+                "code. Upgrading it runs any code embedded in the file, so only do so "
+                "if you trust its source, with 'cryocast checkpoint upgrade --trust "
+                f"{self.path}'."
+            )
+            raise OutdatedCheckpointError(msg) from exc
+        decoder = ckpt_state.get("hyper_parameters", {}).get("decoder") or {}
+        if _legacy_finaliser_options(decoder) or _legacy_skip_connection_keys(
+            ckpt_state.get("state_dict", {})
+        ):
+            msg = (
+                f"Checkpoint {self.path} keeps finaliser weights or options in the "
+                "decoder, because an older version of this code saved it. Upgrade it "
+                f"with 'cryocast checkpoint upgrade {self.path}'."
+            )
+            raise OutdatedCheckpointError(msg)
+        return ckpt_state
+
+    def load_model(self, model_cls: type[_ModelT], **kwargs: Any) -> _ModelT:
+        """Load a model from the checkpoint, refusing one that must be upgraded first.
+
+        Args:
+            model_cls: The class of the model that the checkpoint holds.
+            **kwargs: Passed to `load_from_checkpoint`.
+
+        Raises:
+            OutdatedCheckpointError: If the checkpoint must be upgraded first.
+
+        """
+        self.load_dict()
+        return model_cls.load_from_checkpoint(
+            self.path,
+            map_location="cpu",  # Lightning will move this to the correct device
+            weights_only=True,
+            **kwargs,
+        )
 
     def merge_config(self, config: DictConfig) -> DictConfig:
         """Combine the current config with the config that the checkpoint was trained with.
@@ -209,53 +326,6 @@ class CheckpointFile:
 
         self._warn_replaced(config, combined, sections)
         return combined
-
-    def _warn_replaced(
-        self, config: DictConfig, combined: DictConfig, sections: Sequence[str]
-    ) -> None:
-        """Warn about each value in these config sections that the checkpoint replaces."""
-        replaced: dict[str, tuple[Any, Any]] = {}
-        for section in sections:
-            used = self._flatten(
-                OmegaConf.select(combined, section, default={}), section
-            )
-            replaced |= {
-                key: (value, used.get(key, "unset"))
-                for key, value in self._flatten(
-                    OmegaConf.select(config, section, default={}), section
-                ).items()
-                if value != used.get(key, "unset")
-            }
-        if replaced:
-            log.warning("Overriding config file with values from the checkpoint:")
-            for key, (configured, used) in replaced.items():
-                log.warning(
-                    "  %s=%s (config has %s)",
-                    key,
-                    reprlib.repr(used),
-                    reprlib.repr(configured),
-                )
-
-    @contextmanager
-    def suggest_upgrade_on_failure(self) -> Generator[None]:
-        """Suggest upgrading the checkpoint if it cannot be loaded safely.
-
-        Raises:
-            OutdatedCheckpointError: If loading the checkpoint fails because it contains
-                objects other than plain Python types and tensors.
-
-        """
-        try:
-            yield
-        except pickle.UnpicklingError as exc:
-            msg = (
-                f"Checkpoint {self.path} contains objects that cannot be loaded "
-                "safely, probably because it was saved by an older version of this "
-                "code. Upgrading it runs any code embedded in the file, so only do so "
-                "if you trust its source, with 'cryocast checkpoint upgrade --trust "
-                f"{self.path}'."
-            )
-            raise OutdatedCheckpointError(msg) from exc
 
 
 class LegacyCheckpointFile:
@@ -353,13 +423,50 @@ class LegacyCheckpointFile:
         shutil.move(tmp_path, path)
         log.info("Upgraded %s, keeping the original at %s.", path, backup_path)
 
+    @staticmethod
+    def _separate_finaliser(ckpt_state: dict[str, Any]) -> bool:
+        """Remove finaliser weights and options from the decoder.
+
+        Learned skip connection weights move to the finaliser. This changes the
+        parameter order, which the optimizer state uses to identify parameters, so the
+        per-parameter optimizer state is cleared but the parameter groups are kept.
+
+        Finaliser options move from the saved decoder hyperparameters to the finaliser
+        hyperparameters, as the decoder no longer accepts them. An encoder stage has
+        no finaliser, because its disposable decoder did not use these options, so they
+        are removed.
+
+        Returns:
+            Whether the checkpoint changed.
+
+        """
+        state_dict = ckpt_state.get("state_dict", {})
+        keys = _legacy_skip_connection_keys(state_dict)
+        for key in keys:
+            state_dict[key.replace("decoder.", "finaliser.", 1)] = state_dict.pop(key)
+        if keys and (optimizer_states := ckpt_state.get("optimizer_states")):
+            for optimizer_state in optimizer_states:
+                optimizer_state["state"] = {}
+            log.warning("Reset the optimizer state, as the parameter order changed.")
+        hyper_parameters = ckpt_state.get("hyper_parameters", {})
+        options = _legacy_finaliser_options(
+            hyper_parameters.get("decoder") or {}, remove=True
+        )
+        # Only an EncoderStage saves an 'encoder' hyperparameter
+        if options and "encoder" not in hyper_parameters:
+            hyper_parameters["finaliser"] = options
+        return bool(keys or options)
+
     def upgrade(self, *, trusted: bool = False) -> CheckpointFile:  # noqa: C901
         """Upgrade the checkpoint and its config to the current format.
 
         The checkpoint is rewritten to reference ``cryocast`` classes and to contain
         only plain Python types, so that it can be loaded with ``weights_only=True``.
-        The config is rewritten to reference ``cryocast`` and to replace the legacy
-        'predict' settings with 'variables' and 'window' ones.
+        The config is rewritten to reference ``cryocast``, to replace the legacy
+        'predict' settings with 'variables' and 'window' ones, and to move the
+        finaliser settings from 'model.decoder' to 'model.finaliser'. In the checkpoint,
+        learned skip connection weights and finaliser settings move from the decoder to
+        the finaliser.
 
         Args:
             trusted: Whether the checkpoint comes from a trusted source. A checkpoint
@@ -401,11 +508,16 @@ class LegacyCheckpointFile:
                 weights_only=False,  # this is an older checkpoint that the user chose
             )
         else:
-            ckpt_state = self.checkpoint_file.load()
+            ckpt_state = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True
+            )
         renamed: set[str] = set()
-        ckpt_state = self._rename(to_plain_types(ckpt_state), renamed)
+        ckpt_state = cast(
+            "dict[str, Any]", self._rename(to_plain_types(ckpt_state), renamed)
+        )
+        separated = self._separate_finaliser(ckpt_state)
 
-        if unsafe or renamed:
+        if unsafe or renamed or separated:
 
             def write_upgraded_checkpoint(tmp_path: Path) -> None:
                 torch.save(ckpt_state, tmp_path)
@@ -421,7 +533,8 @@ class LegacyCheckpointFile:
         else:
             log.info("Checkpoint %s is already up to date.", checkpoint_path)
 
-        # Upgrade the config if it references the old package name or uses 'predict'
+        # Upgrade the config if it references the old package name, uses 'predict', or
+        # sets finaliser options on the decoder
         if not config_path.is_file():
             return self.checkpoint_file
         text = config_path.read_text()
@@ -443,7 +556,10 @@ class LegacyCheckpointFile:
                     "n_forecast_steps": predict.get("n_forecast_steps", 1),
                     "n_history_steps": predict.get("n_history_steps", 1),
                 }
-        if predict is not None or self._PACKAGE_PATTERN.search(text):
+        decoder = OmegaConf.select(config, "model.decoder") or {}
+        if moved := _legacy_finaliser_options(decoder, remove=True):
+            config.model.finaliser = moved
+        if predict is not None or moved or self._PACKAGE_PATTERN.search(text):
             self._replace(config_path, lambda tmp_pth: OmegaConf.save(config, tmp_pth))
         else:
             log.info("Configuration %s is already up to date.", config_path)

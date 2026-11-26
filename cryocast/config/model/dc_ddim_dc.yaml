@@ -67,9 +67,11 @@ decoder:
   attention_heads: {1: 4}
   hid_channels: [64, 128]
   hid_blocks: [2, 2]
-  mask_type: active
   pixel_shuffle: true
-  restrict_range: sigmoid
   stride: 3
+
+finaliser:
+  mask_type: active
+  restrict_range: sigmoid
   skip_connection:
     method: additive

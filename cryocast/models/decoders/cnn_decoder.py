@@ -52,7 +52,7 @@ class CNNDecoder(BaseDecoder):
                 weights and bias, so an untrained decoder emits exactly zero. Used by
                 residual (tendency) models so that the initial prediction is exactly
                 the anchor field passed to the skip connection.
-            **kwargs: forwarded to ``BaseDecoder`` (spaces, masks, range, skip).
+            **kwargs: forwarded to ``BaseDecoder``.
 
         """
         super().__init__(**kwargs)

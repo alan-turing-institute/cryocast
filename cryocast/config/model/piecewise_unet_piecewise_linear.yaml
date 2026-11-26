@@ -32,9 +32,11 @@ decoder:
   _target_: cryocast.models.decoders.PiecewiseDecoder
   conv_subblocks_initial: 0
   conv_subblocks_final: 0
-  mask_type: active
-  restrict_range: none
   use_hann_window: true
   use_final_normalisation: true
+
+finaliser:
+  mask_type: active
+  restrict_range: none
   skip_connection:
     method: additive

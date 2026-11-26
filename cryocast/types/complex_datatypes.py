@@ -9,7 +9,7 @@ from torch import Tensor
 
 from .annotations import TensorNTCHW
 from .constants import SEA_ICE_THRESHOLD
-from .enums import DiffMode, Hemisphere
+from .enums import DiffMode, Hemisphere, RolloutSpace, SkipAnchorType
 from .protocols import SupportsMetadataFromDataset
 
 
@@ -255,6 +255,76 @@ class PlotSpec:
         else:
             dict_other = dict(other)
         return PlotSpec(**(asdict(self) | dict_other))
+
+
+@dataclass(frozen=True)
+class RolloutStrategy:
+    """Describe how EncodeProcessDecode advances its forecast loop.
+
+    Attributes:
+        space: Where the forecast loop runs: in latent space, or in physical space
+            where each step is decoded and re-encoded.
+        anchor: The frame that a finaliser skip connection adds to each forecast step:
+            the last observed frame (INITIAL) or the previous forecast step (PREVIOUS).
+            A physical rollout needs a PREVIOUS anchor.
+        relaxation_tau: The folding time, in forecast steps, of the relaxation of each
+            forecast step towards climatology, or None for no relaxation. Relaxation
+            needs a PREVIOUS anchor, so that it carries over between steps.
+
+    """
+
+    space: RolloutSpace
+    anchor: SkipAnchorType
+    relaxation_tau: float | None = None
+
+    def __post_init__(self) -> None:
+        """Validate the anchor and the relaxation."""
+        if (
+            self.space == RolloutSpace.PHYSICAL
+            and self.anchor != SkipAnchorType.PREVIOUS
+        ):
+            msg = (
+                f"rollout_space='physical' requires skip_anchor='previous', but it is "
+                f"'{self.anchor.value}'. A physical rollout anchors each step on the "
+                f"previous forecast step."
+            )
+            raise ValueError(msg)
+        if self.relaxation_tau is not None and self.anchor != SkipAnchorType.PREVIOUS:
+            msg = (
+                f"relaxation requires skip_anchor='previous', but it is "
+                f"'{self.anchor.value}'. With a fixed anchor, the relaxation does not "
+                f"carry over from one step to the next."
+            )
+            raise ValueError(msg)
+
+    @classmethod
+    def from_options(
+        cls,
+        space: RolloutSpace | str = RolloutSpace.LATENT,
+        anchor: SkipAnchorType | str | None = None,
+        relaxation_tau: float | None = None,
+    ) -> Self:
+        """Create a RolloutStrategy from enums or strings.
+
+        If the anchor is unset, use the default anchor for the space. A latent rollout
+        anchors every step on the last observed frame. A physical rollout anchors each
+        step on the previous forecast step.
+        """
+        space = RolloutSpace(space)
+        if anchor is None:
+            anchor = (
+                SkipAnchorType.PREVIOUS
+                if space == RolloutSpace.PHYSICAL
+                else SkipAnchorType.INITIAL
+            )
+        return cls(
+            space=space, anchor=SkipAnchorType(anchor), relaxation_tau=relaxation_tau
+        )
+
+    @property
+    def is_physical(self) -> bool:
+        """Return True if the forecast loop runs in physical space."""
+        return self.space == RolloutSpace.PHYSICAL
 
 
 class Timespan:

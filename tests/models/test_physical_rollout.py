@@ -7,7 +7,7 @@ Background — the two defects these options exist to fix, both in the historica
    requires pushing it through a downsampling CNN, a patch-embedding ViT and an
    upsampling CNN, so persistence is not representable. Measured on the toy: the
    model scores active-cell MAE 0.093 at lead 1 where copying the input scores
-   0.034. An additive decoder skip connection during a physical rollout makes
+   0.034. An additive finaliser skip connection during a physical rollout makes
    delta=0 exactly persistence.
 
 2. UNCONSTRAINED LATENT FEEDBACK. `BaseProcessor.rollout` appends the processor's
@@ -26,19 +26,22 @@ The properties tested here, in order of importance:
 * No future information can enter through either option.
 """
 
+from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 import torch
 from omegaconf import DictConfig
 
 from cryocast.models import EncodeProcessDecode
+from cryocast.types import SkipAnchorType
 
 TARGET_GROUP = "sic-ssmis"
 SEED = 1234
-# Residual (tendency) decoder: unbounded output plus an additive skip connection.
+# Residual (tendency) finaliser: unbounded output plus an additive skip connection.
 # _build_model copies this into a fresh payload, so sharing it between tests is safe.
-ADDITIVE_SKIP_DECODER: dict[str, Any] = {
+ADDITIVE_SKIP_FINALISER: dict[str, Any] = {
     "restrict_range": "none",
     "skip_connection": {"method": "additive"},
 }
@@ -57,7 +60,10 @@ VIT_PROCESSOR: dict[str, Any] = {
 def _build_model(
     *,
     rollout_space: str | None = None,
+    skip_anchor: str | None = None,
+    relaxation_tau: float | None = None,
     decoder_extra: dict[str, Any] | None = None,
+    finaliser: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
     grid: int = 32,
     latent: int = 16,
@@ -68,10 +74,13 @@ def _build_model(
     extra_inputs: list[DictConfig] | None = None,
     target_variable_indices: list[int] | None = None,
     seed: int = SEED,
+    target_is_input: bool = True,
+    mask_dir: str | None = None,
 ) -> EncodeProcessDecode:
+    input_name = TARGET_GROUP if target_is_input else "not_the_target"
     input_spaces = [
         DictConfig(
-            {"channels": input_channels, "name": TARGET_GROUP, "shape": (grid, grid)}
+            {"channels": input_channels, "name": input_name, "shape": (grid, grid)}
         ),
         *(extra_inputs or []),
     ]
@@ -105,6 +114,7 @@ def _build_model(
             processor or {"_target_": "cryocast.models.processors.NullProcessor"}
         ),
         decoder=decoder,
+        finaliser=DictConfig(dict(finaliser or {})),
         hemisphere="north",
         input_spaces=input_spaces,
         n_forecast_steps=n_forecast_steps,
@@ -116,6 +126,9 @@ def _build_model(
         scheduler=DictConfig({}),
         lr_scheduler=DictConfig({}),
         **rollout_kwargs,
+        mask_dir=mask_dir,
+        skip_anchor=skip_anchor,
+        relaxation_tau=relaxation_tau,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
@@ -155,6 +168,21 @@ def _inputs(
     }
 
 
+def _climatology(
+    model: EncodeProcessDecode, value: float, *, batch_size: int = 2
+) -> torch.Tensor:
+    """A constant climatology with shape (batch, n_forecast_steps, C_out, H, W)."""
+    return torch.full(
+        (
+            batch_size,
+            model.n_forecast_steps,
+            model.output_space.channels,
+            *model.output_space.shape,
+        ),
+        value,
+    )
+
+
 def _final_conv(model: EncodeProcessDecode) -> torch.nn.Conv2d:
     """The decoder's final convolution, with the cast mypy needs for indexing."""
     last = cast("torch.nn.Sequential", model.decoder.model)[-1]
@@ -176,7 +204,7 @@ class TestDefaultsOff:
 
     def test_off_is_identical_to_absent(self) -> None:
         absent = _build_model()
-        assert absent.rollout_space == "latent"
+        assert absent.rollout_strategy.space == "latent"
         explicit = _build_model(rollout_space="latent")
         inputs = _inputs(absent)
         absent.eval()
@@ -189,7 +217,7 @@ class TestDefaultsOff:
         latent = _build_model()
         physical = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         assert set(latent.state_dict()) == set(physical.state_dict())
         assert sum(p.numel() for p in latent.parameters()) == sum(
@@ -203,7 +231,7 @@ class TestResidualIsExactlyPersistence:
     def test_zero_tendency_reproduces_persistence_at_every_lead(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _zero_decoder_output(model)
         inputs = _inputs(model)
@@ -235,7 +263,7 @@ class TestResidualIsExactlyPersistence:
     def test_residual_output_is_bounded(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         # a large positive bias would drive the sum far above 1 without the clamp
         bias = _final_conv(model).bias
@@ -270,7 +298,7 @@ class TestPhysicalRolloutAdvancesTheState:
         """A non-zero tendency must produce a moving trajectory, not one field."""
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
         )
         _small_tendency(model)
@@ -291,7 +319,7 @@ class TestPhysicalRolloutAdvancesTheState:
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
         )
         _small_tendency(model)
@@ -314,7 +342,7 @@ class TestPhysicalRolloutAdvancesTheState:
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             processor=VIT_PROCESSOR,
             extra_inputs=[extra],
         )
@@ -345,7 +373,7 @@ class TestPhysicalRolloutAdvancesTheState:
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
             input_channels=3,
             output_channels=len(target_variable_indices),
             target_variable_indices=target_variable_indices,
@@ -363,25 +391,38 @@ class TestPhysicalRolloutAdvancesTheState:
 
 
 class TestNoFutureLeak:
-    def test_target_key_is_never_read(self) -> None:
+    """forward() may only read the input groups and the climatology.
+
+    The input groups hold the frames up to the forecast origin. The climatology comes
+    from the training periods only, and is read only if relaxation is on. The "target"
+    and "future_<input>" keys hold the future frames, and must never be read.
+    """
+
+    @pytest.mark.parametrize(
+        "relaxation_tau",
+        [None, 2.0],
+        ids=["no-relaxation", "relaxation"],
+    )
+    def test_target_key_is_never_read(self, relaxation_tau: float | None) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            relaxation_tau=relaxation_tau,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         model.eval()
-        inputs = _inputs(model)
+        inputs = {**_inputs(model), "climatology": _climatology(model, 0.5)}
         with_truth = dict(inputs)
         with_truth["target"] = torch.ones(2, model.n_forecast_steps, 1, 32, 32)
         with torch.no_grad():
             assert torch.equal(model(inputs), model(with_truth))
 
     @pytest.mark.parametrize(
-        ("rollout_space", "decoder_extra"),
-        [("latent", None), ("physical", ADDITIVE_SKIP_DECODER)],
+        ("rollout_space", "finaliser"),
+        [("latent", None), ("physical", ADDITIVE_SKIP_FINALISER)],
         ids=["latent", "physical"],
     )
     def test_future_inputs_are_not_read(
-        self, rollout_space: str, decoder_extra: dict[str, Any] | None
+        self, rollout_space: str, finaliser: dict[str, Any] | None
     ) -> None:
         """The future_<input> keys are ground truth for latent losses, never forward().
 
@@ -392,7 +433,7 @@ class TestNoFutureLeak:
         extra = DictConfig({"channels": 2, "name": "era5", "shape": (32, 32)})
         model = _build_model(
             rollout_space=rollout_space,
-            decoder_extra=decoder_extra,
+            finaliser=finaliser,
             processor=VIT_PROCESSOR,
             extra_inputs=[extra],
         )
@@ -413,22 +454,72 @@ class TestNoFutureLeak:
             assert torch.equal(model(with_future(0.0)), baseline)
             assert torch.equal(model(with_future(1.0)), baseline)
 
+    @pytest.mark.parametrize(
+        ("relaxation_tau", "reads_climatology"),
+        [(None, False), (2.0, True)],
+        ids=["no-relaxation", "relaxation"],
+    )
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_climatology_is_read_only_with_relaxation(
+        self,
+        rollout_space: str,
+        relaxation_tau: float | None,
+        reads_climatology: bool,  # noqa: FBT001
+    ) -> None:
+        model = _build_model(
+            rollout_space=rollout_space,
+            skip_anchor="previous",
+            relaxation_tau=relaxation_tau,
+            finaliser=ADDITIVE_SKIP_FINALISER,
+        )
+        _zero_decoder_output(model)
+        model.eval()
+        inputs = _inputs(model)
+        with torch.no_grad():
+            low = model({**inputs, "climatology": _climatology(model, 0.0)})
+            high = model({**inputs, "climatology": _climatology(model, 1.0)})
+        assert (not torch.equal(low, high)) is reads_climatology
+
 
 class TestConfigValidation:
-    def test_bad_rollout_space(self) -> None:
-        with pytest.raises(ValueError, match="not a valid RolloutSpace"):
-            _build_model(rollout_space="nonsense")
+    def test_latent_relaxation_requires_skip_connection(self) -> None:
+        """Without a skip connection, latent relaxation does not carry over steps."""
+        with pytest.raises(ValueError, match="requires a finaliser skip connection"):
+            _build_model(
+                rollout_space="latent",
+                skip_anchor="previous",
+                relaxation_tau=30.0,
+            )
+
+    def test_physical_relaxation_accepts_no_skip_connection(self) -> None:
+        """A physical rollout re-encodes each relaxed step, so no skip is needed."""
+        model = _build_model(rollout_space="physical", relaxation_tau=30.0)
+        assert model.finaliser.relaxation is not None
+
+    def test_physical_rollout_requires_target_as_input(self) -> None:
+        with pytest.raises(ValueError, match="to also be a model input"):
+            _build_model(rollout_space="physical", target_is_input=False)
+
+    def test_physical_rollout_rejects_latent_loss_processor(self) -> None:
+        with pytest.raises(ValueError, match="computes its loss in latent space"):
+            _build_model(
+                rollout_space="physical",
+                processor={
+                    "_target_": "cryocast.models.processors.NullProcessor",
+                    "computes_loss_in_latent_space": True,
+                },
+            )
 
     def test_residual_accepts_a_bounded_decoder(self) -> None:
-        """A bounded decoder works for a residual (additive-skip) physical model.
+        """A bounded output works for a residual (additive-skip) physical model.
 
-        With an additive skip connection BaseDecoder bounds SIGNED values
+        With an additive skip connection the Finaliser bounds SIGNED values
         symmetrically, so the tendency is never squashed into [0, 1]: a negative
         tendency must lower the forecast below persistence.
         """
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={**ADDITIVE_SKIP_DECODER, "restrict_range": "clamp"},
+            finaliser={**ADDITIVE_SKIP_FINALISER, "restrict_range": "clamp"},
         )
         # Force a constant tendency of -0.1 everywhere
         _zero_decoder_output(model)
@@ -450,11 +541,12 @@ class TestConfigValidation:
 class TestAnchorSemantics:
     """Static and moving anchors are one mechanism differing only in the anchor frame.
 
-    The static anchor (#405) and the moving anchor (#410) are the same additive skip
-    connection; only the frame supplied as the anchor differs.
+    The static and the moving anchor use the same additive skip connection. Only the
+    frame given as the anchor is different. `skip_anchor` selects it. If it is unset,
+    each rollout space uses its default anchor.
 
-    Both cases below drive the decoder to emit a CONSTANT tendency c, which makes the
-    two anchor choices analytically separable:
+    Each case drives the decoder to emit a CONSTANT tendency c, which makes the two
+    anchor choices analytically separable:
         static anchor  ->  output_k = clamp(observation + c)      (same for every lead)
         moving anchor  ->  output_k = clamp(output_{k-1} + c)     (accumulates with k)
     """
@@ -469,20 +561,33 @@ class TestAnchorSemantics:
             final.bias.fill_(value)
 
     @pytest.mark.parametrize(
-        ("rollout_space", "accumulates"),
-        [("physical", True), ("latent", False)],
-        ids=["moving-anchor-accumulates", "static-anchor-does-not-accumulate"],
+        ("rollout_space", "skip_anchor", "accumulates"),
+        [
+            pytest.param("physical", None, True, id="physical-default-accumulates"),
+            pytest.param(
+                "physical", "previous", True, id="physical-previous-accumulates"
+            ),
+            pytest.param("latent", None, False, id="latent-default-is-static"),
+            pytest.param("latent", "initial", False, id="latent-initial-is-static"),
+            pytest.param("latent", "previous", True, id="latent-previous-accumulates"),
+        ],
     )
-    def test_anchor_accumulation(self, rollout_space: str, accumulates: bool) -> None:  # noqa: FBT001
+    def test_anchor_accumulation(
+        self,
+        rollout_space: str,
+        skip_anchor: str | None,
+        accumulates: bool,  # noqa: FBT001
+    ) -> None:
         """Moving vs static anchor under a constant tendency.
 
-        rollout_space='physical': each lead corrects the PREVIOUS lead, so the
-        tendency accumulates. The default latent path anchors EVERY lead on the newest
+        With a moving anchor each lead corrects the PREVIOUS lead, so the tendency
+        accumulates. With a static anchor EVERY lead is anchored on the newest
         observation, so it does not.
         """
         model = _build_model(
             rollout_space=rollout_space,
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            skip_anchor=skip_anchor,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         step = 0.05
         self._constant_tendency(model, step)
@@ -491,11 +596,28 @@ class TestAnchorSemantics:
         with torch.no_grad():
             prediction = model(inputs)
 
-        newest = inputs[TARGET_GROUP][:, -1]
+        anchor = inputs[TARGET_GROUP][:, -1]
         for lead in range(model.n_forecast_steps):
-            increment = step * (lead + 1) if accumulates else step
-            expected = (newest + increment).clamp(0.0, 1.0)
+            expected = (anchor + step).clamp(0.0, 1.0)
             assert torch.allclose(prediction[:, lead], expected)
+            if accumulates:
+                anchor = expected
+
+    @pytest.mark.parametrize(
+        ("rollout_space", "expected"),
+        [("latent", SkipAnchorType.INITIAL), ("physical", SkipAnchorType.PREVIOUS)],
+        ids=["latent", "physical"],
+    )
+    def test_default_resolves_per_rollout_space(
+        self, rollout_space: str, expected: SkipAnchorType
+    ) -> None:
+        model = _build_model(
+            rollout_space=rollout_space, finaliser=ADDITIVE_SKIP_FINALISER
+        )
+        assert model.rollout_strategy.anchor is expected
+        # The unresolved value is saved, so that the default can follow the rollout
+        # space when the checkpoint is loaded
+        assert model.hparams["skip_anchor"] is None
 
 
 class TestTrainEvalParity:
@@ -526,7 +648,7 @@ class TestTrainEvalParity:
         """Both the prediction and the loss come from the physical forward pass."""
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         _small_tendency(model)
         model.eval()  # kill dropout so the two passes are deterministic
@@ -555,7 +677,8 @@ class TestDecoderZeroInitOutput:
     def test_zero_init_output_makes_residual_exactly_persistence(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra={**ADDITIVE_SKIP_DECODER, "zero_init_output": True},
+            decoder_extra={"zero_init_output": True},
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         inputs = _inputs(model)
         persistence = inputs[TARGET_GROUP][:, -1]
@@ -568,7 +691,116 @@ class TestDecoderZeroInitOutput:
     def test_default_is_off(self) -> None:
         model = _build_model(
             rollout_space="physical",
-            decoder_extra=ADDITIVE_SKIP_DECODER,
+            finaliser=ADDITIVE_SKIP_FINALISER,
         )
         final = _final_conv(model)
         assert final.weight.abs().max() > 0
+
+
+class TestClimatologyRelaxation:
+    """Relaxation pulls each forecast step towards climatology, in both rollouts.
+
+    With a zero tendency and a constant climatology c, each step loses a fixed fraction
+    of its anomaly, so the forecast is damped anomaly persistence:
+        output_k = c + (1 - rate)^k * (observation - c),  k = 1..n_forecast_steps
+    """
+
+    @staticmethod
+    def _model(
+        rollout_space: str,
+        relaxation_tau: float | None,
+        *,
+        zero_tendency: bool = True,
+        **kwargs: Any,
+    ) -> EncodeProcessDecode:
+        kwargs.setdefault("finaliser", ADDITIVE_SKIP_FINALISER)
+        model = _build_model(
+            rollout_space=rollout_space,
+            skip_anchor="previous",
+            relaxation_tau=relaxation_tau,
+            **kwargs,
+        )
+        if zero_tendency:
+            _zero_decoder_output(model)
+        return model
+
+    def test_off_by_default(self) -> None:
+        model = _build_model()
+        assert model.rollout_strategy.relaxation_tau is None
+        assert model.finaliser.relaxation is None
+
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_zero_tendency_is_damped_anomaly_persistence(
+        self, rollout_space: str
+    ) -> None:
+        model = self._model(rollout_space, 2.0)
+        assert model.finaliser.relaxation is not None
+        model.eval()
+        inputs = _inputs(model)
+        climatology = 0.3
+        observation = inputs[TARGET_GROUP][:, -1]
+        with torch.no_grad():
+            prediction = model(
+                {**inputs, "climatology": _climatology(model, climatology)}
+            )
+        for lead in range(model.n_forecast_steps):
+            decay = (1.0 - model.finaliser.relaxation.rate) ** (lead + 1)
+            expected = climatology + decay * (observation - climatology)
+            assert torch.allclose(prediction[:, lead], expected, atol=1e-6), (
+                f"lead {lead + 1} is not damped anomaly persistence"
+            )
+
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_masked_cells_stay_at_zero(
+        self, tmp_path: Path, rollout_space: str
+    ) -> None:
+        """Masked cells stay at 0 even if the climatology there is not 0."""
+        mask = np.ones((32, 32), dtype=np.uint8)
+        mask[0, :] = 0
+        for mask_type in ("active", "land"):
+            np.save(tmp_path / f"{mask_type}_mask.npy", mask)
+        model = self._model(
+            rollout_space,
+            1.0,
+            finaliser={**ADDITIVE_SKIP_FINALISER, "mask_type": "active"},
+            mask_dir=str(tmp_path),
+        )
+        model.eval()
+        inputs = _inputs(model)
+        with torch.no_grad():
+            prediction = model({**inputs, "climatology": _climatology(model, 1.0)})
+        assert torch.count_nonzero(prediction[..., 0, :]) == 0
+        assert torch.count_nonzero(prediction[..., 1:, :]) > 0
+
+    @pytest.mark.parametrize("rollout_space", ["latent", "physical"])
+    def test_output_stays_in_range(self, rollout_space: str) -> None:
+        model = self._model(
+            rollout_space, 1.0, zero_tendency=False, processor=VIT_PROCESSOR
+        )
+        model.eval()
+        inputs = _inputs(model)
+        with torch.no_grad():
+            prediction = model({**inputs, "climatology": _climatology(model, 1.0)})
+        assert float(prediction.min()) >= 0.0
+        assert float(prediction.max()) <= 1.0
+
+    def test_missing_climatology_raises(self) -> None:
+        model = self._model("physical", 2.0)
+        model.eval()
+        with (
+            torch.no_grad(),
+            pytest.raises(ValueError, match="no 'climatology' entry"),
+        ):
+            model(_inputs(model))
+
+    @pytest.mark.parametrize("training", [True, False], ids=["train", "eval"])
+    def test_relaxes_in_train_and_eval(self, training: bool) -> None:  # noqa: FBT001
+        model = self._model("physical", 2.0)
+        model.train(training)
+        inputs = _inputs(model)
+        persistence = inputs[TARGET_GROUP][:, -1:].expand(
+            -1, model.n_forecast_steps, -1, -1, -1
+        )
+        with torch.no_grad():
+            prediction = model({**inputs, "climatology": _climatology(model, 0.0)})
+        assert not torch.equal(prediction, persistence)

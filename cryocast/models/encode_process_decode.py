@@ -7,13 +7,18 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
+from cryocast.models.common import ExponentialRelaxation
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
+from cryocast.models.finalisers import Finaliser
+from cryocast.models.objectives import TrainingObjective, build_training_objective
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
     ModelStepOutput,
     RolloutSpace,
+    RolloutStrategy,
+    SkipAnchorType,
     TensorNCHW,
     TensorNTCHW,
 )
@@ -33,6 +38,7 @@ class EncodeProcessDecode(BaseModel):
     ignored_hparams: ClassVar[frozenset[str]] = BaseModel.ignored_hparams | {
         "decoder",
         "encoders",
+        "finaliser",
         "mask_dir",
         "processor",
     }
@@ -43,37 +49,41 @@ class EncodeProcessDecode(BaseModel):
         encoders: DictConfig | list[BaseEncoder],
         processor: DictConfig | BaseProcessor,
         decoder: DictConfig | BaseDecoder,
+        finaliser: Mapping[str, Any] | Finaliser | None = None,
         target_variable_indices: list[int],
         loss_weights: dict[str, float] | None = None,
         mask_dir: str | None = None,
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
+        skip_anchor: SkipAnchorType | str | None = None,
+        relaxation_tau: float | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise an EncodeProcessDecode model.
 
-        Note that we use BaseProcessor.computes_loss_in_latent_space to control:
-        - `needs_future_inputs`: training batches hold `future_<input>` keys.
-        - the decoder is frozen if the reconstruction and prediction losses are off
-        - `rollout_space`: cannot be set to "physical"
-        - `training_step`: takes the latent-loss branch.
+        The processor flag `computes_loss_in_latent_space` selects the training
+        objective. See `build_training_objective`.
 
         Args:
             encoders: DictConfig or list of BaseEncoder, one per input dataset.
             processor: DictConfig or BaseProcessor, the latent-space processor.
-            decoder: DictConfig or BaseDecoder, the decoder from latent to output space.
+            decoder: DictConfig or BaseDecoder, the decoder from latent to raw output
+                space.
             target_variable_indices: indices of the target variables within the output space.
+            finaliser: Options or Finaliser, the finaliser that turns raw decoder output
+                into a forecast state.
             loss_weights: weights for auxiliary loss terms. These apply only to
-                processors that compute their loss in latent space. Weights must not be
-                negative. Supported keys:
-                - `reconstruction` (default 0.0): loss on the decoded encoded future
-                  inputs.
-                - `prediction` (default 0.0): loss on the decoded differentiable
-                  prediction from the processor.
-                If both weights are 0, the decoder is frozen.
-            mask_dir: directory containing masks for the decoder (if needed).
+                processors that compute their loss in latent space. See LatentObjective.
+            mask_dir: directory containing masks for the finaliser (if needed).
             rollout_space: RolloutSpace.LATENT or RolloutSpace.PHYSICAL (or the
                 equivalent string), where to perform the forecast loop.
-            **kwargs: forwarded to ``BaseModel`` (spaces, masks, range, skip).
+            skip_anchor: Whether to use the last, real observed frame or the most recent
+                forecast step as the skip connection anchor. If None, use the default
+                for the rollout space: INITIAL for latent and PREVIOUS for physical.
+            relaxation_tau: The folding time, in forecast steps, of the relaxation of
+                each forecast step towards climatology, or None for no relaxation.
+                Relaxation needs a PREVIOUS skip anchor and a `climatology` entry in
+                each batch.
+            **kwargs: forwarded to ``BaseModel``.
 
         """
         super().__init__(
@@ -157,16 +167,26 @@ class EncodeProcessDecode(BaseModel):
                 decoder,
                 data_space_in=combined_latent_space,
                 data_space_out=self.output_space,
-                mask_dir=mask_dir,
             )
         )
 
-        # Validate the auxiliary loss weights, and freeze the decoder if needed
-        self._configure_losses(loss_weights or {})
+        # Add a finaliser, which turns raw decoder output into a forecast state
+        self.finaliser: Finaliser = (
+            finaliser
+            if isinstance(finaliser, Finaliser)
+            else Finaliser(
+                data_space=self.output_space, mask_dir=mask_dir, **(finaliser or {})
+            )
+        )
 
-        # Validate rollout options
-        self.rollout_space = RolloutSpace(rollout_space)
-        if self.rollout_space == RolloutSpace.PHYSICAL:
+        # Resolve the rollout strategy. This validates the options and uses the default
+        # anchor for the space if it is unset.
+        self.rollout_strategy = RolloutStrategy.from_options(
+            rollout_space, skip_anchor, relaxation_tau
+        )
+
+        # Check that the rollout strategy is compatible with the other components
+        if self.rollout_strategy.is_physical:
             # Physical rollout needs an observed physical state to advance
             input_names = {input_space.name for input_space in self.input_spaces}
             if self.output_space.name not in input_names:
@@ -177,15 +197,26 @@ class EncodeProcessDecode(BaseModel):
                     f"{sorted(input_names)}."
                 )
                 raise ValueError(msg)
-            # Physical rollout passes the output through the decoder so is incompatible
-            # with processors that compute their loss in latent space.
-            if self.processor.computes_loss_in_latent_space:
-                msg = (
-                    f"rollout_space='physical' is incompatible with processor "
-                    f"{type(self.processor).__name__}, which computes its loss in "
-                    f"latent space."
-                )
-                raise ValueError(msg)
+
+        # Without a skip connection, no step carries over to the next step in a
+        # latent rollout. Each step is then a fixed blend with climatology.
+        tau = self.rollout_strategy.relaxation_tau
+        if (
+            tau is not None
+            and not self.rollout_strategy.is_physical
+            and self.finaliser.skip_connection is None
+        ):
+            msg = (
+                "relaxation in a latent rollout requires a finaliser skip connection, "
+                "so that each relaxed step carries over to the next step. Set "
+                "finaliser.skip_connection, use rollout_space='physical', or remove "
+                "relaxation."
+            )
+            raise ValueError(msg)
+        self.finaliser.relaxation = None if tau is None else ExponentialRelaxation(tau)
+
+        # Choose how to calculate the training loss
+        self.objective: TrainingObjective = build_training_objective(self, loss_weights)
 
     @override
     def load_state_dict(
@@ -209,9 +240,7 @@ class EncodeProcessDecode(BaseModel):
     @property
     @override
     def needs_future_inputs(self) -> bool:
-        # Latent-space losses compare forecasts against encoded inputs, so they need
-        # inputs over future steps.
-        return self.processor.computes_loss_in_latent_space
+        return self.objective.needs_future_inputs
 
     def _anchor_nchw(self, window: TensorNTCHW) -> TensorNCHW | None:
         """Extract the target variables from the most recent frame.
@@ -220,10 +249,10 @@ class EncodeProcessDecode(BaseModel):
             window: TensorNTCHW holding the target dataset, most recent frame last.
 
         Returns:
-            TensorNCHW anchor, or None if the decoder has no skip connection.
+            TensorNCHW anchor, or None if the finaliser has no skip connection.
 
         """
-        if not self.decoder.skip_connection:
+        if not self.finaliser.skip_connection:
             return None
         return window[:, -1, self.target_variable_indices, :, :]
 
@@ -234,54 +263,58 @@ class EncodeProcessDecode(BaseModel):
             window: TensorNTCHW holding the target dataset, most recent frame last.
 
         Returns:
-            TensorNTCHW anchor, or None if the decoder has no skip connection.
+            TensorNTCHW anchor, or None if the finaliser has no skip connection.
 
         """
         anchor = self._anchor_nchw(window)
         return None if anchor is None else anchor.unsqueeze(1)
 
-    def _configure_losses(self, weights: Mapping[str, float]) -> None:
-        """Validate the auxiliary loss weights and freeze the decoder if it is unused.
+    def _decode_forecast(
+        self,
+        latent: TensorNTCHW,
+        anchor: TensorNTCHW | None,
+        equilibrium: TensorNTCHW | None,
+    ) -> TensorNTCHW:
+        """Decode a latent forecast with the skip anchor and relaxation of the strategy.
 
         Args:
-            weights: weights for auxiliary loss terms, see `__init__`.
-
-        Raises:
-            ValueError: If a key is unknown or a weight is negative.
+            latent: TensorNTCHW latent forecast.
+            anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
+            equilibrium: Climatology to relax towards, with shape (batch, T, C_out, H,
+                W), or None.
 
         """
-        defaults = {"reconstruction": 0.0, "prediction": 0.0}
-        for key, weight in weights.items():
-            if key not in defaults:
-                msg = (
-                    f"Unknown loss_weights key '{key}'. Supported keys: "
-                    f"{sorted(defaults)}."
-                )
-                raise ValueError(msg)
-            if weight < 0:
-                msg = f"loss_weights.{key} must not be negative, but it is {weight}."
-                raise ValueError(msg)
-        self.loss_weights = {
-            key: float(weights.get(key, default)) for key, default in defaults.items()
-        }
+        return self.finaliser.rollout(
+            self.decoder.rollout(latent),
+            anchor=anchor,
+            anchor_type=self.rollout_strategy.anchor,
+            equilibrium=equilibrium,
+        )
 
-        if self.processor.computes_loss_in_latent_space:
-            # Only the auxiliary losses use the decoder. If they are all off, freeze it.
-            if not any(self.loss_weights.values()):
-                self.decoder.freeze()
+    def _equilibrium(self, batch: Mapping[str, TensorNTCHW]) -> TensorNTCHW | None:
+        """Return the climatology to relax towards, or None if relaxation is off.
 
-            # Without the reconstruction loss, nothing keeps the latent space and the
-            # decoder compatible while they train.
-            if self.loss_weights["reconstruction"] == 0 and any(
-                parameter.requires_grad
-                for module in (*self.encoders, self.decoder)
-                for parameter in module.parameters()
-            ):
-                log.warning(
-                    "loss_weights.reconstruction is 0, but the encoders or the "
-                    "decoder are trainable. Without the reconstruction loss, the latent "
-                    "space can drift away from what the decoder expects."
-                )
+        Climatology comes from the training periods only, so it does not leak future
+        information.
+
+        Args:
+            batch: Dictionary that holds a `climatology` TensorNTCHW entry with shape
+                (batch, n_forecast_steps, n_output_channels, H_output, W_output).
+
+        Raises:
+            ValueError: If relaxation is on but the batch has no climatology.
+
+        """
+        if self.finaliser.relaxation is None:
+            return None
+        if (climatology := batch.get("climatology")) is None:
+            msg = (
+                "relaxation is on, but the batch has no 'climatology' entry. "
+                "Climatology is only available if the data module has a training "
+                "period that covers the target dataset."
+            )
+            raise ValueError(msg)
+        return climatology
 
     def _encode_inputs(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Encode all inputs into latent space, concatenating on the channel dimension.
@@ -299,42 +332,6 @@ class EncodeProcessDecode(BaseModel):
         ]
         return torch.cat(latent_inputs, dim=2)
 
-    def _encode_future_inputs(
-        self, batch: dict[str, TensorNTCHW], *, with_grad: bool = False
-    ) -> TensorNTCHW:
-        """Encode every input over the forecast steps into the combined latent space.
-
-        This is the ground truth for processors that compute their loss in latent space.
-
-        Args:
-            batch: Dictionary with a `future_<input>` TensorNTCHW entry per input
-                dataset with shape (batch, n_forecast_steps, n_input_channels_k, H_input_k, W_input_k)
-            with_grad: Whether to record gradients. Set this only when the result
-                also goes into the reconstruction loss. The caller must then detach the
-                copy that it gives to the processor as the latent target.
-
-        Returns:
-            TensorNTCHW with shape (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
-
-        """
-        try:
-            future_inputs = {
-                input_space.name: batch[f"future_{input_space.name}"]
-                for input_space in self.input_spaces
-            }
-        except KeyError as exc:
-            msg = (
-                f"Processor {type(self.processor).__name__} computes its loss in "
-                f"latent space, so the batch needs future inputs, but {exc} is "
-                f"missing."
-            )
-            raise ValueError(msg) from exc
-
-        # Do not record gradients unless the reconstruction loss needs them. This saves
-        # the memory for the encoder activations over the forecast steps.
-        with torch.set_grad_enabled(with_grad and torch.is_grad_enabled()):
-            return self._encode_inputs(future_inputs)
-
     def _forward_rollout_latent(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in latent space.
 
@@ -343,7 +340,9 @@ class EncodeProcessDecode(BaseModel):
         - concatenate inputs in `NTCHW` latent space (batch, n_history_steps, n_latent_channels_total, H_latent, W_latent)
         - process in latent space `NTCHW` (batch, n_forecast_steps, n_latent_channels_total, H_latent, W_latent)
         - decode back to `NTCHW` output space (batch, n_forecast_steps, n_output_channels, H_output, W_output)
-        - add a skip connection from the most recent target value to every forecast step
+        - add a skip connection to each forecast step. Its anchor is the most recent
+          target value, or the previous forecast step if `skip_anchor` is PREVIOUS
+        - relax each forecast step towards climatology, if required
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -361,11 +360,11 @@ class EncodeProcessDecode(BaseModel):
             latent_input_combined
         ).prediction
 
-        # Use persistence as the skip-connection anchor, if required
+        # Use persistence as the skip-connection anchor for the first step, if required
         anchor = self._anchor_ntchw(inputs[self.output_space.name])
 
         # Decode to output space: tensor with (batch_size, n_forecast_steps, n_output_channels, output_height, output_width)
-        return self.decoder.rollout(latent_output, anchor)
+        return self._decode_forecast(latent_output, anchor, self._equilibrium(inputs))
 
     def _forward_rollout_physical(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Rollout to the desired number of forecast steps in physical space.
@@ -375,15 +374,21 @@ class EncodeProcessDecode(BaseModel):
         re-encode on the next iteration. Contrast with the default path, which appends
         the processor's raw latent to its own input window and never re-encodes.
 
-        When the decoder has an additive skip connection, it emits a tendency and the
-        state advances as `x_{k+1} = clamp(x_k + delta_k, 0, 1)`, so a zero-output
-        network reproduces persistence exactly.
+        When the finaliser has an additive skip connection, the decoder produces a
+        residual and the state advances as `x_{k+1} = clamp(x_k + residual_k, 0, 1)`, so
+        a zero-output network reproduces persistence exactly.
+
+        The skip connection anchor is the most recent frame in the target window, which
+        is the previous forecast step (a PREVIOUS anchor).
+
+        If relaxation is on, each step is relaxed towards climatology before it goes
+        into the window.
 
         Non-target input groups hold their most recent OBSERVED frame for every forecast
-        step. No future information enters: only the input groups, which hold the
-        n_history_steps frames ending at the forecast origin, are ever read. Information
-        from the n_forecast_steps future frames are held in the "target" and
-        "future_<input>" keys, which are not used here.
+        step. No future information enters. Only the input groups (the n_history_steps
+        frames that end at the forecast origin) and "climatology" (from the training
+        periods only) are read. The "target" and "future_<input>" keys hold the future
+        frames, and are never read.
 
         Args:
             inputs: Dictionary with one TensorNTCHW entry per input dataset with shape
@@ -406,8 +411,12 @@ class EncodeProcessDecode(BaseModel):
         }
         target_window = inputs[target_name].clone()  # (B, n_history, C_t, H_t, W_t)
 
+        # Relax each step towards climatology, if required
+        # -> (B, n_forecast, C_out, H_out, W_out) or None
+        equilibrium = self._equilibrium(inputs)
+
         outputs: list[TensorNCHW] = []
-        for _ in range(self.n_forecast_steps):
+        for step in range(self.n_forecast_steps):
             # Set target window to the most recent observation/prediction
             windows[target_name] = target_window
 
@@ -430,10 +439,12 @@ class EncodeProcessDecode(BaseModel):
             # -> (B, C_out, H_out, W_out)
             raw_output: TensorNCHW = self.decoder(step_latent)
 
-            # Use the evolving rollout state as the skip-connection anchor, if required.
-            # -> (B, C_out, H_out, W_out)
-            anchor = self._anchor_nchw(target_window)
-            output = self.decoder.finalise(raw_output, anchor)
+            # Use the evolving rollout state as the skip-connection anchor
+            output = self.finaliser(
+                raw_output,
+                anchor=self._anchor_nchw(target_window),
+                equilibrium=None if equilibrium is None else equilibrium[:, step],
+            )
             outputs.append(output)
 
             # Drop the oldest target frame then append the newest with its target
@@ -446,75 +457,13 @@ class EncodeProcessDecode(BaseModel):
 
         return torch.stack(outputs, dim=1)
 
-    def _prediction_loss(
-        self,
-        prediction: TensorNTCHW,
-        mask: torch.Tensor | None,
-        target: TensorNTCHW,
-        anchor: TensorNTCHW | None,
-    ) -> torch.Tensor:
-        """Decode the processor's latent prediction and compare it to the target.
-
-        Only the samples in `mask` count. The prediction can hold fewer forecast steps
-        than the target (for example, only the first step for an autoregressive
-        processor), so we compare it to the same number of target steps.
-
-        Args:
-            prediction: Latent prediction from the processor training step, with
-                gradients back to the processor. Shape (batch, T, C_latent, H, W), with
-                T <= n_forecast_steps.
-            mask: Boolean mask of shape (batch,), or None to use all samples.
-            target: TensorNTCHW with shape (batch, n_forecast_steps, C_out, H, W).
-            anchor: Skip-connection anchor with shape (batch, 1, C_out, H, W), or None.
-
-        Returns:
-            Scalar loss. It is 0 if no sample is in the mask.
-
-        Raises:
-            ValueError: If the prediction has no gradients.
-
-        """
-        if not prediction.requires_grad:
-            msg = (
-                f"loss_weights.prediction is greater than 0, but processor "
-                f"{type(self.processor).__name__} returns a prediction without "
-                f"gradients during training. Return a differentiable prediction or "
-                f"set the weight to 0."
-            )
-            raise ValueError(msg)
-
-        # Without a mask, all samples count
-        if mask is None:
-            return self.loss(
-                self.decoder.rollout(prediction, anchor),
-                target[:, : prediction.shape[1]],
-            )
-
-        # The mean over an empty mask is NaN, so return 0. Keep the decoder parameters
-        # in the graph without decoding anything: with DDP, a parameter that has no
-        # gradient on one process stops training.
-        if not mask.any():
-            return (
-                sum(
-                    (p.sum() for p in self.decoder.parameters() if p.requires_grad),
-                    start=prediction.new_zeros(()),
-                )
-                * 0.0
-            )
-
-        # Decode only the samples in the mask
-        decoded = self.decoder.rollout(
-            prediction[mask], None if anchor is None else anchor[mask]
-        )
-        return self.loss(decoded, target[mask, : prediction.shape[1]])
-
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Forward step of the model (used for inference).
 
         Delegates to either the latent-space or physical-space path depending on the
-        `rollout_space` setting.
+        `rollout_strategy` setting.
         """
-        if self.rollout_space == RolloutSpace.PHYSICAL:
+        if self.rollout_strategy.is_physical:
             return self._forward_rollout_physical(inputs)
         return self._forward_rollout_latent(inputs)
 
@@ -526,26 +475,8 @@ class EncodeProcessDecode(BaseModel):
     ) -> ModelStepOutput:
         """Run the training step.
 
-        The standard path is to call the forward step with `self(batch)` and compute the
-        loss by comparing the decoded prediction to the target.
-
-        Processors that set the flag `computes_loss_in_latent_space=True` are a special
-        case. We encode the inputs over both the history and the forecast steps into
-        latent space, and call `rollout()` on the processor, which returns both a latent
-        prediction and a loss. We decode this prediction without gradients to calculate
-        metrics.
-
-        The latent loss does not go through the decoder. Thus, we can add two auxiliary
-        losses. We skip each one if its weight is zero.
-
-        - Reconstruction loss, weighted by `loss_weights.reconstruction`: we decode the
-          encoded forecast-step inputs and compare them to the target. This loss trains
-          the encoders and the decoder, and keeps the latent space compatible with the
-          decoder.
-        - Prediction loss, weighted by `loss_weights.prediction`: we decode the latent
-          prediction from the processor, with gradients, and compare it to the target.
-          Only the samples in `sample_mask` count. This loss trains the processor, the
-          decoder and the encoders against the target in physical space.
+        The training objective calculates the prediction and the loss. See
+        `cryocast.models.objectives`.
 
         Args:
             batch: Dictionary with one NTCHW entry per input dataset (n_history_steps)
@@ -558,83 +489,7 @@ class EncodeProcessDecode(BaseModel):
         """
         batch = self.process_batch(batch)
         target = batch["target"].clone().detach()
-
-        # Custom loss path: use the loss returned by the processor
-        if self.processor.computes_loss_in_latent_space:
-            # Encode history and future inputs into the combined latent space.
-            history_latent = self._encode_inputs(batch)
-            future_latent = self._encode_future_inputs(
-                batch, with_grad=self.loss_weights["reconstruction"] > 0
-            )
-
-            # Process in latent space, detaching future inputs so that the latent loss
-            # cannot decrease by changing its own target.
-            processor_output = self.processor.rollout(
-                history_latent, future_latent.detach()
-            )
-            # Check that the processor returned a loss
-            if (latent_loss := processor_output.loss) is None:
-                msg = (
-                    f"Processor {type(self.processor).__name__} promises to compute "
-                    "loss in latent space, but did not return one."
-                )
-                raise ValueError(msg)
-            # Check the number of forecast steps is in the expected range
-            n_steps = processor_output.prediction.shape[1]
-            if not 1 <= n_steps <= self.n_forecast_steps:
-                msg = (
-                    f"Processor {type(self.processor).__name__} returned a prediction "
-                    f"with {n_steps} forecast steps, but it must have between 1 and "
-                    f"{self.n_forecast_steps}."
-                )
-                raise ValueError(msg)
-
-            # Use persistence as the skip-connection anchor, if required.
-            anchor = self._anchor_ntchw(batch[self.output_space.name])
-
-            # Calculate each auxiliary loss that has a non-zero weight.
-            losses: dict[str, torch.Tensor] = {}
-            if self.loss_weights["reconstruction"] > 0:
-                # Decode the encoded forecast-step inputs and compare them to the target
-                losses["reconstruction"] = self.loss(
-                    self.decoder.rollout(future_latent, anchor), target
-                )
-            if self.loss_weights["prediction"] > 0:
-                # Decode the differentiable prediction and compare it to the target
-                losses["prediction"] = self._prediction_loss(
-                    processor_output.prediction,
-                    processor_output.sample_mask,
-                    target,
-                    anchor,
-                )
-
-            # Add the weighted auxiliary losses to the latent loss
-            loss = sum(
-                (self.loss_weights[name] * value for name, value in losses.items()),
-                start=latent_loss,
-            )
-
-            # Log each term on its own if there are auxiliary losses.
-            if losses:
-                for name, value in {"latent": latent_loss, **losses}.items():
-                    self.log_per_epoch(f"train_{name}_loss", value)
-
-            # Decode the prediction in evaluation mode and without gradients, so that
-            # we do not affect BatchNorm running statistics.
-            training_mode = self.decoder.training
-            self.decoder.eval()
-            with torch.no_grad():
-                prediction = self.decoder.rollout(processor_output.prediction, anchor)
-            self.decoder.train(training_mode)
-            # If the latent prediction has fewer forecast steps than the target, repeat
-            # the last one until we have the correct number
-            steps = torch.arange(self.n_forecast_steps, device=prediction.device)
-            prediction = prediction[:, steps.clamp(max=n_steps - 1)]
-
-        # Standard path: calculate loss by comparing decoded output to target.
-        else:
-            prediction = self(batch)
-            loss = self.loss(prediction, target)
+        prediction, loss = self.objective.training_step(self, batch, target)
 
         # Log metrics; computation will be done at epoch end
         self.log_per_epoch("train_loss", loss, prog_bar=True)

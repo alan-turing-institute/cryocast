@@ -40,6 +40,40 @@ class TestDecoderStage:
             *cfg_output_space["shape"],
         )
 
+    def test_forward_applies_finaliser_with_persistence_anchor(
+        self,
+        encoder_stage: EncoderStage,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+    ) -> None:
+        """With an additive skip connection, a zero decoder output gives persistence."""
+        decoder_stage = DecoderStage.from_template(
+            decoder=DictConfig(
+                {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
+            ),
+            finaliser={"skip_connection": {"method": "additive"}},
+            encoders=[encoder_stage],
+            output_space=DataSpace.from_dict(cfg_output_space),
+            target_dataset_name="target",
+            target_variable_indices=[0],
+        )
+        for parameter in decoder_stage.decoder.parameters():
+            torch.nn.init.zeros_(parameter)
+        persistence = torch.rand(
+            2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]
+        )
+
+        result = decoder_stage(
+            {
+                "test-input": torch.rand(
+                    2, 1, cfg_input_space["channels"], *cfg_input_space["shape"]
+                ),
+                "persistence": persistence,
+            }
+        )
+
+        torch.testing.assert_close(result, persistence)
+
     @pytest.mark.parametrize(
         "skip_connection",
         [None, {"method": "additive"}],
@@ -59,11 +93,9 @@ class TestDecoderStage:
         # target variables is visible in the processed batch.
         decoder_stage = DecoderStage.from_template(
             decoder=DictConfig(
-                {
-                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
-                    "skip_connection": skip_connection,
-                }
+                {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
             ),
+            finaliser={"skip_connection": skip_connection},
             encoders=[encoder_stage],
             output_space=DataSpace.from_dict(cfg_output_space),
             target_dataset_name="target",

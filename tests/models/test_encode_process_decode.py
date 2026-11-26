@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import lightning
 import pytest
 import torch
 from lightning import Trainer
@@ -14,6 +15,11 @@ from cryocast.losses import LeadTimeWeightedLoss
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
+from cryocast.models.objectives import (
+    LatentObjective,
+    PhysicalObjective,
+    TrainingObjective,
+)
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
@@ -21,6 +27,7 @@ from cryocast.types import (
     ModelStepOutput,
     ProcessorOutput,
     RolloutSpace,
+    SkipAnchorType,
     TensorNCHW,
     TensorNTCHW,
 )
@@ -101,6 +108,23 @@ class _PredictionProcessor(BaseProcessor):
         )
 
 
+class _RepeatLastProcessor(BaseProcessor):
+    """Latent-loss processor that repeats the last history latent at every step.
+
+    Unlike _OracleProcessor it does not read the future latent, so the forward pass
+    and the training step give the same prediction.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(computes_loss_in_latent_space=True, **kwargs)
+
+    def rollout(self, x: TensorNTCHW, y: TensorNTCHW | None = None) -> ProcessorOutput:  # noqa: ARG002
+        return ProcessorOutput(
+            prediction=x[:, -1:].repeat(1, self.n_forecast_steps, 1, 1, 1),
+            loss=torch.zeros(()),
+        )
+
+
 class _ScaledDecoder(BaseDecoder):
     """Trainable decoder that multiplies one channel of the combined latent by scale."""
 
@@ -131,6 +155,10 @@ def _oracle_model(
     loss_weights: dict[str, float] | None = None,
     n_forecast_steps: int = 2,
     processor: DictConfig | None = None,
+    decoder_scale: float = 2.0,
+    skip_connection: dict[str, Any] | None = None,
+    skip_anchor: str | None = None,
+    relaxation_tau: float | None = None,
 ) -> EncodeProcessDecode:
     """Build a latent-loss model with a trainable encoder and a trainable decoder.
 
@@ -147,11 +175,14 @@ def _oracle_model(
         or DictConfig({"_target_": f"{__name__}.{_OracleProcessor.__name__}"}),
         decoder=_ScaledDecoder(
             channel=1,
-            scale=2.0,
+            scale=decoder_scale,
             data_space_in=DataSpace(channels=2, name="combined", shape=shape),
             data_space_out=output_space,
         ),
+        finaliser={"skip_connection": skip_connection},
         loss_weights=loss_weights,
+        skip_anchor=skip_anchor,
+        relaxation_tau=relaxation_tau,
         hemisphere="north",
         input_spaces=[sic.to_dict()],
         loss=cfg_loss,
@@ -231,11 +262,15 @@ class TestEncodeProcessDecode:
         assert model.output_space == DataSpace.from_dict(cfg_output_space)
 
     @pytest.mark.parametrize(
-        ("test_computes_loss_in_latent_space", "expected_needs_future_inputs"),
-        [(False, False), (True, True)],
+        (
+            "test_computes_loss_in_latent_space",
+            "expected_objective",
+            "expected_needs_future_inputs",
+        ),
+        [(False, PhysicalObjective, False), (True, LatentObjective, True)],
         ids=["default", "latent-loss"],
     )
-    def test_init_needs_future_inputs(
+    def test_init_training_objective(
         self,
         cfg_decoder: DictConfig,
         cfg_encoders: DictConfig,
@@ -244,34 +279,43 @@ class TestEncodeProcessDecode:
         cfg_output_space: DictConfig,
         cfg_loss: DictConfig,
         cfg_metrics: list[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
         *,
         test_computes_loss_in_latent_space: bool,
+        expected_objective: type[TrainingObjective],
         expected_needs_future_inputs: bool,
     ) -> None:
+        """The processor flag selects the objective. Only a LatentObjective uses weights."""
         cfg_processor = DictConfig(
             {
                 **cfg_processor,
                 "computes_loss_in_latent_space": test_computes_loss_in_latent_space,
             }
         )
-        model = EncodeProcessDecode(
-            name="encode-null-decode",
-            encoders=cfg_encoders,
-            processor=cfg_processor,
-            decoder=cfg_decoder,
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-            n_forecast_steps=1,
-            n_history_steps=1,
-            output_space=cfg_output_space,
-            optimizer=DictConfig({}),
-            scheduler=DictConfig({}),
-            lr_scheduler=DictConfig({}),
-            target_variable_indices=[0],
-        )
+        with caplog.at_level(logging.WARNING):
+            model = EncodeProcessDecode(
+                name="encode-null-decode",
+                encoders=cfg_encoders,
+                processor=cfg_processor,
+                decoder=cfg_decoder,
+                hemisphere="north",
+                input_spaces=[cfg_input_space],
+                loss=cfg_loss,
+                metrics=cfg_metrics,
+                n_forecast_steps=1,
+                n_history_steps=1,
+                output_space=cfg_output_space,
+                optimizer=DictConfig({}),
+                scheduler=DictConfig({}),
+                lr_scheduler=DictConfig({}),
+                target_variable_indices=[0],
+                loss_weights={"reconstruction": 1.0},
+            )
+        assert isinstance(model.objective, expected_objective)
         assert model.needs_future_inputs is expected_needs_future_inputs
+        assert ("loss_weights has no effect" in caplog.text) is (
+            not test_computes_loss_in_latent_space
+        )
 
     def test_init_processor_builds_its_own_loss(
         self,
@@ -512,8 +556,9 @@ class TestEncodeProcessDecode:
         future = torch.rand(2, 2, cfg_input_space["channels"], 16, 16)
 
         expected = model._encode_inputs({name: future})
-        actual = model._encode_future_inputs(
-            {name: history, f"future_{name}": future, "target": future[:, :, 2:3]}
+        actual = LatentObjective._encode_future_inputs(
+            model,
+            {name: history, f"future_{name}": future, "target": future[:, :, 2:3]},
         )
 
         torch.testing.assert_close(actual, expected)
@@ -635,7 +680,8 @@ class TestEncodeProcessDecode:
             cfg_metrics=cfg_metrics,
             loss_weights=test_weights,
         )
-        assert model.loss_weights == expected_weights
+        assert isinstance(model.objective, LatentObjective)
+        assert model.objective.loss_weights == expected_weights
 
     def test_zero_weights_freeze_decoder_and_use_latent_loss_only(
         self, cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]]
@@ -774,7 +820,7 @@ class TestEncodeProcessDecode:
             weights_only=True,
         )
         assert loaded.hemisphere is Hemisphere.NORTH
-        assert loaded.rollout_space is RolloutSpace.LATENT
+        assert loaded.rollout_strategy.space is RolloutSpace.LATENT
 
     def test_load_state_dict_ignores_removed_target_encoder(
         self,
@@ -969,9 +1015,9 @@ class TestPredictionLoss:
         decoded_shapes: list[tuple[bool, torch.Size]] = []
         rollout = model.decoder.rollout
 
-        def spy(x: TensorNTCHW, persistence: TensorNTCHW | None) -> TensorNTCHW:
+        def spy(x: TensorNTCHW) -> TensorNTCHW:
             decoded_shapes.append((torch.is_grad_enabled(), x.shape))
-            return rollout(x, persistence)
+            return rollout(x)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(model.decoder, "rollout", spy)
@@ -1120,6 +1166,7 @@ class TestPredictionLoss:
 
         assert model.decoder.frozen is expected_frozen
         assert model.decoder.training is not expected_frozen
+        assert model.finaliser.frozen is expected_frozen
         assert ("latent space can drift" in caplog.text) is expected_warning
 
     def test_rejects_prediction_without_gradients(
@@ -1133,3 +1180,247 @@ class TestPredictionLoss:
 
         with pytest.raises(ValueError, match="returns a prediction without gradients"):
             model.training_step(_oracle_batch(), 0)
+
+
+_SKIP_SCALE = 0.1
+_CLIMATOLOGY = 0.2
+# (skip_anchor, relaxation_tau) for the latent-loss training paths that decode a forecast
+_ANCHOR_CASES = [
+    pytest.param("initial", None, id="initial"),
+    pytest.param("previous", None, id="previous"),
+    pytest.param("previous", 2.0, id="previous-relaxed"),
+]
+
+
+def _skip_model(
+    cfg_loss: DictConfig, cfg_metrics: list[dict[str, Any]], **kwargs: Any
+) -> EncodeProcessDecode:
+    """Build an oracle model whose decoder adds 0.1 * the target channel to its anchor.
+
+    The processor defaults to _RepeatLastProcessor.
+    """
+    kwargs.setdefault(
+        "processor",
+        DictConfig({"_target_": f"{__name__}.{_RepeatLastProcessor.__name__}"}),
+    )
+    return _oracle_model(
+        cfg_loss=cfg_loss,
+        cfg_metrics=cfg_metrics,
+        decoder_scale=_SKIP_SCALE,
+        skip_connection={"method": "additive"},
+        **kwargs,
+    )
+
+
+def _skip_batch(n_forecast_steps: int = 2) -> dict[str, TensorNTCHW]:
+    """Build an oracle batch with a constant climatology, for relaxation."""
+    batch = _oracle_batch(n_forecast_steps)
+    batch["climatology"] = torch.full_like(batch["target"], _CLIMATOLOGY)
+    return batch
+
+
+def _expected_skip(
+    model: EncodeProcessDecode,
+    observation: TensorNTCHW,
+    deltas: TensorNTCHW,
+    *,
+    skip_anchor: str | None,
+) -> TensorNTCHW:
+    """Apply the additive skip connection and the relaxation by hand for each step."""
+    relaxation = model.finaliser.relaxation
+    rate = 0.0 if relaxation is None else relaxation.rate
+    anchor = observation[:, -1, 1:2]
+    outputs = []
+    for delta in (_SKIP_SCALE * deltas[:, :, 1:2]).unbind(dim=1):
+        output = (anchor + delta).clamp(0.0, 1.0)
+        output = output + rate * (_CLIMATOLOGY - output)
+        outputs.append(output)
+        if skip_anchor == "previous":
+            anchor = output
+    return torch.stack(outputs, dim=1)
+
+
+class TestSkipAnchor:
+    """`skip_anchor` sets the skip-connection anchor wherever the latent rollout decodes.
+
+    The decoder adds 0.1 * the target channel of each latent step to its anchor, and
+    relaxation (if on) then moves each step towards a constant climatology c:
+        initial   ->  output_k = clamp(observation + delta_k)
+        previous  ->  output_k = lerp(clamp(output_{k-1} + delta_k), c, rate)
+    """
+
+    @pytest.mark.parametrize(
+        ("skip_anchor", "relaxation_tau"),
+        [pytest.param(None, None, id="default"), *_ANCHOR_CASES],
+    )
+    def test_training_step_matches_forward(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str | None,
+        relaxation_tau: float | None,
+    ) -> None:
+        """The latent-loss metrics decode uses the same anchor as the forward pass."""
+        model = _skip_model(
+            cfg_loss,
+            cfg_metrics,
+            skip_anchor=skip_anchor,
+            relaxation_tau=relaxation_tau,
+        )
+        model.train()
+        batch = _skip_batch()
+        # The processor repeats the last history latent at every forecast step
+        expected = _expected_skip(
+            model,
+            batch["sic"],
+            batch["sic"][:, -1:].repeat(1, model.n_forecast_steps, 1, 1, 1),
+            skip_anchor=skip_anchor,
+        )
+
+        result, _ = _training_step(model, batch)
+        model.eval()
+        with torch.no_grad():
+            forward = model(batch)
+
+        torch.testing.assert_close(result.prediction, expected)
+        torch.testing.assert_close(forward, expected)
+
+    @pytest.mark.parametrize(("skip_anchor", "relaxation_tau"), _ANCHOR_CASES)
+    def test_prediction_loss_uses_skip_anchor(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str,
+        relaxation_tau: float | None,
+    ) -> None:
+        """The prediction loss decodes the processor output with the same anchor."""
+        model = _skip_model(
+            cfg_loss,
+            cfg_metrics,
+            skip_anchor=skip_anchor,
+            relaxation_tau=relaxation_tau,
+            loss_weights={"reconstruction": 0.0, "prediction": 1.0},
+            processor=DictConfig(
+                {
+                    "_target_": f"{__name__}.{_PredictionProcessor.__name__}",
+                    "use_autoregressive": False,
+                }
+            ),
+        )
+        model.train()
+        batch = _skip_batch()
+        # The processor returns the last n_forecast_steps history latents
+        expected = model.loss(
+            _expected_skip(model, batch["sic"], batch["sic"], skip_anchor=skip_anchor),
+            batch["target"],
+        )
+
+        _, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(logged["train_prediction_loss"], expected)
+
+    @pytest.mark.parametrize(("skip_anchor", "relaxation_tau"), _ANCHOR_CASES)
+    def test_reconstruction_loss_anchors_on_observed_frames(
+        self,
+        cfg_loss: DictConfig,
+        cfg_metrics: list[dict[str, Any]],
+        skip_anchor: str,
+        relaxation_tau: float | None,
+    ) -> None:
+        """Each reconstructed step uses an observed frame as its anchor, not a chain.
+
+        With a PREVIOUS anchor, step k uses the observed frame k - 1 (teacher forcing).
+        The reconstruction decodes observations, not a forecast, so it is not relaxed.
+        """
+        n_forecast_steps = 3
+        model = _skip_model(
+            cfg_loss,
+            cfg_metrics,
+            skip_anchor=skip_anchor,
+            relaxation_tau=relaxation_tau,
+            loss_weights={"reconstruction": 1.0, "prediction": 0.0},
+            processor=DictConfig(
+                {"_target_": f"{__name__}.{_OracleProcessor.__name__}"}
+            ),
+            n_forecast_steps=n_forecast_steps,
+        )
+        model.train()
+        batch = _skip_batch(n_forecast_steps)
+        observation = batch["sic"][:, -1:, 1:2]
+        anchors = (
+            torch.cat([observation, batch["target"][:, :-1]], 1)
+            if skip_anchor == "previous"
+            else observation.expand_as(batch["target"])
+        )
+        reconstruction = anchors + _SKIP_SCALE * batch["future_sic"][:, :, 1:2]
+        expected = model.loss(reconstruction.clamp(0.0, 1.0), batch["target"])
+
+        _, logged = _training_step(model, batch)
+
+        torch.testing.assert_close(logged["train_reconstruction_loss"], expected)
+
+    @pytest.mark.parametrize(
+        ("rollout_space", "expected"),
+        [
+            (RolloutSpace.LATENT, SkipAnchorType.INITIAL),
+            (RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
+        ],
+        ids=["latent", "physical"],
+    )
+    def test_checkpoint_without_skip_anchor_keeps_old_behaviour(
+        self,
+        cfg_decoder: DictConfig,
+        cfg_encoders: DictConfig,
+        cfg_input_space: DictConfig,
+        cfg_output_space: DictConfig,
+        cfg_processor: DictConfig,
+        tmp_path: Path,
+        rollout_space: RolloutSpace,
+        expected: SkipAnchorType,
+    ) -> None:
+        """Checkpoints saved before `skip_anchor` and `relaxation_tau` existed still load."""
+        model = EncodeProcessDecode(
+            name="old-hparams",
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            hemisphere=Hemisphere.NORTH,
+            input_spaces=[cfg_input_space],
+            loss=DictConfig({"_target_": "torch.nn.MSELoss"}),
+            metrics=[],
+            n_forecast_steps=1,
+            n_history_steps=1,
+            # A physical rollout needs the prediction target to be a model input
+            output_space={**cfg_output_space, "name": cfg_input_space["name"]},
+            optimizer=DictConfig({"_target_": "torch.optim.Adam", "lr": 1e-3}),
+            scheduler=DictConfig({}),
+            lr_scheduler=DictConfig({}),
+            rollout_space=rollout_space,
+            target_variable_indices=[0],
+        )
+        # Leave out the keys, as in a checkpoint saved before the options existed
+        new_keys = {"skip_anchor", "relaxation_tau"}
+        assert all(model.hparams[key] is None for key in new_keys)
+        checkpoint_file = tmp_path / "model.ckpt"
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                "hyper_parameters": {
+                    k: v for k, v in model.hparams.items() if k not in new_keys
+                },
+                "pytorch-lightning_version": lightning.__version__,
+            },
+            checkpoint_file,
+        )
+
+        loaded = EncodeProcessDecode.load_from_checkpoint(
+            checkpoint_file,
+            encoders=cfg_encoders,
+            processor=cfg_processor,
+            decoder=cfg_decoder,
+            metrics=[],
+            weights_only=False,
+        )
+        assert loaded.rollout_strategy.space is rollout_space
+        assert loaded.rollout_strategy.anchor is expected
+        assert loaded.rollout_strategy.relaxation_tau is None

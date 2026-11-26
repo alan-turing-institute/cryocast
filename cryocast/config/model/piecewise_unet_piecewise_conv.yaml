@@ -33,8 +33,10 @@ decoder:
   use_hann_window: false
   conv_subblocks_initial: 1
   conv_subblocks_final: 1
+  use_final_normalisation: false
+
+finaliser:
   mask_type: active
   restrict_range: sigmoid
-  use_final_normalisation: false
   skip_connection:
     method: additive

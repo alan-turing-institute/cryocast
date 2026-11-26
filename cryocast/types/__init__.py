@@ -14,6 +14,7 @@ from .complex_datatypes import (
     Metadata,
     ModelStepOutput,
     PlotSpec,
+    RolloutStrategy,
     Timespan,
 )
 from .constants import (
@@ -31,6 +32,7 @@ from .enums import (
     MaskType,
     RangeRestriction,
     RolloutSpace,
+    SkipAnchorType,
     SkipConnectionType,
 )
 from .protocols import (
@@ -82,6 +84,8 @@ __all__ = [
     "ProcessorOutput",
     "RangeRestriction",
     "RolloutSpace",
+    "RolloutStrategy",
+    "SkipAnchorType",
     "SkipConnectionType",
     "SupportsImageLogging",
     "SupportsMetadataFromDataset",

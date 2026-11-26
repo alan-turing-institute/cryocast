@@ -1,8 +1,6 @@
 import re
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -65,8 +63,7 @@ class TestDecoders:
                 test_n_forecast_steps,
                 latent_space.channels,
                 *latent_space.shape,
-            ),
-            None,
+            )
         )
         assert result.shape == (
             test_batch_size,
@@ -103,322 +100,6 @@ class TestCNNDecoder:
                 data_space_out=output_space,
                 n_layers=test_n_layers,
             )
-
-
-class TestDecoderBounded:
-    @pytest.mark.parametrize(
-        ("test_decoder_cls", "test_decoder_kwargs"),
-        [
-            (CNNDecoder, {"n_layers": 1, "restrict_range": "sigmoid"}),
-            (NaiveLinearDecoder, {"restrict_range": "sigmoid"}),
-            (PiecewiseDecoder, {"restrict_range": "tanh"}),
-            (PiecewiseDecoder, {"restrict_range": "clamp"}),
-        ],
-        ids=[
-            "CNNDecoder-sigmoid",
-            "NaiveLinearDecoder-sigmoid",
-            "PiecewiseDecoder-tanh",
-            "PiecewiseDecoder-clamp",
-        ],
-    )
-    def test_bounded_fixes_values_between_0_and_1(
-        self,
-        test_decoder_cls: type[BaseDecoder],
-        test_decoder_kwargs: dict[str, Any],
-    ) -> None:
-        test_n_forecast_steps = 1
-        # latent channels must be divisible by 2 for CNNDecoder with n_layers=1
-        latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
-        output_space = DataSpace(name="output", channels=1, shape=(16, 16))
-
-        decoder = test_decoder_cls(
-            data_space_in=latent_space,
-            data_space_out=output_space,
-            **test_decoder_kwargs,
-        )
-
-        extreme_input = torch.full(
-            (1, test_n_forecast_steps, latent_space.channels, *latent_space.shape),
-            1e10,
-            dtype=torch.float32,
-        )
-        with torch.no_grad():
-            out = decoder.rollout(extreme_input, None)
-
-        assert torch.all(out >= 0.0).item()
-        assert torch.all(out <= 1.0).item()
-
-
-class TestDecoderMask:
-    """The active grid cell mask, applied via BaseDecoder.finalise()."""
-
-    @staticmethod
-    def _spaces() -> tuple[DataSpace, DataSpace]:
-        latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
-        output_space = DataSpace(name="output", channels=1, shape=(16, 16))
-        return latent_space, output_space
-
-    @pytest.mark.parametrize(
-        ("mask_type", "mask_filename"),
-        [("active", "active_mask.npy"), ("land", "land_mask.npy")],
-        ids=["active", "land"],
-    )
-    @pytest.mark.parametrize(
-        "restrict_range", ["none", "sigmoid"], ids=["unbounded", "sigmoid"]
-    )
-    def test_mask_loads_and_zeros_masked_cells(
-        self, tmp_path: Path, mask_type: str, mask_filename: str, restrict_range: str
-    ) -> None:
-        """Masking is applied AFTER bounding, so masked cells are 0, not sigmoid(0)=0.5."""
-        latent_space, output_space = self._spaces()
-        # Mask the top half (0), keep the bottom half (1 = active/sea).
-        mask = np.ones(output_space.shape, dtype=np.uint8)
-        mask[:8, :] = 0
-        np.save(tmp_path / mask_filename, mask)
-
-        decoder = NaiveLinearDecoder(
-            mask_dir=str(tmp_path),
-            data_space_in=latent_space,
-            data_space_out=output_space,
-            mask_type=mask_type,
-            restrict_range=restrict_range,
-        )
-
-        # An identical decoder without a mask gives the unmasked reference output
-        unmasked_decoder = NaiveLinearDecoder(
-            data_space_in=latent_space,
-            data_space_out=output_space,
-            restrict_range=restrict_range,
-        )
-        unmasked_decoder.load_state_dict(decoder.state_dict())
-
-        assert decoder.mask.mask.shape == output_space.shape
-        latent = torch.randn(2, 1, latent_space.channels, *latent_space.shape)
-        out = decoder.rollout(latent, None)
-        reference = unmasked_decoder.rollout(latent, None)
-        # Every masked cell must be exactly zero, with or without bounding...
-        assert torch.all(out[..., :8, :] == 0).item()
-        # ...and unmasked cells are untouched.
-        active = out[..., 8:, :]
-        assert torch.equal(active, reference[..., 8:, :])
-        if restrict_range == "sigmoid":
-            assert torch.all((active > 0) & (active < 1)).item()
-
-    def test_use_mask_without_file_raises(self, tmp_path: Path) -> None:
-        latent_space, output_space = self._spaces()
-        with pytest.raises(FileNotFoundError, match="mask is requested"):
-            NaiveLinearDecoder(
-                mask_dir=str(tmp_path / "does_not_exist"),
-                data_space_in=latent_space,
-                data_space_out=output_space,
-                mask_type="active",
-            )
-
-    def test_mask_type_none_creates_no_buffer(self) -> None:
-        latent_space, output_space = self._spaces()
-        decoder = NaiveLinearDecoder(
-            data_space_in=latent_space,
-            data_space_out=output_space,
-            mask_type=None,
-        )
-        assert not hasattr(decoder.mask, "mask")
-
-    def test_unknown_mask_type_raises(self) -> None:
-        """A typo in mask_type fails loudly rather than silently disabling masking."""
-        latent_space, output_space = self._spaces()
-        with pytest.raises(ValueError, match="not a valid MaskType"):
-            NaiveLinearDecoder(
-                data_space_in=latent_space,
-                data_space_out=output_space,
-                mask_type="activ",
-            )
-
-    def test_finalise_is_identity_when_mask_skip_and_bound_off(self) -> None:
-        """Finalise makes no changes when masking/skip connection/bounding are off."""
-        latent_space, output_space = self._spaces()
-        decoder = NaiveLinearDecoder(
-            data_space_in=latent_space,
-            data_space_out=output_space,
-        )
-        x = torch.randn(2, output_space.channels, *output_space.shape)
-        assert torch.equal(decoder.finalise(x, None), x)
-
-
-class _SkipConnectionBase:
-    """Shared NaiveLinearDecoder fixtures for skip-connection / range-restriction tests.
-
-    Builds a decoder whose main conv has zeroed weights and a constant bias, so its
-    pre-skip-connection contribution is a known, spatially-uniform value.
-    """
-
-    _LATENT_SPACE = DataSpace(name="latent", channels=4, shape=(8, 8))
-    _OUTPUT_SPACE = DataSpace(name="output", channels=1, shape=(8, 8))
-
-    @classmethod
-    def _decoder(
-        cls,
-        *,
-        method: str = "none",
-        restrict_range: str = "sigmoid",
-        restrict_range_min: float | None = None,
-        restrict_range_max: float | None = None,
-        bias: float = -20.0,
-    ) -> NaiveLinearDecoder:
-        decoder = NaiveLinearDecoder(
-            data_space_in=cls._LATENT_SPACE,
-            data_space_out=cls._OUTPUT_SPACE,
-            restrict_range=restrict_range,
-            restrict_range_min=restrict_range_min,
-            restrict_range_max=restrict_range_max,
-            skip_connection={"method": method},
-        )
-        conv = cast("nn.Conv2d", decoder.model[0])
-        assert conv.bias is not None
-        with torch.no_grad():
-            conv.weight.zero_()
-            conv.bias.fill_(bias)
-        return decoder
-
-    @classmethod
-    def _latent(cls, n_forecast_steps: int = 1) -> torch.Tensor:
-        return torch.randn(
-            1, n_forecast_steps, cls._LATENT_SPACE.channels, *cls._LATENT_SPACE.shape
-        )
-
-    @classmethod
-    def _persistence(cls) -> torch.Tensor:
-        """A spatially-varying persistence field in (0, 1), never exactly 0 or 1."""
-        space = cls._OUTPUT_SPACE
-        numel = space.channels * space.shape[0] * space.shape[1]
-        return torch.linspace(0.05, 0.95, numel).reshape(
-            1, 1, space.channels, *space.shape
-        )
-
-
-class TestDecoderSkipConnection(_SkipConnectionBase):
-    """Ensure the skip-connection order in BaseDecoder.rollout() is correct."""
-
-    @staticmethod
-    def _zero(conv_module: nn.Module) -> None:
-        conv = cast("nn.Conv2d", conv_module)
-        assert conv.bias is not None
-        with torch.no_grad():
-            conv.weight.zero_()
-            conv.bias.zero_()
-
-    def test_additive_skip_recovers_persistence(self) -> None:
-        decoder = self._decoder(method="additive", bias=0.0)
-        n_forecast_steps = 2
-        persistence = self._persistence()
-
-        out = decoder.rollout(self._latent(n_forecast_steps), persistence)
-
-        assert torch.allclose(
-            out, persistence.expand(-1, n_forecast_steps, -1, -1, -1), atol=1e-4
-        )
-
-    def test_additive_skip_can_decrease_below_persistence(self) -> None:
-        # A negative residual must be reachable, or the decoder could only ever push
-        # the prediction above persistence, never below it.
-        decoder = self._decoder(method="additive", bias=-0.5)
-        persistence = self._persistence()
-
-        out = decoder.rollout(self._latent(), persistence)
-
-        assert torch.all(out < persistence)
-
-    def test_gated_skip_recovers_half_persistence(self) -> None:
-        decoder = self._decoder(method="gated")
-        # Zero the gate's conv so its pre-activation is 0 everywhere
-        # gate = sigmoid(0) = 0.5, so output will be:
-        # 0.5 * bounded_main + 0.5 * persistence ~= 0.5 * persistence.
-        assert decoder.skip_connection is not None
-        self._zero(decoder.skip_connection.gate.block[0])
-        persistence = self._persistence()
-
-        out = decoder.rollout(self._latent(), persistence)
-
-        assert torch.allclose(out, 0.5 * persistence, atol=1e-4)
-
-    def test_convolutional_skip_is_clamped_to_valid_range(self) -> None:
-        decoder = self._decoder(method="convolutional")
-        # Force the fusion's final conv to output a large constant, well outside [0, 1].
-        assert decoder.skip_connection is not None
-        final_conv = cast("nn.Conv2d", decoder.skip_connection.fusion[-1])
-        assert final_conv.bias is not None
-        with torch.no_grad():
-            final_conv.weight.zero_()
-            final_conv.bias.fill_(10.0)
-
-        out = decoder.rollout(self._latent(), self._persistence())
-
-        assert torch.allclose(out, torch.ones_like(out))
-
-    def test_skip_connection_without_persistence_raises(self) -> None:
-        decoder = self._decoder(method="additive")
-        with pytest.raises(ValueError, match="no persistence input was provided"):
-            decoder.rollout(self._latent(), None)
-
-
-class TestDecoderCustomOutputRange(_SkipConnectionBase):
-    """Check that restrict_range_min/max are configured correctly."""
-
-    def test_defaults_to_unit_range(self) -> None:
-        decoder = self._decoder()
-        assert decoder.range_min == 0
-        assert decoder.range_max == 1
-
-    def test_custom_range_is_respected_without_skip_connection(self) -> None:
-        decoder = self._decoder(
-            restrict_range="tanh",
-            restrict_range_min=-5.0,
-            restrict_range_max=5.0,
-            bias=100.0,
-        )
-        assert decoder.range_min == -5.0
-        assert decoder.range_max == 5.0
-
-        out = decoder.rollout(self._latent(), None)
-
-        # tanh saturates towards +1, rescaled into [-5, 5] -> +5 everywhere.
-        assert torch.allclose(out, 5.0 * torch.ones_like(out), atol=1e-3)
-
-    def test_final_clamp_uses_custom_range_with_skip_connection(self) -> None:
-        decoder = self._decoder(
-            method="convolutional",
-            restrict_range="tanh",
-            restrict_range_min=-5.0,
-            restrict_range_max=5.0,
-        )
-        assert decoder.skip_connection is not None
-        final_conv = cast("nn.Conv2d", decoder.skip_connection.fusion[-1])
-        assert final_conv.bias is not None
-        with torch.no_grad():
-            final_conv.weight.zero_()
-            final_conv.bias.fill_(100.0)  # Far outside [-5, 5]
-
-        persistence = torch.zeros(1, 1, *self._OUTPUT_SPACE.chw)
-        out = decoder.rollout(self._latent(), persistence)
-
-        assert torch.allclose(out, 5.0 * torch.ones_like(out))
-
-    def test_additive_residual_bound_covers_asymmetric_configured_range(self) -> None:
-        # An asymmetric configured range [0, 2] should still give a symmetric [-2, 2]
-        # residual bound (max of the absolute endpoints), not [0, 2].
-        decoder = self._decoder(
-            method="additive",
-            restrict_range="tanh",
-            restrict_range_min=0.0,
-            restrict_range_max=2.0,
-            bias=-100.0,
-        )
-        persistence = torch.full((1, 1, *self._OUTPUT_SPACE.chw), 1.0)
-
-        out = decoder.rollout(self._latent(), persistence)
-
-        # tanh(-100) ~= -1, rescaled by the residual bound of 2 -> residual ~= -2.
-        # persistence (1.0) + residual (-2) clamped to the configured [0, 2] -> 0.
-        assert torch.allclose(out, torch.zeros_like(out), atol=1e-3)
 
 
 class TestDeepCompressionDecoder:
@@ -472,7 +153,7 @@ class TestDeepCompressionDecoder:
             pixel_shuffle=pixel_shuffle,
             stride=stride,
         )
-        result = decoder.rollout(torch.randn(2, 3, *latent_space.chw), None)
+        result = decoder.rollout(torch.randn(2, 3, *latent_space.chw))
         assert result.shape == (2, 3, *output_space.chw)
 
     def test_shape_mismatch_raises(self) -> None:
@@ -535,7 +216,6 @@ class TestPiecewiseDecoder:
             conv_subblocks_final=0,
             data_space_in=input_space,
             data_space_out=output_space,
-            restrict_range="none",
             use_final_normalisation=False,
             use_hann_window=False,
         )
@@ -550,7 +230,7 @@ class TestPiecewiseDecoder:
         input_max_val = input_ntchw.max().item()
 
         # Rollout the decoder and check that the output values are in the same range as the input values
-        latent_ntchw = decoder.rollout(input_ntchw, None)
+        latent_ntchw = decoder.rollout(input_ntchw)
         assert latent_ntchw.shape == (1, 1, *output_space.chw)
         assert torch.all(input_min_val < latent_ntchw)
         assert torch.all(latent_ntchw < input_max_val)
