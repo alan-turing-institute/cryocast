@@ -45,11 +45,14 @@ TRAINING_METADATA = Metadata(
 
 
 def make_publisher(**plot_spec_kwargs: Any) -> MediaPublisher:
-    """Build a MediaPublisher with no land mask and a PlotSpec from the given kwargs."""
+    """Build a MediaPublisher with no land mask and a PlotSpec from the given kwargs.
+
+    Static plots show only the last lead time unless the kwargs say otherwise.
+    """
     return MediaPublisher(
         training_metadata=TRAINING_METADATA,
         land_mask=LandMask(None),
-        plot_spec=PlotSpec(**plot_spec_kwargs),
+        plot_spec=PlotSpec(**({"show_first_lead": False} | plot_spec_kwargs)),
     )
 
 

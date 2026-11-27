@@ -267,11 +267,12 @@ class PlotSpec:
             n_leads: The number of lead times in the forecast.
 
         Returns:
-            The selected indices, in order, with no duplicates (for one lead time,
-            the first and last lead times are the same).
+            The selected indices, in order.
 
         """
-        return [0] * self.show_first_lead + [n_leads - 1] * self.show_last_lead
+        return sorted(
+            set([0] * self.show_first_lead + [n_leads - 1] * self.show_last_lead)
+        )
 
 
 @dataclass(frozen=True)

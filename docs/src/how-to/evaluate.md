@@ -105,12 +105,12 @@ Once evaluation completes, the run appears in the W&B project `evaluate` under t
 
 Two plot settings select the lead times of the static images:
 
-| Setting | Evaluation default | Training default |
-|---------|--------------------|------------------|
-| `show_first_lead` | `true` | `false` |
-| `show_last_lead` | `true` | `true` |
+| Setting | Default |
+|---------|---------|
+| `show_first_lead` | `true` |
+| `show_last_lead` | `true` |
 
-Training shows only the last lead time, because most errors in a long rollout show there.
+Training and evaluation use the same defaults.
 Static input images (`input_static`) use the same lead times.
 
 To change a setting, override it on the command line.
