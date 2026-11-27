@@ -49,7 +49,11 @@ from omegaconf import DictConfig
 from torch import nn
 
 from cryocast.losses import LeadTimeWeightedLoss, build_loss
-from cryocast.models.diffusion import GaussianDiffusion, UNetDiffusion
+from cryocast.models.diffusion import (
+    GaussianDiffusion,
+    LatentNormaliser,
+    UNetDiffusion,
+)
 from cryocast.types import (
     BetaSchedule,
     ProcessorOutput,
@@ -87,6 +91,7 @@ class DiffusionProcessor(BaseProcessor):
         eta: float = 1.0,
         kernel_size: int = 3,
         loss: DictConfig | nn.Module,
+        normalise_latents: bool = False,
         normalization: str = "groupnorm",
         prediction_loss_cutoff: float = 0.5,
         start_out_channels: int = 64,
@@ -113,6 +118,11 @@ class DiffusionProcessor(BaseProcessor):
             loss (DictConfig | nn.Module): Loss module applied to (pred_v,
                 target_v). Set this to ``${loss}`` in the yaml to reuse the
                 top-level configured loss.
+            normalise_latents (bool): Whether to diffuse latents normalised to zero
+                mean and unit variance per channel, using statistics averaged over
+                `n_batches` training batches. The history and target are both
+                normalised, and predictions are returned in the original units.
+                Default is False.
             normalization (str): Normalization layer type (e.g., "groupnorm").
             prediction_loss_cutoff (float): Fraction of ``timesteps``, in the range
                 ``(0, 1]``, below which a training sample is used for the prediction
@@ -188,6 +198,23 @@ class DiffusionProcessor(BaseProcessor):
             beta_schedule=BetaSchedule(beta_schedule),
         )
 
+        # Optional per-channel normalisation of the latents
+        self.latent_normaliser = (
+            LatentNormaliser(c_combined) if normalise_latents else None
+        )
+
+    def _normalise(self, latent: TensorNTCHW) -> TensorNTCHW:
+        """Normalise latents if latent normalisation is enabled."""
+        if self.latent_normaliser is None:
+            return latent
+        return self.latent_normaliser.normalise(latent)
+
+    def _denormalise(self, latent: TensorNTCHW) -> TensorNTCHW:
+        """Return normalised latents to their original units if enabled."""
+        if self.latent_normaliser is None:
+            return latent
+        return self.latent_normaliser.denormalise(latent)
+
     def _rollout_inference(self, x: TensorNTCHW) -> ProcessorOutput:
         """Generate a latent forecast using a reverse diffusion process.
 
@@ -217,9 +244,13 @@ class DiffusionProcessor(BaseProcessor):
             - Sampling begins from standard Gaussian noise.
 
         """
-        if self.use_autoregressive:
-            return ProcessorOutput(prediction=self._sample_autoregressive(x))
-        return ProcessorOutput(prediction=self._sample_parallel(x))
+        x = self._normalise(x)
+        prediction = (
+            self._sample_autoregressive(x)
+            if self.use_autoregressive
+            else self._sample_parallel(x)
+        )
+        return ProcessorOutput(prediction=self._denormalise(prediction))
 
     def _rollout_training(self, x: TensorNTCHW, y: TensorNTCHW) -> ProcessorOutput:
         """One training rollout using DDPM v-prediction loss.
@@ -253,6 +284,15 @@ class DiffusionProcessor(BaseProcessor):
         """
         b = x.shape[0]
         device = x.device
+
+        # Normalise the history and target with the latent statistics
+        if self.latent_normaliser is not None and not self.latent_normaliser.is_fitted:
+            msg = (
+                "The latent statistics must be measured before training "
+                "(see EncodeProcessDecode.on_fit_start)."
+            )
+            raise RuntimeError(msg)
+        x, y = self._normalise(x), self._normalise(y)
 
         # History frames folded into channels for the 2D UNet.
         cond: TensorNCHW = x.flatten(
@@ -290,9 +330,12 @@ class DiffusionProcessor(BaseProcessor):
 
         # Reconstruct x_0 from pred_v. calculate_v() has the same formula as the x_0
         # reconstruction, so we reuse it by passing pred_v as x_start.
-        pred_x0: TensorNTCHW = self.diffusion.calculate_v(
-            x_start=pred_v, noise=noisy_y, t=t
-        ).unflatten(1, (n_steps, self.c_combined))
+        # Return it in the original units.
+        pred_x0: TensorNTCHW = self._denormalise(
+            self.diffusion.calculate_v(x_start=pred_v, noise=noisy_y, t=t).unflatten(
+                1, (n_steps, self.c_combined)
+            )
+        )
 
         return ProcessorOutput(
             prediction=pred_x0,
