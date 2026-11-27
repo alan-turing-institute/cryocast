@@ -3,6 +3,6 @@ defaults:
   - datasets:
     - samp_floatnorth_argo_25p0km_2020_2024_24h_v3
     - samp_sicnorth_osisaf_25p0km_2020_2024_24h_v1
-    - samp_weathernorth_era5_25p0km_2020_2024_24h_v4
+    - samp_weathernorth_era5_25p0km_2020_2024_24h_v5
   - split: sample_dataset
   - _self_

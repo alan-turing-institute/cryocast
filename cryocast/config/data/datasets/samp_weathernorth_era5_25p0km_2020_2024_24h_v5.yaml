@@ -1,0 +1,80 @@
+samp-weathernorth-era5-25p0km-2020-2024-24h-v5:
+  name: samp-weathernorth-era5-25p0km-2020-2024-24h-v5
+  group_as: era5
+  description: Weather from ERA5 for partial northern hemisphere
+  attribution: ECMWF/C3S
+  licence: CC-BY-4.0
+
+  dates:
+    start: '2020-01-01T12:00:00'
+    end: '2024-07-31T12:00:00'
+    frequency: 24h
+    # To reduce size, we only include the data ranges needed by the sample split
+    missing:
+    - start: 2022-01-01T12:00:00
+      end: 2022-06-30T12:00:00
+    - start: 2022-08-01T12:00:00
+      end: 2022-12-31T12:00:00
+    - start: 2023-02-01T12:00:00
+      end: 2023-12-31T12:00:00
+    - start: 2024-02-01T12:00:00
+      end: 2024-06-30T12:00:00
+
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
+  input:
+    pipe:
+      - join:
+        - mars:
+            use_cdsapi_dataset: "reanalysis-era5-complete"
+            class: ea
+            expver: "0001"
+            grid: "0.25 / 0.25"
+            area: "90/-180/15/180"  # northern hemisphere
+            levtype: sfc
+            param:
+            - 2t # 2-metre air temperature
+            - sp # Surface pressure
+            - 10u # 10m eastward wind (rotated to grid x below)
+            - 10v # 10m northward wind (rotated to grid y below)
+            - msl # Sea level pressure
+        - mars:
+            use_cdsapi_dataset: "reanalysis-era5-complete"
+            class: ea
+            expver: "0001"
+            grid: "0.25 / 0.25"
+            area: "90/-180/15/180"  # northern hemisphere
+            level:
+            - 10 # hPa
+            - 250 # hPa
+            - 500 # hPa
+            - 1000 # hPa
+            levtype: pl # pressure level
+            param:
+            - z # geopotential height
+            - t # air temperature
+            - q # specific humidity
+            - u # eastward wind (rotated to grid x below)
+            - v # northward wind (rotated to grid y below)
+        - forcings:
+            param:
+            - cos_julian_day
+            - insolation
+            - sin_julian_day
+            template: \${input.pipe.0.join.0.mars}
+      # Reproject to EASE2 25km grid
+      - reproject:
+          crs: "EPSG:6931"
+          resolution: "25p0km"
+          shape: [432, 432]
+      # Rotate eastward/northward wind components onto the EASE2 grid x/y axes
+      - rotate-winds-polar:
+          x_wind: 10u
+          y_wind: 10v
+          crs: "EPSG:6931"
+      - rotate-winds-polar:
+          x_wind: u
+          y_wind: v
+          crs: "EPSG:6931"

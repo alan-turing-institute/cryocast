@@ -109,3 +109,29 @@ class TestReprojectFilter:
         output = next(iter(result))
         assert output.to_numpy().shape == (2, 2)
         assert output.metadata("param") == "siconc"
+
+    def test_same_shape_grids_do_not_share_cached_mapping(self) -> None:
+        """North and south polar grids with identical shapes get separate mappings.
+
+        Regression test: the cache used to be keyed on array shapes only, so the
+        second hemisphere silently reused the first hemisphere's mapping.
+        """
+
+        def latitude_fieldlist(lat_top: float, lat_bottom: float) -> SimpleFieldList:
+            # A field whose values are its own latitudes, on a regular lat/lon grid
+            lats_1d = np.linspace(lat_top, lat_bottom, 7)
+            lons_1d = np.arange(-180.0, 180.1, 10.0)
+            lons, lats = np.meshgrid(lons_1d, lats_1d)
+            return SimpleFieldList(
+                [make_array_field(lats, lats=lats.ravel(), lons=lons.ravel())]
+            )
+
+        north = ReprojectFilter(crs="EPSG:6931", resolution="500km", shape=(4, 4))
+        south = ReprojectFilter(crs="EPSG:6932", resolution="500km", shape=(4, 4))
+        north_output = next(iter(north.forward(latitude_fieldlist(90.0, 60.0))))
+        south_output = next(iter(south.forward(latitude_fieldlist(-60.0, -90.0))))
+
+        assert len(ReprojectFilter.nn_indices_cached) == 2
+        # Every output cell is within ~1500 km of its pole
+        assert np.all(north_output.to_numpy() > 75)
+        assert np.all(south_output.to_numpy() < -75)
