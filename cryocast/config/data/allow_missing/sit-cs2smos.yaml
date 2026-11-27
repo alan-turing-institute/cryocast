@@ -1,0 +1,4 @@
+# CS2SMOS sea ice thickness only exists in the freeze season (mid-October to mid-April),
+# so summer days are filled rather than dropping every window that touches them
+groups: ["sit-cs2smos"]  # input groups that may be missing on some days
+fill_value: -1.0  # fill value for missing days, in normalised units

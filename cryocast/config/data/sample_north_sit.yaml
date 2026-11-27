@@ -1,6 +1,0 @@
-defaults:
-  - datasets:
-    - samp_sicnorth_ssmis_25p0km_2019_2023_24h_v1
-    - samp_sitnorth_cs2smos_25p0km_2019_2023_24h_v1
-  - split: sample_sit_winters
-  - _self_

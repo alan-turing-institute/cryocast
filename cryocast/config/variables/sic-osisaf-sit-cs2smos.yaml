@@ -1,0 +1,10 @@
+# The sic-osisaf variables plus CS2SMOS sea ice thickness. CS2SMOS has no summer data,
+# so use with 'data/allow_missing=sit-cs2smos'
+defaults:
+  - sic-osisaf
+  - _self_
+
+input:
+  sit-cs2smos:
+    - analysis_sea_ice_thickness
+    - analysis_sea_ice_thickness_unc
