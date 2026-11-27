@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from torch.utils.data import DataLoader
 
 from cryocast.data.single_dataset import SingleDataset
 from cryocast.types import DataSpace
@@ -141,6 +142,17 @@ class TestSingleDataset:
             IndexError, match="Index 10 out of range for dataset of length 5"
         ):
             dataset[10]
+
+    def test_getitem_in_spawned_worker(self, mock_dataset: Path) -> None:
+        # anemoi-datasets starts an analytics process when it opens a zarr store.
+        # A DataLoader worker is a daemon process and cannot start a child process,
+        # so the store must open without analytics in a spawned worker.
+        dataset = SingleDataset(name="mock_dataset", input_files=[mock_dataset])
+        loader = DataLoader(
+            dataset, batch_size=1, num_workers=1, multiprocessing_context="spawn"
+        )
+        batch = next(iter(loader))
+        assert batch.shape == (1, *dataset[0].shape)
 
     def test_get_tchw(
         self, mock_dataset: Path, dates_as_np: tuple[np.datetime64, ...]

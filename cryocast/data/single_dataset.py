@@ -11,6 +11,7 @@ from anemoi.datasets import open_dataset
 from anemoi.datasets.usage.dataset import Dataset as AnemoiDataset
 from torch.utils.data import Dataset
 
+from cryocast.compatibility import patch_collect_analytics
 from cryocast.types import ArrayCHW, ArrayTCHW, DataSpace, Hemisphere
 
 ArrayType = TypeVar("ArrayType", ArrayCHW, ArrayTCHW)
@@ -94,6 +95,8 @@ class SingleDataset(Dataset):
     @classmethod
     def load_dataset(cls, input_files: tuple[Path, ...]) -> AnemoiDataset:
         if input_files not in cls.anemoi_cache:
+            # Patch anemoi analytics collection to avoid a macOS exception
+            patch_collect_analytics()
             cls.anemoi_cache[input_files] = open_dataset(input_files)
         return cls.anemoi_cache[input_files]
 
