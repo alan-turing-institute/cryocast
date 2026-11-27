@@ -477,6 +477,22 @@ class TestInputVariableSelection:
         [space] = dm.input_spaces
         assert space.channels == 2
 
+    def test_unselected_group_is_not_opened(self, mock_dataset: Path) -> None:
+        """A configured group with no requested inputs need not exist on disk."""
+        cfg = _build_config(
+            str(mock_dataset.parent.parent.parent),
+            {
+                "ds1": {"name": mock_dataset.stem, "group_as": "group1"},
+                "ds2": {"name": "does-not-exist", "group_as": "group2"},
+            },
+            input_variables={"group1": ["ice_conc"]},
+            target_variables={"group1": ["ice_conc"]},
+        )
+        dm = CommonDataModule(cfg)
+
+        assert list(dm.datasets) == ["group1"]
+        assert dm.datasets["group1"].variable_names == ["ice_conc"]
+
     def test_datasets_unfiltered_ignores_variable_selection(
         self, mock_dataset: Path
     ) -> None:
