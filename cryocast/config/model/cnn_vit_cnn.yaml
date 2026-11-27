@@ -16,6 +16,9 @@ encoders:
   sic-ssmis:
     _target_: cryocast.models.encoders.CNNEncoder
     n_layers: 1
+  sit-cs2smos:
+    _target_: cryocast.models.encoders.CNNEncoder
+    n_layers: 1
 
 processor:
   _target_: cryocast.models.processors.VitProcessor

@@ -21,6 +21,10 @@ encoders:
     _target_: cryocast.models.encoders.PiecewiseEncoder
     conv_subblocks_initial: 1
     conv_subblocks_final: 1
+  sit-cs2smos:
+    _target_: cryocast.models.encoders.PiecewiseEncoder
+    conv_subblocks_initial: 1
+    conv_subblocks_final: 1
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
