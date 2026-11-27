@@ -483,6 +483,12 @@ class EncodeProcessDecode(BaseModel):
         datamodule = getattr(self.trainer, "datamodule", None)
         if normaliser is None or normaliser.is_fitted:
             return
+        if not isinstance(self.objective, LatentObjective):
+            msg = (
+                "Measuring the latent statistics needs a LatentObjective, but the "
+                f"objective is {type(self.objective).__name__}."
+            )
+            raise TypeError(msg)
         if datamodule is None:
             msg = "Measuring the latent statistics needs a datamodule."
             raise RuntimeError(msg)
@@ -500,7 +506,7 @@ class EncodeProcessDecode(BaseModel):
                     )
                     normaliser.update(
                         self._encode_inputs(processed),
-                        LatentObjective._encode_future_inputs(self, processed),
+                        self.objective._encode_future_inputs(self, processed),
                     )
                     if normaliser.is_fitted:
                         break

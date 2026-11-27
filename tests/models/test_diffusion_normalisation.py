@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from cryocast.callbacks.ema_weight_averaging_callback import EMAWeightAveragingCallback
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.diffusion import LatentNormaliser
+from cryocast.models.objectives import PhysicalObjective
 from cryocast.models.processors import DiffusionProcessor
 from cryocast.types import DataSpace
 
@@ -202,6 +203,14 @@ class TestLatentStatisticsFittedBeforeTraining:
         )
         with pytest.raises(RuntimeError, match="needs a datamodule"):
             trainer.fit(model, _DataModule(cfg_input_space).train_dataloader())
+
+    def test_fitting_without_latent_objective_raises(
+        self, cfg_input_space: DictConfig, tmp_path: Path
+    ) -> None:
+        model = _model(cfg_input_space)
+        model.objective = PhysicalObjective()
+        with pytest.raises(TypeError, match="needs a LatentObjective"):
+            _fit(model, _DataModule(cfg_input_space), tmp_path, [])
 
 
 class TestDiffusionProcessorNormalisation:
