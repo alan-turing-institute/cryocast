@@ -18,8 +18,10 @@ SIT_DATASETS = {
     "sample_north": "samp-sitnorth-cs2smos-25p0km-2020-2024-24h-v1",
     "full_north": "full-sitnorth-cs2smos-25p0km-2010-2025-24h-v1",
 }
-# CS2SMOS has no data at all in these months
-SUMMER_MONTHS = {5, 6, 7, 8, 9}
+# CS2SMOS v2.06 has no files between these centre dates (inclusive) in any year
+SUMMER_GAP = ((4, 13), (10, 17))
+# Freeze-season days with no file upstream
+KNOWN_GAPS = [("2025-02-07", "2025-02-13"), ("2025-04-08", "2025-04-08")]
 # Date ranges excluded from every sample dataset, to match the sample split
 SAMPLE_EXCLUDED = [
     ("2022-01-01", "2022-06-30"),
@@ -132,14 +134,27 @@ class TestSeaIceThicknessConfigs:
         (downloader,) = build_downloaders(recipe_config)
         assert downloader.name == dataset_name
 
-    def test_summers_are_missing(self, data_config: tuple[str, DictConfig]) -> None:
-        """No May-September day may be requested, as CS2SMOS has no files then."""
+    def test_missing_dates_match_upstream_gaps(
+        self, data_config: tuple[str, DictConfig]
+    ) -> None:
+        """Missing dates are exactly the summer gaps, known gaps and sample exclusions.
+
+        A date missing from this list but absent upstream breaks the build, and a
+        listed date that has a file upstream silently throws data away.
+        """
         data_name, config = data_config
         dates = config.data.datasets[SIT_DATASETS[data_name]].dates
-        missing = _missing_days(dates)
-        summer = [d for d in _days(dates.start, dates.end) if d.month in SUMMER_MONTHS]
-        assert summer
-        assert not [d for d in summer if d not in missing]
+        excluded = KNOWN_GAPS + (SAMPLE_EXCLUDED if data_name == "sample_north" else [])
+        (gap_start_month, gap_start_day), (gap_end_month, gap_end_day) = SUMMER_GAP
+        expected = {
+            day
+            for day in _days(dates.start, dates.end)
+            if (gap_start_month, gap_start_day)
+            <= (day.month, day.day)
+            <= (gap_end_month, gap_end_day)
+            or any(_day(start) <= day <= _day(end) for start, end in excluded)
+        }
+        assert _missing_days(dates) == expected
 
     def test_sample_matches_other_sample_datasets(
         self, compose_config: Callable[..., DictConfig]
@@ -182,5 +197,7 @@ class TestSeaIceThicknessConfigs:
     ) -> None:
         model = compose_config("sample", overrides=[f"model={model_name}"]).model
         encoders = model.get("encoders", {})
-        if "sic-osisaf" in encoders:
+        if "sic-ssmis" in encoders:
             assert encoders[SIT_GROUP] == encoders["sic-ssmis"]
+        else:
+            assert SIT_GROUP not in encoders
