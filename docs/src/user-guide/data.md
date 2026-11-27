@@ -8,7 +8,7 @@ The northern and southern hemispheres are treated as separate datasets.
 - Argo ocean float observations (e.g. surface and sub-surface ocean state)
 - CS2SMOS sea ice thickness (northern hemisphere, freeze season only)
 
-Each dataset has a "full" (multi-decadal) and/or a "sample" (2-3 year) variant, with the resolution and date range encoded into the filename, following [Anemoi conventions](https://anemoi.readthedocs.io/projects/registry/en/stable/naming-conventions.html).
+Each dataset has a "full" (multi-decadal) and a "sample" (2-5 year) variant, with the resolution and date range encoded into the filename, following [Anemoi conventions](https://anemoi.readthedocs.io/projects/registry/en/stable/naming-conventions.html).
 
 ## OSI SAF data
 
@@ -93,6 +93,7 @@ It is distributed on the same 25 km EASE2 grid as the sea ice concentration reco
 Files are downloaded anonymously from `ftp://ftp.awi.de/sea_ice/product/cryosat2_smos/v206/nh/`.
 
 Each daily file is a 7-day running mean centred on the file date, and the dataset indexes files by that centre date.
+The value for a given date therefore includes observations from up to three days later; when thickness is used as a model input, the most recent history steps overlap the start of the forecast period.
 Satellite thickness retrievals are only possible during the freeze season (mid-October to mid-April), so summers are listed as missing dates.
 
 The datasets are detailed in:
@@ -105,9 +106,10 @@ and contain all variables in the product, of which these are used as model input
 - `analysis_sea_ice_thickness`: merged sea ice thickness (m)
 - `analysis_sea_ice_thickness_unc`: uncertainty on the merged sea ice thickness (m)
 
-Open water and land have no thickness, so missing thickness values are filled with `0` and missing uncertainties with a sentinel value of `99`.
+Open water and land have no thickness, so missing values are filled with `0` for thickness and the other non-uncertainty variables (including `sea_ice_concentration` and `sea_ice_type`), and with a sentinel value of `99` for uncertainties.
 
-Both are part of the `full_north` and `sample_north` data groups, but are only used as inputs when selected by the variables config.
+Both are part of the `full_north` and `sample_north` data groups, so `cryocast datasets create` with those groups also downloads them.
+They are only opened and used as inputs when selected by the variables config, so runs that do not select thickness do not need the thickness store.
 To train with thickness, select the thickness variables and allow the thickness group to be missing, so that summer days are filled with a constant (in normalised units) rather than dropping every window that touches a summer:
 
 ```bash
