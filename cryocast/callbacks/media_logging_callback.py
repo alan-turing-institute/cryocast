@@ -64,8 +64,13 @@ class MediaLoggingCallback(Callback):
             make_static_plots: Whether to create static plots.
             make_video_plots: Whether to create video plots.
             model_name: The name of the model to include in plot subtitles.
-            plot_spec: Plotting specification to use (contains difference settings, timestep selection, etc.).
+            plot_spec: Plotting specification to use (contains difference settings,
+                the lead times of the static plots, etc.).
             prefix: An optional prefix to add to all plot keys when logging.
+
+        Raises:
+            ValueError: If static plots are on but plot_spec selects no lead time
+                for them.
 
         """
         super().__init__()
@@ -84,6 +89,17 @@ class MediaLoggingCallback(Callback):
         self._model_name: str | None = model_name
         self._plot_spec = PlotSpec() + plot_spec
         self.prefix: str | None = prefix
+
+        # Static plots need at least one lead time
+        if make_static_plots and not (
+            self._plot_spec.show_first_lead or self._plot_spec.show_last_lead
+        ):
+            msg = (
+                "make_static_plots is true, but plot_spec selects no lead time. Set "
+                "plot_spec.show_first_lead or plot_spec.show_last_lead, or set "
+                "make_static_plots: false."
+            )
+            raise ValueError(msg)
 
         # Cache the most recent batch
         self.cached_batch_idx_: int | None = None

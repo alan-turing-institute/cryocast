@@ -45,11 +45,14 @@ TRAINING_METADATA = Metadata(
 
 
 def make_publisher(**plot_spec_kwargs: Any) -> MediaPublisher:
-    """Build a MediaPublisher with no land mask and a PlotSpec from the given kwargs."""
+    """Build a MediaPublisher with no land mask and a PlotSpec from the given kwargs.
+
+    Static plots show only the last lead time unless the kwargs say otherwise.
+    """
     return MediaPublisher(
         training_metadata=TRAINING_METADATA,
         land_mask=LandMask(None),
-        plot_spec=PlotSpec(**plot_spec_kwargs),
+        plot_spec=PlotSpec(**({"show_first_lead": False} | plot_spec_kwargs)),
     )
 
 
@@ -184,8 +187,8 @@ class TestLogStaticInputs:
         assert fake_render.call_count == N_CHANNELS
         logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
         assert logged_keys == [
-            "validation/input_static/2020-01-01-example:ice_conc",
-            "validation/input_static/2020-01-01-example:temperature",
+            "validation/input_static/2020-01-02-example:ice_conc",
+            "validation/input_static/2020-01-02-example:temperature",
         ]
         assert all(
             c.kwargs["images"] == [image] for c in image_logger.log_image.call_args_list
@@ -231,26 +234,42 @@ class TestLogStaticInputs:
 
         assert "Image logging failed: bad shape" in caplog.text
 
-    def test_plots_the_selected_date(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Plot each channel at the selected timestep, labelled with that date.
+    @pytest.mark.parametrize(
+        ("plot_spec_kwargs", "timesteps"),
+        [
+            ({}, [1]),
+            ({"show_first_lead": True, "show_last_lead": False}, [0]),
+            ({"show_first_lead": True}, [0, 1]),
+        ],
+    )
+    def test_plots_the_selected_dates(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        plot_spec_kwargs: dict[str, bool],
+        timesteps: list[int],
+    ) -> None:
+        """Plot each channel at each selected lead time, labelled with its date.
 
         Regression test: the publisher used to index the whole dataset by position,
-        plotting the zarr's row `selected_timestep` instead of the input on its date.
+        plotting the zarr's row at the selected index instead of the input on its date.
         """
         fake_singlet = MagicMock(return_value=object())
         monkeypatch.setattr(PanelRenderer, "static_singlet", fake_singlet)
 
-        make_publisher(selected_timestep=1).log_static_inputs(
+        make_publisher(**plot_spec_kwargs).log_static_inputs(
             fake_inputs(), FORECAST_DATES, [MagicMock()]
         )
 
-        # fake_inputs holds 10 * t + c, so timestep 1 gives 10 + c for channel c
-        assert fake_singlet.call_count == N_CHANNELS
-        for channel, singlet_call in enumerate(fake_singlet.call_args_list):
+        # fake_inputs holds 10 * t + c, so timestep t gives 10 * t + c for channel c
+        expected = [(t, c) for t in timesteps for c in range(N_CHANNELS)]
+        assert fake_singlet.call_count == len(expected)
+        for (t, c), singlet_call in zip(
+            expected, fake_singlet.call_args_list, strict=True
+        ):
             np.testing.assert_array_equal(
-                singlet_call.args[0], np.full((HEIGHT, WIDTH), 10 + channel)
+                singlet_call.args[0], np.full((HEIGHT, WIDTH), 10 * t + c)
             )
-            assert singlet_call.kwargs["when"] == FORECAST_DATES[1]
+            assert singlet_call.kwargs["when"] == FORECAST_DATES[t]
 
 
 class TestLogStaticOutputs:
@@ -274,8 +293,29 @@ class TestLogStaticOutputs:
         # Second channel has no configured name, so it falls back to channel_1.
         logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
         assert logged_keys == [
+            "output_static/2020-01-02-sic-truth-vs-prediction",
+            "output_static/2020-01-02-channel_1-truth-vs-prediction",
+        ]
+
+    def test_logs_first_and_last_lead(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Log one image per lead time when both lead-time flags are set."""
+        monkeypatch.setattr(
+            MatplotlibRenderer, "panels_static", MagicMock(return_value=object())
+        )
+        image_logger = MagicMock()
+
+        make_publisher(show_first_lead=True).log_static_outputs(
+            make_model_step_output(channels=1),
+            [image_logger],
+            channel_names=["sic"],
+            forecast_dates=FORECAST_DATES,
+            history_dates=HISTORY_DATES,
+        )
+
+        logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
+        assert logged_keys == [
             "output_static/2020-01-01-sic-truth-vs-prediction",
-            "output_static/2020-01-01-channel_1-truth-vs-prediction",
+            "output_static/2020-01-02-sic-truth-vs-prediction",
         ]
 
     def test_accepts_bfloat16_outputs(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -343,8 +383,8 @@ class TestLogStaticOutputs:
 
         logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
         assert logged_keys == [
-            "output_static/2020-01-01-sic-truth-vs-prediction",
-            "output_static/2020-01-01-sic-climatology-vs-prediction",
+            "output_static/2020-01-02-sic-truth-vs-prediction",
+            "output_static/2020-01-02-sic-climatology-vs-prediction",
         ]
 
     def test_compare_truth_climatology_adds_truth_vs_climatology_image(
@@ -369,9 +409,9 @@ class TestLogStaticOutputs:
 
         logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
         assert logged_keys == [
-            "output_static/2020-01-01-sic-truth-vs-prediction",
-            "output_static/2020-01-01-sic-climatology-vs-prediction",
-            "output_static/2020-01-01-sic-truth-vs-climatology",
+            "output_static/2020-01-02-sic-truth-vs-prediction",
+            "output_static/2020-01-02-sic-climatology-vs-prediction",
+            "output_static/2020-01-02-sic-truth-vs-climatology",
         ]
         # The truth-vs-climatology render omits history_ctx, so it falls back to a
         # plain date title with no footer, rather than the leadtime/history line.
@@ -403,9 +443,9 @@ class TestLogStaticOutputs:
         assert fake_render.call_count == N_CHANNELS + 1
         logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
         assert logged_keys == [
-            "output_static/2020-01-01-sic-truth-vs-prediction",
-            "output_static/2020-01-01-sic-truth-vs-prediction-z-score",
-            "output_static/2020-01-01-temperature-truth-vs-prediction",
+            "output_static/2020-01-02-sic-truth-vs-prediction",
+            "output_static/2020-01-02-sic-truth-vs-prediction-z-score",
+            "output_static/2020-01-02-temperature-truth-vs-prediction",
         ]
 
         # The z-score render's extra panel is titled distinctly from a plain
@@ -444,8 +484,8 @@ class TestLogStaticOutputs:
 
         logged_keys = [c.kwargs["key"] for c in image_logger.log_image.call_args_list]
         assert logged_keys == [
-            "output_static/2020-01-01-sic-truth-vs-prediction",
-            "output_static/2020-01-01-temperature-truth-vs-prediction",
+            "output_static/2020-01-02-sic-truth-vs-prediction",
+            "output_static/2020-01-02-temperature-truth-vs-prediction",
         ]
 
     def test_skips_on_invalid_array_error(
@@ -507,7 +547,7 @@ class TestLogStaticOutputs:
             MagicMock(return_value=image),
         )
         image_logger = MagicMock()
-        media_publisher = make_publisher(selected_timestep=1)
+        media_publisher = make_publisher()
 
         media_publisher.log_static_outputs(
             make_model_step_output(),
@@ -550,7 +590,7 @@ class TestLogStaticOutputs:
 
         assert (
             image_logger.log_image.call_args.kwargs["key"]
-            == "output_static/2020-01-01-ice_conc-truth-vs-prediction"
+            == "output_static/2020-01-02-ice_conc-truth-vs-prediction"
         )
 
 

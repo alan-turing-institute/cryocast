@@ -7,7 +7,11 @@ import torch
 from omegaconf import DictConfig
 from typing_extensions import override
 
-from cryocast.models.common import ExponentialRelaxation
+from cryocast.models.common import (
+    ExponentialRelaxation,
+    checkpoint_activations,
+    verify_no_batchnorm,
+)
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
 from cryocast.models.finalisers import Finaliser
@@ -33,6 +37,9 @@ if TYPE_CHECKING:
     from torch.nn.modules.module import _IncompatibleKeys
 
 log = logging.getLogger(__name__)
+
+# Warn about a rollout without relaxation from this number of lead times
+_LONG_ROLLOUT_STEPS = 30
 
 
 class EncodeProcessDecode(BaseModel):
@@ -60,6 +67,7 @@ class EncodeProcessDecode(BaseModel):
         rollout_space: RolloutSpace | str = RolloutSpace.LATENT,
         skip_anchor: SkipAnchorType | str | None = None,
         relaxation_tau: float | None = None,
+        trade_compute_for_memory: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialise an EncodeProcessDecode model.
@@ -87,7 +95,20 @@ class EncodeProcessDecode(BaseModel):
                 each forecast step towards climatology, or None for no relaxation.
                 Relaxation needs a PREVIOUS skip anchor and a `climatology` entry in
                 each batch.
+            trade_compute_for_memory: If True, run each forecast step again in the
+                backward pass, instead of keeping its activations. This decreases
+                memory use for long rollouts, but makes training slower. A physical
+                rollout recomputes the full step (encoders, processor, decoder and
+                finaliser), and needs a model with no batch normalisation. A latent
+                rollout recomputes only the processor steps, and needs a processor
+                with no batch normalisation and with a per-step rollout.
             **kwargs: forwarded to ``BaseModel``.
+
+        Raises:
+            ValueError: If a checkpointing option (`trade_compute_for_memory`,
+                `encode_chunk_size` or `decode_chunk_size`) is set on a component
+                with batch normalisation, or if `trade_compute_for_memory` is set for
+                a latent rollout with a processor that does not support it.
 
         """
         super().__init__(
@@ -202,14 +223,64 @@ class EncodeProcessDecode(BaseModel):
                 )
                 raise ValueError(msg)
 
+        self._add_relaxation()
+
+        self.trade_compute_for_memory = trade_compute_for_memory
+        self._verify_checkpointing_options()
+
+        # Choose how to calculate the training loss
+        self.objective: TrainingObjective = build_training_objective(self, loss_weights)
+
+    def _verify_checkpointing_options(self) -> None:
+        """Check the activation checkpointing options of the model and its components.
+
+        Checkpointing runs a module again in the backward pass. The checks run here,
+        and not in the first rollout, so that a bad configuration fails before
+        training starts. For a latent rollout, this also sets `recompute_steps` on
+        the processor.
+
+        Raises:
+            ValueError: If a checkpointing option is set on a module with batch
+                normalisation, or if `trade_compute_for_memory` is set for a latent
+                rollout with a processor that does not support it.
+
+        """
+        # A physical rollout recomputes each full step in its own loop. A latent
+        # rollout gives the option to the processor, which recomputes its own steps.
+        if self.trade_compute_for_memory:
+            if self.rollout_strategy.is_physical:
+                verify_no_batchnorm(self, "trade_compute_for_memory")
+            else:
+                if not self.processor.supports_recompute_steps:
+                    msg = (
+                        f"{type(self.processor).__name__} does not support "
+                        "trade_compute_for_memory with rollout_space='latent': its "
+                        "rollout has no per-step loop to recompute."
+                    )
+                    raise ValueError(msg)
+                verify_no_batchnorm(self.processor, "trade_compute_for_memory")
+                self.processor.recompute_steps = True
+        for encoder in self.encoders:
+            if encoder.encode_chunk_size is not None:
+                verify_no_batchnorm(encoder, "encode_chunk_size")
+        if self.decoder.decode_chunk_size is not None:
+            verify_no_batchnorm(self.decoder, "decode_chunk_size")
+
+    def _add_relaxation(self) -> None:
+        """Give the finaliser the relaxation that the rollout strategy sets.
+
+        Raises:
+            ValueError: If a latent rollout has relaxation but no skip connection.
+
+        """
         # Without a skip connection, no step carries over to the next step in a
         # latent rollout. Each step is then a fixed blend with climatology.
         tau = self.rollout_strategy.relaxation_tau
-        if (
-            tau is not None
-            and not self.rollout_strategy.is_physical
+        needs_skip = (
+            not self.rollout_strategy.is_physical
             and self.finaliser.skip_connection is None
-        ):
+        )
+        if tau is not None and needs_skip:
             msg = (
                 "relaxation in a latent rollout requires a finaliser skip connection, "
                 "so that each relaxed step carries over to the next step. Set "
@@ -218,9 +289,16 @@ class EncodeProcessDecode(BaseModel):
             )
             raise ValueError(msg)
         self.finaliser.relaxation = None if tau is None else ExponentialRelaxation(tau)
-
-        # Choose how to calculate the training loss
-        self.objective: TrainingObjective = build_training_objective(self, loss_weights)
+        if tau is None and self.n_forecast_steps >= _LONG_ROLLOUT_STEPS:
+            log.warning(
+                "This model makes %d lead times with no relaxation towards "
+                "climatology. For long rollouts, the recommended settings are "
+                "skip_anchor='previous' and relaxation_tau=10%s.",
+                self.n_forecast_steps,
+                ", with a finaliser.skip_connection for a latent rollout"
+                if needs_skip
+                else "",
+            )
 
     @override
     def load_state_dict(
@@ -388,6 +466,9 @@ class EncodeProcessDecode(BaseModel):
         If relaxation is on, each step is relaxed towards climatology before it goes
         into the window.
 
+        If `trade_compute_for_memory` is set, it checkpoints each step. The backward
+        pass then runs the step again, instead of keeping its activations.
+
         Non-target input groups hold their most recent OBSERVED frame for every forecast
         step. No future information enters. Only the input groups (the n_history_steps
         frames that end at the forecast origin) and "climatology" (from the training
@@ -421,33 +502,19 @@ class EncodeProcessDecode(BaseModel):
 
         outputs: list[TensorNCHW] = []
         for step in range(self.n_forecast_steps):
-            # Set target window to the most recent observation/prediction
-            windows[target_name] = target_window
+            # Set target window to the most recent observation/prediction. Use a new
+            # dictionary for each step, because a checkpointed step keeps a reference
+            # to its inputs for the backward pass.
+            step_windows = {**windows, target_name: target_window}
+            step_equilibrium = None if equilibrium is None else equilibrium[:, step]
 
-            # Encode inputs to latent space
-            # -> (B, n_history, C_latent_total, H_latent, W_latent)
-            latent: TensorNTCHW = self._encode_inputs(windows)
-
-            # Process in latent space
-            # -> (B, C_latent_total, H_latent, W_latent)
-            try:
-                step_latent: TensorNCHW = self.processor.step(latent.unbind(dim=1))
-            except NotImplementedError as exc:
-                msg = (
-                    f"Processor {type(self.processor).__name__} does not implement an "
-                    "autoregressive forward() method."
-                )
-                raise ValueError(msg) from exc
-
-            # Decode to physical space
+            # Predict one forecast step, optionally recomputing it in the backward pass
             # -> (B, C_out, H_out, W_out)
-            raw_output: TensorNCHW = self.decoder(step_latent)
-
-            # Use the evolving rollout state as the skip-connection anchor
-            output = self.finaliser(
-                raw_output,
-                anchor=self._anchor_nchw(target_window),
-                equilibrium=None if equilibrium is None else equilibrium[:, step],
+            output: TensorNCHW = checkpoint_activations(
+                self._forward_physical_step,
+                step_windows,
+                step_equilibrium,
+                enabled=self.trade_compute_for_memory,
             )
             outputs.append(output)
 
@@ -460,6 +527,50 @@ class EncodeProcessDecode(BaseModel):
             )
 
         return torch.stack(outputs, dim=1)
+
+    def _forward_physical_step(
+        self,
+        windows: dict[str, TensorNTCHW],
+        equilibrium: TensorNCHW | None,
+    ) -> TensorNCHW:
+        """Predict one forecast step of a physical rollout.
+
+        Args:
+            windows: Dictionary with one TensorNTCHW window per input dataset with shape
+                (batch, n_history_steps, n_input_channels_k, H_input_k, W_input_k)
+            equilibrium: Climatology for this step with shape (batch, C_out, H_out,
+                W_out), or None.
+
+        Returns:
+            TensorNCHW with shape (batch_size, n_output_channels, output_height, output_width)
+
+        Raises:
+            ValueError: If the processor cannot predict one step at a time.
+
+        """
+        # Encode inputs to latent space
+        # -> (B, n_history, C_latent_total, H_latent, W_latent)
+        latent: TensorNTCHW = self._encode_inputs(windows)
+
+        # Process in latent space
+        # -> (B, C_latent_total, H_latent, W_latent)
+        try:
+            step_latent: TensorNCHW = self.processor.step(latent.unbind(dim=1))
+        except NotImplementedError as exc:
+            msg = (
+                f"Processor {type(self.processor).__name__} does not implement an "
+                "autoregressive forward() method."
+            )
+            raise ValueError(msg) from exc
+
+        # Decode to physical space, using the evolving rollout state as the
+        # skip-connection anchor
+        # -> (B, C_out, H_out, W_out)
+        return self.finaliser(
+            self.decoder(step_latent),
+            anchor=self._anchor_nchw(windows[self.output_space.name]),
+            equilibrium=equilibrium,
+        )
 
     def forward(self, inputs: dict[str, TensorNTCHW]) -> TensorNTCHW:
         """Forward step of the model (used for inference).

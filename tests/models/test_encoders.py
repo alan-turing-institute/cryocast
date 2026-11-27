@@ -295,3 +295,41 @@ class TestVerifyOutputChannels:
         running_mean_after, running_var_after = self._running_stats(batch_norm)
         assert torch.equal(running_mean_after, running_mean_before)
         assert torch.equal(running_var_after, running_var_before)
+
+
+class TestEncoderCheckpointing:
+    input_space = DataSpace(name="input", channels=2, shape=(16, 16))
+
+    def _encoder(self, encode_chunk_size: int | None) -> CNNEncoder:
+        torch.manual_seed(0)
+        return CNNEncoder(
+            encode_chunk_size=encode_chunk_size,
+            data_space_in=self.input_space,
+            latent_space=(8, 8),
+            n_layers=1,
+            norm_type="groupnorm",
+        )
+
+    @pytest.mark.parametrize(
+        ("test_chunk_size", "expected_frames_per_call"),
+        [(None, [6]), (4, [4, 2])],
+        ids=["unchunked", "chunk4"],
+    )
+    def test_rollout_uses_chunk_size(
+        self, test_chunk_size: int | None, expected_frames_per_call: list[int]
+    ) -> None:
+        # The chunking itself is tested in tests/models/test_common.py
+        module = self._encoder(test_chunk_size)
+        frames_per_call: list[int] = []
+        module.register_forward_hook(
+            lambda _module, args, _output: frames_per_call.append(args[0].shape[0])
+        )
+        x = torch.randn(2, 3, self.input_space.channels, *self.input_space.shape)
+
+        with torch.no_grad():
+            module.rollout(x)
+        assert frames_per_call == expected_frames_per_call
+
+    def test_non_positive_chunk_size_raises(self) -> None:
+        with pytest.raises(ValueError, match="encode_chunk_size must be positive"):
+            self._encoder(0)

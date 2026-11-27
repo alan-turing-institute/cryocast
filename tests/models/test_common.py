@@ -18,6 +18,7 @@ from cryocast.models.common import (
     ResidualDownsample,
     ResidualUpsample,
     RestrictRange,
+    checkpointed_chunks,
 )
 from cryocast.models.common.gated_attention import GatedAttention, GatedAttentionBlock
 from cryocast.types import RangeRestriction
@@ -55,6 +56,41 @@ class TestChannelAdapt:
         x = torch.randn(2, in_channels, 4, 4)
         y = ChannelAdaptor(in_channels, out_channels)(x)
         assert y.shape == (2, out_channels, 4, 4)
+
+
+class TestCheckpointedChunks:
+    @pytest.mark.parametrize(
+        "test_chunk_size", [1, 3, 10], ids=["chunk1", "chunk3", "chunk10"]
+    )
+    @pytest.mark.parametrize("test_grad", [True, False], ids=["grad", "no_grad"])
+    def test_matches_unchunked(self, test_chunk_size: int, *, test_grad: bool) -> None:
+        torch.manual_seed(0)
+        module = torch.nn.Sequential(
+            torch.nn.Conv2d(2, 4, kernel_size=3, padding=1),
+            torch.nn.GroupNorm(2, 4),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(4, 3, kernel_size=3, padding=1),
+        )
+        frames = torch.randn(6, 2, 8, 8)
+
+        def output_and_grads(
+            chunk_size: int | None,
+        ) -> tuple[torch.Tensor, list[torch.Tensor | None]]:
+            module.zero_grad(set_to_none=True)
+            with torch.set_grad_enabled(test_grad):
+                output = checkpointed_chunks(module, frames, chunk_size)
+            if not test_grad:
+                return output, []
+            output.square().sum().backward()
+            return output, [p.grad for p in module.parameters()]
+
+        expected, expected_grads = output_and_grads(None)
+        result, result_grads = output_and_grads(test_chunk_size)
+
+        torch.testing.assert_close(result, expected)
+        # Checkpointed chunks add per-frame gradients in a different order
+        for grad, expected_grad in zip(result_grads, expected_grads, strict=True):
+            torch.testing.assert_close(grad, expected_grad, rtol=1e-4, atol=1e-4)
 
 
 class TestConvBlockUpsample:

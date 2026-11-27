@@ -3,7 +3,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
-from cryocast.models.common import ConvLSTMCell
+from cryocast.models.common import ConvLSTMCell, checkpoint_activations
 from cryocast.types import ProcessorOutput, TensorNCHW, TensorNTCHW
 
 from .base_processor import BaseProcessor
@@ -29,7 +29,19 @@ class ConvLSTMProcessor(BaseProcessor):
         residual: bool = True,
         **kwargs: Any,
     ) -> None:
-        """Initialise a ConvLSTM processor."""
+        """Initialise a ConvLSTM processor.
+
+        Args:
+            hidden_channels: Number of channels in the hidden and cell states.
+            kernel_size: Kernel size of the gate convolutions. Must be odd.
+            n_layers: Number of stacked ConvLSTM layers.
+            dropout: Dropout between ConvLSTM layers.
+            residual: If True, each prediction is a change from the previous frame.
+            **kwargs: Forwarded to `BaseProcessor`. If `recompute_steps` is set,
+                each cell keeps only its input and state, and runs again in the
+                backward pass.
+
+        """
         super().__init__(**kwargs)
         if hidden_channels <= 0:
             msg = "hidden_channels must be greater than 0."
@@ -76,7 +88,9 @@ class ConvLSTMProcessor(BaseProcessor):
         next_states: list[tuple[TensorNCHW, TensorNCHW]] = []
         layer_input = x
         for layer_idx, (cell, state) in enumerate(zip(self.cells, states, strict=True)):
-            next_state = cell(layer_input, state)
+            next_state = checkpoint_activations(
+                cell, layer_input, state, enabled=self.recompute_steps
+            )
             next_states.append(next_state)
             layer_input = next_state[0]
             if layer_idx < len(self.cells) - 1:

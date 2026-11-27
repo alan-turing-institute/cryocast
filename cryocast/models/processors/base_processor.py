@@ -1,8 +1,10 @@
 from collections import deque
 from collections.abc import Iterable
+from typing import ClassVar
 
 from torch import cat, nn, stack
 
+from cryocast.models.common import checkpoint_activations
 from cryocast.types import DataSpace, ProcessorOutput, TensorNCHW, TensorNTCHW
 
 
@@ -14,7 +16,18 @@ class BaseProcessor(nn.Module):
 
     Output space:
         TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
+
+    Attributes:
+        supports_recompute_steps: False for a processor whose rollout has no
+            per-step loop to recompute.
+        recompute_steps: If True, the rollout keeps only the input of each forecast
+            step, and runs the step again in the backward pass. This decreases memory
+            use for long rollouts, but makes training slower. `EncodeProcessDecode`
+            sets this from its `trade_compute_for_memory` option.
+
     """
+
+    supports_recompute_steps: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -39,6 +52,7 @@ class BaseProcessor(nn.Module):
         self.data_space = data_space
         self.n_forecast_steps = n_forecast_steps
         self.n_history_steps = n_history_steps
+        self.recompute_steps = False
 
     def forward(self, x: TensorNCHW) -> TensorNCHW:
         """Forward step: predict the next timestep from a window of history/forecast timesteps.
@@ -61,7 +75,8 @@ class BaseProcessor(nn.Module):
 
         The default implementation keeps a window of the n_history_steps most recent
         timesteps. For each forecast step, it calls `self.step` on the window, then adds
-        the prediction to the window and removes the oldest timestep.
+        the prediction to the window and removes the oldest timestep. If
+        `recompute_steps` is set, it checkpoints each step.
 
         Override this method to use the NTCHW tensors directly. A processor with
         `computes_loss_in_latent_space=True` also overrides it to calculate its loss
@@ -91,7 +106,9 @@ class BaseProcessor(nn.Module):
         # window and then dropping the oldest timestep to make room for the prediction.
         outputs: list[TensorNCHW] = []
         for _ in range(self.n_forecast_steps):
-            next_step = self.step(window)
+            next_step = checkpoint_activations(
+                self.step, tuple(window), enabled=self.recompute_steps
+            )
             outputs.append(next_step)
             window.popleft()
             window.append(next_step)

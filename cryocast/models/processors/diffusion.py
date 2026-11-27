@@ -42,7 +42,7 @@ live in the same space as the encoded history.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from omegaconf import DictConfig
@@ -77,6 +77,9 @@ class DiffusionProcessor(BaseProcessor):
         TensorNTCHW with shape (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
         - Every channel contains the denoised prediction from reverse diffusion
     """
+
+    # The rollout calls the sampler, not a per-step loop that can be recomputed
+    supports_recompute_steps: ClassVar[bool] = False
 
     def __init__(  # noqa: PLR0913
         self,
@@ -128,7 +131,10 @@ class DiffusionProcessor(BaseProcessor):
             time_embed_dim (int): Dimensionality of the diffusion timestep embedding.
             timesteps (int): Number of diffusion timesteps. Default is 1000.
             use_autoregressive (bool): Whether to use autoregressive sampling and
-                one-step training. Default is True.
+                one-step training. Default is True. If False, the UNet denoises
+                all lead times together. The model then has a fixed horizon: a
+                checkpoint does not load into a model with a different
+                ``n_forecast_steps``.
             **kwargs: Additional arguments passed to ``BaseProcessor``.
 
         """

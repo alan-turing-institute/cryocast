@@ -27,7 +27,7 @@ The properties tested here, in order of importance:
 """
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pytest
@@ -62,6 +62,8 @@ def _build_model(
     rollout_space: str | None = None,
     skip_anchor: str | None = None,
     relaxation_tau: float | None = None,
+    trade_compute_for_memory: bool = False,
+    encoder_extra: dict[str, Any] | None = None,
     decoder_extra: dict[str, Any] | None = None,
     finaliser: dict[str, Any] | None = None,
     processor: dict[str, Any] | None = None,
@@ -91,6 +93,7 @@ def _build_model(
                 space["name"]: {
                     "_target_": "cryocast.models.encoders.CNNEncoder",
                     "n_layers": 1,
+                    **(encoder_extra or {}),
                 }
                 for space in input_spaces
             },
@@ -129,6 +132,7 @@ def _build_model(
         mask_dir=mask_dir,
         skip_anchor=skip_anchor,
         relaxation_tau=relaxation_tau,
+        trade_compute_for_memory=trade_compute_for_memory,
         loss=DictConfig({"_target_": "torch.nn.HuberLoss", "delta": 0.5}),
         # Required since #396: the per-forecast-day metrics BaseModel builds. Two
         # cheap ones, matching the `cfg_metrics` fixture used by main's own tests.
@@ -804,3 +808,122 @@ class TestClimatologyRelaxation:
         with torch.no_grad():
             prediction = model({**inputs, "climatology": _climatology(model, 0.0)})
         assert not torch.equal(prediction, persistence)
+
+
+class TestTradeComputeForMemory:
+    """`trade_compute_for_memory` checkpoints each physical step without changing results."""
+
+    GROUPNORM: ClassVar[dict[str, Any]] = {"norm_type": "groupnorm"}
+
+    def _saved_bytes_and_grads(
+        self, *, trade_compute_for_memory: bool, relaxation_tau: float | None
+    ) -> tuple[int, torch.Tensor, list[torch.Tensor | None]]:
+        model = _build_model(
+            rollout_space="physical",
+            relaxation_tau=relaxation_tau,
+            trade_compute_for_memory=trade_compute_for_memory,
+            encoder_extra=self.GROUPNORM,
+            decoder_extra=self.GROUPNORM,
+            finaliser=ADDITIVE_SKIP_FINALISER,
+            # Dropout checks that the recomputed step uses the same random state
+            processor={**VIT_PROCESSOR, "dropout": 0.2},
+        )
+        model.train()
+        inputs = {**_inputs(model), "climatology": _climatology(model, 0.5)}
+        saved_bytes = 0
+
+        def pack(tensor: torch.Tensor) -> torch.Tensor:
+            nonlocal saved_bytes
+            saved_bytes += tensor.numel() * tensor.element_size()
+            return tensor
+
+        torch.manual_seed(0)
+        with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+            prediction = model(inputs)
+        prediction.square().sum().backward()
+        return saved_bytes, prediction, [p.grad for p in model.parameters()]
+
+    @pytest.mark.parametrize("relaxation_tau", [None, 2.0], ids=["plain", "relaxed"])
+    def test_keeps_results_and_saves_memory(self, relaxation_tau: float | None) -> None:
+        reference_bytes, reference, reference_grads = self._saved_bytes_and_grads(
+            trade_compute_for_memory=False, relaxation_tau=relaxation_tau
+        )
+        recompute_bytes, result, grads = self._saved_bytes_and_grads(
+            trade_compute_for_memory=True, relaxation_tau=relaxation_tau
+        )
+
+        torch.testing.assert_close(result, reference)
+        assert any(grad is not None for grad in grads)
+        for grad, reference_grad in zip(grads, reference_grads, strict=True):
+            torch.testing.assert_close(grad, reference_grad)
+        assert recompute_bytes < reference_bytes / 2
+
+    @pytest.mark.parametrize(
+        ("trade_compute_for_memory", "encoder_extra", "decoder_extra", "option"),
+        [
+            (False, {"encode_chunk_size": 2}, GROUPNORM, "encode_chunk_size"),
+            (False, GROUPNORM, {"decode_chunk_size": 2}, "decode_chunk_size"),
+            (True, None, GROUPNORM, "trade_compute_for_memory"),
+            (True, GROUPNORM, None, "trade_compute_for_memory"),
+        ],
+        ids=["encode_chunk", "decode_chunk", "physical-encoder", "physical-decoder"],
+    )
+    def test_rejects_batchnorm(
+        self,
+        encoder_extra: dict[str, Any] | None,
+        decoder_extra: dict[str, Any] | None,
+        option: str,
+        *,
+        trade_compute_for_memory: bool,
+    ) -> None:
+        # The options are checked when the model is created, not in the first
+        # rollout, so that a bad configuration fails before training starts.
+        with pytest.raises(ValueError, match=f"{option} cannot be used with batch"):
+            _build_model(
+                rollout_space="physical",
+                trade_compute_for_memory=trade_compute_for_memory,
+                encoder_extra=encoder_extra,
+                decoder_extra=decoder_extra,
+            )
+
+    def test_latent_rollout_recomputes_processor_steps(self) -> None:
+        # Only the processor runs again, so batch normalisation in the encoders and
+        # decoder (the CNNEncoder and CNNDecoder default) is allowed.
+        model = _build_model(
+            rollout_space="latent",
+            trade_compute_for_memory=True,
+            processor=VIT_PROCESSOR,
+        )
+        assert model.processor.recompute_steps
+
+    @pytest.mark.parametrize(
+        ("processor", "match"),
+        [
+            (
+                {
+                    "_target_": "cryocast.models.processors.UNetProcessor",
+                    "norm_type": "batchnorm",
+                    "start_out_channels": 4,
+                },
+                "trade_compute_for_memory cannot be used with batch",
+            ),
+            (
+                {
+                    "_target_": "cryocast.models.processors.GSTAProcessor",
+                    "hid_channels": 8,
+                    "n_blocks": 2,
+                },
+                "GSTAProcessor does not support",
+            ),
+        ],
+        ids=["batchnorm", "no-per-step-loop"],
+    )
+    def test_latent_rollout_rejects_processor(
+        self, processor: dict[str, Any], match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            _build_model(
+                rollout_space="latent",
+                trade_compute_for_memory=True,
+                processor=processor,
+            )

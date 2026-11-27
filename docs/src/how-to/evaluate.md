@@ -85,6 +85,8 @@ The file is written incrementally during evaluation, so the full test period doe
 
 If the target dataset has generated masks, the static `land_mask` and `active_mask` variables are included on the `(y, x)` grid (1 = ocean/active, 0 = land/inactive) and linked to the data variables via `ancillary_variables`. Masked models output zero over land, so use these masks to distinguish land from open water.
 
+The file size increases with `n_forecast_steps`. For a 90-day horizon, see [Prediction file size](../user-guide/forecast-rollout.md#prediction-file-size).
+
 Prediction export uses the existing `data.split.test` date ranges. To export a smaller date range, change the test split in the config rather than running a separate prediction pass.
 
 NetCDF export currently supports single-process evaluation. If the evaluation config uses multiple devices, set `evaluate.trainer.devices=1` for the export run.
@@ -95,11 +97,31 @@ Once evaluation completes, the run appears in the W&B project `evaluate` under t
 
 | Key | Contents |
 |-----|----------|
-| `output_static` | Static images of forecast output. |
+| `output_static` | Static images of forecast output at the first and last lead times. |
 | `output_video` | Animated forecast output. |
 | `input_static` | Static images of the raw input data (if `make_input_plots: true`). |
 | `input_video` | Animated raw input data (if `make_input_plots: true`). |
 | `Custom Charts` | Per-forecast-day metrics, allowing skill to be assessed at longer lead times. |
+
+Two plot settings select the lead times of the static images:
+
+| Setting | Default |
+|---------|---------|
+| `show_first_lead` | `true` |
+| `show_last_lead` | `true` |
+
+Training and evaluation use the same defaults.
+Static input images (`input_static`) use the same lead times.
+
+To change a setting, override it on the command line.
+For training runs, use `train` in place of `evaluate`:
+
+```bash
+uv run cryocast evaluate ... ++evaluate.callbacks.media_logging.plot_spec.show_first_lead=false
+```
+
+If `make_static_plots` is `true`, set at least one of the two settings to `true`.
+If not, the callback stops with a `ValueError`.
 
 ### How to interpret forecast days and example videos
 

@@ -15,7 +15,7 @@ numbers of input and output channels.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from torch import nn
 
@@ -35,7 +35,15 @@ class GSTAProcessor(BaseProcessor):
 
     Output space:
         TensorNTCHW with (batch_size, n_forecast_steps, n_latent_channels_total, latent_height, latent_width)
+
+    The processor makes all lead times in one step, so it has a fixed horizon.
+    The last block has n_forecast_steps * n_latent_channels_total output channels.
+    A checkpoint does not load into a model with a different n_forecast_steps.
+    For a longer horizon, increase hid_channels.
     """
+
+    # All lead times come from one step, so there are no steps to recompute
+    supports_recompute_steps: ClassVar[bool] = False
 
     def __init__(  # noqa: PLR0913
         self,

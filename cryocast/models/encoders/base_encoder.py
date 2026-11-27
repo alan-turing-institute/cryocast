@@ -3,7 +3,7 @@ from functools import cached_property
 
 import torch
 
-from cryocast.models.common import Freezable
+from cryocast.models.common import Freezable, checkpointed_chunks
 from cryocast.types import DataSpace, TensorNCHW, TensorNTCHW
 
 
@@ -23,11 +23,34 @@ class BaseEncoder(Freezable):
         data_space_in: DataSpace,
         latent_space: tuple[int, int],
         output_channels: int,
+        encode_chunk_size: int | None = None,
         latitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
         longitudes_fn: Callable[[], dict[str, list[float]]] | None = None,
     ) -> None:
-        """Initialise a BaseEncoder."""
+        """Initialise a BaseEncoder.
+
+        Args:
+            data_space_in: The input space that the encoder reads.
+            latent_space: The (height, width) of the latent space.
+            output_channels: The number of latent channels that the encoder writes.
+            encode_chunk_size: If set, the default rollout encodes this number of
+                frames (batch size * time slices) at a time, with activation
+                checkpointing: the encoder does not keep its activations, and runs
+                each chunk again in the backward pass. This decreases memory use
+                when the encoder encodes many time slices with gradients, but makes
+                training slower. If None, the rollout encodes all frames together.
+            latitudes_fn: Function that returns the latitudes of the input space.
+            longitudes_fn: Function that returns the longitudes of the input space.
+
+        Raises:
+            ValueError: If encode_chunk_size is not positive.
+
+        """
         super().__init__()
+        if encode_chunk_size is not None and encode_chunk_size < 1:
+            msg = f"encode_chunk_size must be positive, got {encode_chunk_size}."
+            raise ValueError(msg)
+        self.encode_chunk_size = encode_chunk_size
         self.data_space_in = data_space_in
         self.data_space_out = DataSpace(
             name=f"latent_space_{data_space_in.name}",
@@ -68,6 +91,9 @@ class BaseEncoder(Freezable):
         Note that this also increases the effective batch size for any batch
         normalisation layers in the encoder.
 
+        If `encode_chunk_size` is set, it encodes checkpointed chunks of this number
+        of frames.
+
         Args:
             x: TensorNTCHW with (batch_size, n_timeslices, input_channels, input_height, input_width)
 
@@ -75,7 +101,8 @@ class BaseEncoder(Freezable):
             TensorNTCHW with (batch_size, n_timeslices, latent_channels, latent_height, latent_width)
 
         """
-        return self(x.flatten(0, 1)).unflatten(0, x.shape[:2])
+        encoded = checkpointed_chunks(self, x.flatten(0, 1), self.encode_chunk_size)
+        return encoded.unflatten(0, x.shape[:2])
 
     def verify_output_channels(
         self, device: torch.device | None = None, dtype: torch.dtype = torch.float32

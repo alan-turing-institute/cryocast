@@ -138,6 +138,7 @@ A large `tau` gives a weak pull, and the effect is small at short lead times.
 |-----------|---------------------|
 | You must reproduce an existing checkpoint or leaderboard result | Do not set `skip_anchor` or `relaxation_tau` |
 | Multistage model with a pre-trained decoder | `skip_anchor: previous`, so the forecast uses the decoder as the decoder stage trained it |
+| 90-day rollout (`window=forecast-90-history-4`) | `skip_anchor: previous` and `relaxation_tau: 10`. See [Long forecast horizons](#long-forecast-horizons). |
 | Forecast for lead times longer than the training lead times, or a forecast bias that increases with lead time | `skip_anchor: previous` and `relaxation_tau` |
 | Physical rollout | Keep the default anchor (`previous`). Add `relaxation_tau` for long lead times. |
 
@@ -157,17 +158,189 @@ To enable them, add them to the `model` section of your `*.local.yaml` config:
 
 ```yaml
 skip_anchor: previous
-relaxation_tau: 30.0
+relaxation_tau: 10.0
 ```
 
 You can also set them on the command line.
 The keys are not in the model configs, so put a `+` before each key:
 
 ```bash
-uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previous +model.relaxation_tau=30
+uv run cryocast train --config-name <your-config>.local +model.skip_anchor=previous +model.relaxation_tau=10
 ```
 
 !!! warning
     Do not omit the `+`. Without it, Hydra cannot add the key and stops with a `ConfigCompositionException`.
 
 To turn relaxation off, remove the `relaxation_tau` key or set it to `null`.
+
+## Processors with a fixed horizon
+
+Most processors make one lead time at a time, and use it as the input for the next lead time.
+You can run them for more lead times than in training.
+
+Two processors make all lead times in one step:
+
+- `GSTAProcessor` (the `cnn_gsta_cnn` and `dc_gsta_dc` model configs).
+  The last gated attention block has `n_forecast_steps × latent channels` output channels.
+- The diffusion processors with `use_autoregressive: false`.
+  The UNet denoises all lead times together, as `n_forecast_steps × latent channels`.
+
+These processors have a fixed horizon:
+
+- The size of the last layer comes from `n_forecast_steps`.
+  If you make the model with a different `n_forecast_steps`, the checkpoint does not load.
+  Thus the model cannot forecast past the horizon that it was trained on.
+- A longer horizon puts more lead times into the same layers.
+  Increase the capacity with the horizon, for example `hid_channels` for `GSTAProcessor`.
+  Do not copy the settings from a short-horizon run to a long-horizon run without a test.
+- With `n_blocks: 1`, `GSTAProcessor` has one layer from the history to all lead times, and no hidden channels.
+
+All diffusion model configs (`cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc`, `dc_ddim_dc`) set `use_autoregressive: true`.
+Thus they do not have a fixed horizon.
+
+## Memory use for long rollouts
+
+For training, the model keeps the activations of each lead time until the backward pass.
+Thus memory increases linearly with `n_forecast_steps`, and a long rollout can use all GPU memory.
+Three options decrease this memory.
+Each option does not keep the activations, and runs the forward pass again in the backward pass.
+The forecasts and gradients do not change, but each training step is slower.
+
+### Decoder
+
+The decoder decodes all lead times together, at the full output resolution.
+To decrease decoder memory, set `decode_chunk_size` in the decoder config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.decoder.decode_chunk_size=10
+```
+
+The decoder then decodes this number of frames at a time.
+A smaller chunk size uses less memory.
+
+### Encoders
+
+A latent diffusion model with a non-zero `loss_weights.reconstruction` also encodes the inputs for all lead times with gradients.
+The `cnn_ddpm_cnn`, `cnn_ddim_cnn`, `dc_ddpm_dc` and `dc_ddim_dc` model configs set `reconstruction: 1.0`.
+Thus encoder memory also increases linearly with `n_forecast_steps`.
+To decrease encoder memory, set `encode_chunk_size` for each encoder:
+
+```bash
+uv run cryocast train --config-name <your-config>.local \
+  +model.encoders.sic-osisaf.encode_chunk_size=10 +model.encoders.era5.encode_chunk_size=10
+```
+
+### Processor
+
+A processor that predicts one lead time at a time also keeps its activations for each lead time.
+This applies to `UNetProcessor`, `VitProcessor`, `NullProcessor` and `ConvLSTMProcessor`.
+To recompute each processor step in the backward pass, set `trade_compute_for_memory` in the model config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true
+```
+
+In a latent rollout, this option applies only to the processor.
+To decrease encoder and decoder memory, set `encode_chunk_size` and `decode_chunk_size`.
+`GSTAProcessor` and the diffusion processors do not predict one lead time at a time, so they do not support `trade_compute_for_memory` in a latent rollout.
+In these cases, the model raises a `ValueError` when you create it.
+
+### Physical rollout
+
+For each lead time, a physical rollout encodes the input window, runs one processor step, decodes one frame and applies the finaliser.
+Thus `decode_chunk_size` has no effect, and `encode_chunk_size` applies only to the `n_history_steps` frames of each window.
+For training, it keeps the activations of the encoders, the processor and the decoder for each lead time.
+Thus a physical rollout uses the most memory for each lead time.
+
+Set `trade_compute_for_memory` as for a latent rollout.
+In a physical rollout, this option recomputes the full step: the encoders, the processor, the decoder and the finaliser.
+The model then keeps only the input window of each lead time.
+
+### Batch normalisation
+
+These options cannot be used with batch normalisation (`norm_type: batchnorm`) in the parts of the model that they recompute.
+`decode_chunk_size` applies to the decoder, `encode_chunk_size` to each encoder, and `trade_compute_for_memory` to the processor (latent rollout) or to all parts of the model (physical rollout).
+If one of these parts uses batch normalisation, the model raises a `ValueError` when you create it.
+
+`CNNEncoder`, `CNNDecoder` and `UNetProcessor` use `batchnorm` by default.
+The `cnn_unet_cnn`, `dc_unet_dc` and `quick_test` model configs set `norm_type: groupnorm` for the processor.
+The `unet` model config uses the `batchnorm` default, and `piecewise_unet_piecewise_conv` and `piecewise_unet_piecewise_linear` set `norm_type: batchnorm`.
+Set `norm_type: groupnorm` for each part that you recompute, for example for `cnn_vit_cnn_residual` with a physical rollout:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +model.trade_compute_for_memory=true \
+  +model.encoders.sic-osisaf.norm_type=groupnorm +model.encoders.era5.norm_type=groupnorm
+```
+
+Use `+` to add a key that the model config does not set, and `++` to change a key that it sets (for example `++model.processor.norm_type=groupnorm`).
+
+!!! note
+    A model with `groupnorm` layers cannot load a checkpoint from a model with `batchnorm` layers in the same place.
+
+### Diffusion models
+
+With `use_autoregressive: true`, the diffusion denoiser trains only on the first lead time.
+Thus the denoiser activation memory does not change when you increase `n_forecast_steps`.
+
+For the pixel-space `ddpm` model, this is all of the training memory that depends on the horizon.
+
+For the latent diffusion models, a non-zero `loss_weights.reconstruction` also encodes and decodes all lead times with gradients.
+To decrease this memory, set `encode_chunk_size` and `decode_chunk_size` as given in [Encoders](#encoders) and [Decoder](#decoder).
+
+Validation and test are different.
+They sample each lead time with a full reverse diffusion, thus they run `n_forecast_steps × timesteps` denoising steps.
+For example, validation with 90 lead times takes approximately 6 times longer than with 14 lead times.
+This uses more of the wall-clock limit of a training job.
+
+To validate less frequently, set `check_val_every_n_epoch` in the trainer config:
+
+```bash
+uv run cryocast train --config-name <your-config>.local +train.trainer.check_val_every_n_epoch=5
+```
+
+You can also decrease `timesteps`.
+For a latent diffusion processor, you can set `ddim_steps` to sample with fewer DDIM steps.
+
+## Long forecast horizons
+
+The `window/forecast-90-history-4` config makes 90-day forecasts from 4 days of history.
+For 90-day forecasts, set `relaxation_tau: 10`.
+Relaxation needs `skip_anchor: previous`:
+
+```bash
+uv run cryocast train --config-name <your-config>.local window=forecast-90-history-4 +model.skip_anchor=previous +model.relaxation_tau=10
+```
+
+The window config does not set these options, so you must set them yourself.
+If you make a model with 30 or more lead times and no relaxation, the model logs a warning.
+
+Read the sections above about [fixed horizons](#processors-with-a-fixed-horizon) and [memory use](#memory-use-for-long-rollouts) before you train with a long horizon.
+
+### Fewer and season-skewed start dates
+
+A sample is valid only if its full window (history and all lead times) is inside the split.
+Thus a longer window gives fewer start dates at the end of each split.
+
+For the 2024 test year (366 days):
+
+| Window | Start dates | Last valid time of lead time 1 |
+|--------|-------------|--------------------------------|
+| `forecast-14-history-3` | 350 | 18 December |
+| `forecast-90-history-4` | 273 | 3 October |
+
+The embargo on 2025 does not change, because no window goes past the end of the split.
+But with a 90-day horizon, no forecast starts in the autumn freeze-up.
+Also, each lead time has a different seasonal mix: lead time 1 has valid times from January to early October, and lead time 90 has valid times from April to December.
+
+Thus:
+
+- Do not compare per-lead metrics from a 90-day run directly with per-lead metrics from a 14-day run.
+  Evaluate both models on the same start dates, or compare only lead times with the same valid-time range.
+- Write the window in the run-log entry and with each result.
+
+### Prediction file size
+
+`--save-predictions` writes one 432 × 432 `float32` field for each lead time, and the same again for the ground truth (`_observed`).
+Without compression, this is approximately 134 MB for each start date with 90 lead times, or approximately 37 GB for the 2024 test year.
+The writer uses zlib compression, so the file on disk is smaller, but plan for tens of GB.
+To export less data, decrease the date range in `data.split.test`.

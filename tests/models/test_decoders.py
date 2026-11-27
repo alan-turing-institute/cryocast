@@ -262,3 +262,42 @@ class TestPiecewiseDecoder:
         )
 
         assert not any(isinstance(m, nn.Conv2d) for m in decoder.modules())
+
+
+class TestDecoderCheckpointing:
+    latent_space = DataSpace(name="latent", channels=4, shape=(8, 8))
+    output_space = DataSpace(name="output", channels=1, shape=(16, 16))
+
+    def _decoder(self, decode_chunk_size: int | None) -> CNNDecoder:
+        torch.manual_seed(0)
+        return CNNDecoder(
+            decode_chunk_size=decode_chunk_size,
+            data_space_in=self.latent_space,
+            data_space_out=self.output_space,
+            n_layers=1,
+            norm_type="groupnorm",
+        )
+
+    @pytest.mark.parametrize(
+        ("test_chunk_size", "expected_frames_per_call"),
+        [(None, [6]), (4, [4, 2])],
+        ids=["unchunked", "chunk4"],
+    )
+    def test_rollout_uses_chunk_size(
+        self, test_chunk_size: int | None, expected_frames_per_call: list[int]
+    ) -> None:
+        # The chunking itself is tested in tests/models/test_common.py
+        module = self._decoder(test_chunk_size)
+        frames_per_call: list[int] = []
+        module.register_forward_hook(
+            lambda _module, args, _output: frames_per_call.append(args[0].shape[0])
+        )
+        x = torch.randn(2, 3, self.latent_space.channels, *self.latent_space.shape)
+
+        with torch.no_grad():
+            module.rollout(x)
+        assert frames_per_call == expected_frames_per_call
+
+    def test_non_positive_chunk_size_raises(self) -> None:
+        with pytest.raises(ValueError, match="decode_chunk_size must be positive"):
+            self._decoder(0)

@@ -190,7 +190,8 @@ class PlotSpec:
         dpi: Dots per inch for figure rendering (default 300).
         include_difference: Whether to draw a difference panel.
         diff_mode: Difference definition (e.g. "signed", "absolute", "smape").
-        selected_timestep: Slice index when a single timestep is needed.
+        show_first_lead: Whether static plots show the first lead time.
+        show_last_lead: Whether static plots show the last lead time.
         vmin: Lower bound for GT/prediction colour scale (None = infer).
         vmax: Upper bound for GT/prediction colour scale (None = infer).
         include_ice_edge: Whether to overlay the sea ice edge contour in red.
@@ -211,7 +212,10 @@ class PlotSpec:
     # Difference pane
     include_difference: bool = True
     diff_mode: DiffMode = DiffMode.SIGNED
-    selected_timestep: int = 0
+
+    # Lead times for static plots
+    show_first_lead: bool = True
+    show_last_lead: bool = True
 
     # Colourscale ranges: defaults to [0,1]
     vmin: float | None = 0.0
@@ -255,6 +259,20 @@ class PlotSpec:
         else:
             dict_other = dict(other)
         return PlotSpec(**(asdict(self) | dict_other))
+
+    def static_lead_indices(self, n_leads: int) -> list[int]:
+        """Return the indices of the lead times that static plots show.
+
+        Args:
+            n_leads: The number of lead times in the forecast.
+
+        Returns:
+            The selected indices, in order.
+
+        """
+        return sorted(
+            set([0] * self.show_first_lead + [n_leads - 1] * self.show_last_lead)
+        )
 
 
 @dataclass(frozen=True)
