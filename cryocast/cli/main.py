@@ -1,10 +1,15 @@
 """Main entrypoint for the CLI application."""
 
 import logging
+import warnings
 
 import typer
 
-from cryocast.compatibility import configure_external_libraries
+from cryocast.compatibility.lightning import register_accelerators
+from cryocast.compatibility.torch import patch_parameter_deepcopy
+from cryocast.ingestion.filters import register_filters
+from cryocast.ingestion.sources import register_sources
+from cryocast.visualisations import register_animation_backends
 
 from .checkpoint import checkpoint_cli
 from .datasets import datasets_cli
@@ -22,9 +27,18 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Configure external libraries
-configure_external_libraries()
-
+# Configure external libraries used by the application
+log.debug("Configuring external libraries...")
+patch_parameter_deepcopy()
+register_accelerators()
+register_animation_backends()
+register_filters()
+register_sources()
+# Ignore warnings about known PyTorch issues
+warnings.filterwarnings(
+    "ignore",
+    message=".*Using padding='same' with even kernel lengths and odd dilation.*",
+)
 
 # Create the typer app
 app = typer.Typer(
