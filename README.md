@@ -127,10 +127,11 @@
 | cryocast/models/decoders/deep\_compression\_decoder.py             |       42 |        6 |     86% |60-61, 63-64, 66-67 |
 | cryocast/models/decoders/naive\_linear\_decoder.py                 |       15 |        0 |    100% |           |
 | cryocast/models/decoders/piecewise\_decoder.py                     |       27 |        0 |    100% |           |
-| cryocast/models/diffusion/\_\_init\_\_.py                          |        3 |        0 |    100% |           |
+| cryocast/models/diffusion/\_\_init\_\_.py                          |        4 |        0 |    100% |           |
 | cryocast/models/diffusion/gaussian\_diffusion.py                   |       52 |        2 |     96% |     46-50 |
+| cryocast/models/diffusion/latent\_normaliser.py                    |       36 |        0 |    100% |           |
 | cryocast/models/diffusion/unet\_diffusion.py                       |       78 |        1 |     99% |       269 |
-| cryocast/models/encode\_process\_decode.py                         |      117 |        8 |     93% |116-121, 133-137, 431-436 |
+| cryocast/models/encode\_process\_decode.py                         |      142 |        8 |     94% |120-125, 137-141, 435-440 |
 | cryocast/models/encoders/\_\_init\_\_.py                           |        7 |        0 |    100% |           |
 | cryocast/models/encoders/base\_encoder.py                          |       35 |        2 |     94% |     59-60 |
 | cryocast/models/encoders/cnn\_encoder.py                           |       25 |        0 |    100% |           |
@@ -152,7 +153,7 @@
 | cryocast/models/processors/\_\_init\_\_.py                         |        8 |        0 |    100% |           |
 | cryocast/models/processors/base\_processor.py                      |       25 |        0 |    100% |           |
 | cryocast/models/processors/conv\_lstm.py                           |       52 |        0 |    100% |           |
-| cryocast/models/processors/diffusion.py                            |      118 |        0 |    100% |           |
+| cryocast/models/processors/diffusion.py                            |      131 |        0 |    100% |           |
 | cryocast/models/processors/gsta.py                                 |       22 |       12 |     45% |65-73, 99-110 |
 | cryocast/models/processors/null.py                                 |       10 |        0 |    100% |           |
 | cryocast/models/processors/unet.py                                 |       53 |        0 |    100% |           |
@@ -181,7 +182,7 @@
 | cryocast/visualisations/media\_publisher.py                        |      113 |        1 |     99% |       182 |
 | cryocast/visualisations/panel\_renderer.py                         |       87 |        2 |     98% |     60-61 |
 | cryocast/visualisations/style\_resolver.py                         |       30 |        0 |    100% |           |
-| **TOTAL**                                                          | **6908** |  **336** | **95%** |           |
+| **TOTAL**                                                          | **6983** |  **336** | **95%** |           |
 
 
 ## Setup coverage badge
