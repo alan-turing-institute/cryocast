@@ -167,6 +167,7 @@ uv run cryocast checkpoint upgrade PATH_TO_A_CHECKPOINT [PATH_TO_ANOTHER_CHECKPO
 
 Upgrades checkpoints saved by older versions of CryoCast, or by its predecessor icenet-mp, so that they can be loaded safely.
 The run's `files/model_config.yaml` is also upgraded, replacing references to `icenet_mp` and converting the legacy `predict` settings into `variables` and `window` settings.
+It also moves the output settings (`mask_type`, `restrict_range*` and `skip_connection`) and any learned skip connection weights from the decoder to the finaliser.
 Each file that needs upgrading is backed up to `<name>.bak` before being rewritten.
 Files that are already up to date are left unchanged, so it is safe to upgrade a checkpoint more than once, and an existing backup is never overwritten.
 If an upgraded checkpoint would still contain objects that cannot be loaded safely, the upgrade stops with an error naming them and no files are changed.

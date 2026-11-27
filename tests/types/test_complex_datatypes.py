@@ -1,4 +1,6 @@
+import dataclasses
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 import torch
@@ -10,6 +12,9 @@ from cryocast.types import (
     Hemisphere,
     ModelStepOutput,
     PlotSpec,
+    RolloutSpace,
+    RolloutStrategy,
+    SkipAnchorType,
     Timespan,
 )
 
@@ -209,6 +214,70 @@ class TestModelStepOutput:
     def test_len_returns_three(self) -> None:
         """ModelStepOutput always reports a length of three."""
         assert len(self._make_output()) == 3
+
+
+class TestRolloutStrategy:
+    """Tests for RolloutStrategy."""
+
+    @pytest.mark.parametrize(
+        ("options", "space", "anchor", "relaxation_tau"),
+        [
+            pytest.param((), "latent", "initial", None, id="defaults"),
+            pytest.param(("latent",), "latent", "initial", None, id="latent-default"),
+            pytest.param(
+                ("physical",), "physical", "previous", None, id="physical-default"
+            ),
+            pytest.param(
+                ("latent", "previous"), "latent", "previous", None, id="latent-previous"
+            ),
+            pytest.param(
+                ("physical", None, 5.0), "physical", "previous", 5.0, id="relaxation"
+            ),
+        ],
+    )
+    def test_from_options(
+        self,
+        options: tuple[Any, ...],
+        space: str,
+        anchor: str,
+        relaxation_tau: float | None,
+    ) -> None:
+        """Convert strings to enums, using the default anchor for the space if unset."""
+        strategy = RolloutStrategy.from_options(*options)
+
+        assert strategy.space is RolloutSpace(space)
+        assert strategy.anchor is SkipAnchorType(anchor)
+        assert strategy.is_physical is (space == "physical")
+        assert strategy.relaxation_tau == relaxation_tau
+
+    @pytest.mark.parametrize(
+        ("options", "match"),
+        [
+            pytest.param(("sideways", "initial"), "sideways", id="bad-space"),
+            pytest.param(("latent", "sideways"), "sideways", id="bad-anchor"),
+            pytest.param(
+                ("physical", "initial"),
+                "rollout_space='physical' requires skip_anchor='previous'",
+                id="physical-initial",
+            ),
+            pytest.param(
+                ("latent", None, 5.0),
+                "relaxation requires skip_anchor",
+                id="relaxation-initial",
+            ),
+        ],
+    )
+    def test_rejects_invalid_options(
+        self, options: tuple[Any, ...], match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            RolloutStrategy.from_options(*options)
+
+    def test_immutable(self) -> None:
+        """Prevent changes after creation, which could bypass validation."""
+        strategy = RolloutStrategy.from_options(RolloutSpace.PHYSICAL)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            strategy.anchor = SkipAnchorType.INITIAL  # type: ignore[misc]
 
 
 class TestTimespan:

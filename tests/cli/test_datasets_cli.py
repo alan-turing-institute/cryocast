@@ -16,7 +16,7 @@ class TestDatasetsCLI:
             expected_patterns=[
                 r"Usage: cryocast datasets \[OPTIONS\] COMMAND \[ARGS\]...",
                 r"Manage datasets",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
                 r"create\s+Create all datasets.",
                 r"inspect\s+Inspect all datasets.",
                 r"plot\s+Plot one timestep of configured datasets.",
@@ -47,10 +47,10 @@ class TestDatasetsCreateCLI:
             expected_patterns=[
                 r"Usage: cryocast datasets create \[OPTIONS\] \[overrides\]...",
                 r"Create all datasets.",
-                r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
+                r"overrides\.\.\.\s+<list\[str\]>\s+One or more space-separated Hydra config overrides",
                 r"--config-name\s+<str>\s+Name of a file to load from the",
-                r"--overwrite\s+--no-overwrite\s+Specify whether to overwrite",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--overwrite\s+--no-overwrite\s+<bool>\s+Specify whether to overwrite",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 
@@ -132,10 +132,10 @@ class TestDatasetsInspectCLI:
             expected_patterns=[
                 r"Usage: cryocast datasets inspect \[OPTIONS\] \[overrides\]...",
                 r"Inspect all datasets.",
-                r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
+                r"overrides\.\.\.\s+<list\[str\]>\s+One or more space-separated Hydra config overrides",
                 r"--config-name\s+<str>\s+Name of a file to load from the",
-                r"--verbose\s+--no-verbose\s+Show detailed dataset information",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--verbose\s+--no-verbose\s+<bool>\s+Show detailed dataset information",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 
@@ -215,7 +215,7 @@ class TestDatasetsPlotCLI:
                 r"Plot one timestep of configured datasets.",
                 r"--dataset\s+<str>\s+Only plot the named configured",
                 r"--timestep\s+<int>\s+Dataset timestep index to plot",
-                r"--video\s+--no-video\s+Animate --n-steps consecutive",
+                r"--video\s+--no-video\s+<bool>\s+Animate --n-steps consecutive",
                 r"--n-steps\s+<int>\s+Number of consecutive timesteps to",
             ],
         )

@@ -4,6 +4,7 @@ from .conv_block_downsample import ConvBlockDownsample
 from .conv_block_upsample import ConvBlockUpsample
 from .conv_lstm_cell import ConvLSTMCell
 from .conv_norm_act_upsample import ConvNormActUpsample
+from .exponential_relaxation import ExponentialRelaxation
 from .freezable import Freezable
 from .gated_attention import GatedAttentionBlock
 from .lite_mla import LiteMLA
@@ -29,6 +30,7 @@ __all__ = [
     "ConvBlockUpsample",
     "ConvLSTMCell",
     "ConvNormActUpsample",
+    "ExponentialRelaxation",
     "Freezable",
     "GatedAttentionBlock",
     "LiteMLA",

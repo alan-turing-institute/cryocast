@@ -2,6 +2,14 @@ _target_: cryocast.models.EncodeProcessDecode
 
 name: dc-ddpm-dc
 
+# In single-stage training and in the finetune stage, the processor calculates
+# its loss in latent space. Additional loss terms let these modes also train the
+# encoders and the decoder.
+# loss = latent_loss + w_prediction * prediction_loss + w_reconstruction * reconstruction_loss
+loss_weights:
+  prediction: 1.0
+  reconstruction: 1.0
+
 encoders:
   latent_space: [144, 144]
   era5:
@@ -56,6 +64,7 @@ processor:
   dropout_rate: 0.05
   use_autoregressive: true
   normalise_latents: false  # diffuse latents with zero mean and unit variance per channel
+  prediction_loss_cutoff: 0.5
   loss: ${loss}
 
 decoder:
@@ -63,9 +72,11 @@ decoder:
   attention_heads: {1: 4}
   hid_channels: [64, 128]
   hid_blocks: [2, 2]
-  mask_type: active
   pixel_shuffle: true
-  restrict_range: sigmoid
   stride: 3
+
+finaliser:
+  mask_type: active
+  restrict_range: sigmoid
   skip_connection:
     method: additive

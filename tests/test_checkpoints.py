@@ -102,13 +102,13 @@ class TestFindLast:
             CheckpointFile.find_last(checkpoint_dir)
 
 
-class TestLoad:
+class TestLoadDict:
     def test_loads_plain_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint that contains only plain Python types and tensors."""
         path = tmp_path / "last.ckpt"
         torch.save({"epoch": 3, "state_dict": {"weight": torch.ones(2)}}, path)
 
-        checkpoint = CheckpointFile(path).load()
+        checkpoint = CheckpointFile(path).load_dict()
 
         assert checkpoint["epoch"] == 3
         assert torch.equal(checkpoint["state_dict"]["weight"], torch.ones(2))
@@ -119,10 +119,38 @@ class TestLoad:
         torch.save({"callbacks": {"dirpath": Path("/run/checkpoints")}}, path)
 
         with pytest.raises(OutdatedCheckpointError) as exc_info:
-            CheckpointFile(path).load()
+            CheckpointFile(path).load_dict()
 
         assert f"cryocast checkpoint upgrade --trust {path}" in str(exc_info.value)
         assert isinstance(exc_info.value, pickle.UnpicklingError)
+
+    @pytest.mark.parametrize(
+        "ckpt_state",
+        [
+            {"hyper_parameters": {"decoder": {"mask_type": "active"}}},
+            {"state_dict": {"decoder.skip_connection.fusion.weight": torch.ones(2)}},
+        ],
+        ids=["decoder-options", "decoder-skip-weights"],
+    )
+    def test_refuses_finaliser_in_decoder(
+        self, ckpt_state: dict[str, Any], tmp_path: Path
+    ) -> None:
+        """Suggest upgrading a checkpoint saved before the finaliser was separated."""
+        path = tmp_path / "decoder.epoch=1-step=1.ckpt"
+        torch.save(ckpt_state, path)
+
+        with pytest.raises(OutdatedCheckpointError) as exc_info:
+            CheckpointFile(path).load_dict()
+
+        assert f"cryocast checkpoint upgrade {path}" in str(exc_info.value)
+
+    def test_loads_finaliser_skip_connection_weights(self, tmp_path: Path) -> None:
+        """Load a checkpoint that keeps its skip connection weights in the finaliser."""
+        path = tmp_path / "decoder.epoch=1-step=1.ckpt"
+        weights = {"finaliser.skip_connection.fusion.weight": torch.ones(2)}
+        torch.save({"state_dict": weights}, path)
+
+        assert CheckpointFile(path).load_dict()["state_dict"].keys() == weights.keys()
 
     def test_loads_upgraded_checkpoint(self, tmp_path: Path) -> None:
         """Load a checkpoint after upgrading it."""
@@ -130,11 +158,11 @@ class TestLoad:
             tmp_path / "checkpoints" / "last.ckpt"
         )
         with pytest.raises(OutdatedCheckpointError):
-            checkpoint_file.load()
+            checkpoint_file.load_dict()
 
         LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
 
-        assert checkpoint_file.load()["hyper_parameters"]["hemisphere"] == "north"
+        assert checkpoint_file.load_dict()["hyper_parameters"]["hemisphere"] == "north"
 
 
 class TestMergeConfig:
@@ -157,17 +185,32 @@ class TestMergeConfig:
         assert combined is cfg_model_service
         assert "Could not load the checkpoint configuration" in caplog.text
 
-    def test_refuses_legacy_predict_config(
-        self, cfg_model_service: DictConfig, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("key", "value", "match"),
+        [
+            ("predict", {"target": {"group_name": "sic-ssmis"}}, "legacy 'predict'"),
+            ("model.decoder.restrict_range", "sigmoid", "finaliser options"),
+        ],
+        ids=["legacy-predict", "decoder-finaliser-options"],
+    )
+    def test_refuses_legacy_config(
+        self,
+        cfg_model_service: DictConfig,
+        tmp_path: Path,
+        key: str,
+        value: object,
+        match: str,
     ) -> None:
-        """Suggest upgrading configs that predate the 'variables'/'window' split."""
+        """Suggest upgrading configs saved in an older format.
+
+        A full model saves its decoder options only in this config, not in the
+        checkpoint, so finaliser options in the decoder must be detected here.
+        """
         legacy_config = cfg_model_service.copy()
-        legacy_config["predict"] = {"target": {"group_name": "sic-ssmis"}}
+        OmegaConf.update(legacy_config, key, value, force_add=True)
         checkpoint_file = _save_run_config(tmp_path, legacy_config)
 
-        with pytest.raises(
-            OutdatedCheckpointError, match="legacy 'predict' key"
-        ) as exc:
+        with pytest.raises(OutdatedCheckpointError, match=match) as exc:
             checkpoint_file.merge_config(cfg_model_service)
 
         assert f"cryocast checkpoint upgrade {checkpoint_file.path}" in str(exc.value)
@@ -545,6 +588,110 @@ class TestUpgrade:
             "window": {"n_forecast_steps": 7, "n_history_steps": 4},
         }
 
+    def test_moves_finaliser_options_from_decoder(self, tmp_path: Path) -> None:
+        """Move mask, range and skip connection settings to 'model.finaliser'."""
+        checkpoint_file = _save_legacy_checkpoint(
+            tmp_path / "checkpoints" / "last.ckpt"
+        )
+        legacy_config = {
+            "model": {
+                "decoder": {
+                    "_target_": "cryocast.models.decoders.CNNDecoder",
+                    "kernel_size": 5,
+                    "mask_type": "active",
+                    "restrict_range": "sigmoid",
+                    "restrict_range_max": 1.0,
+                    "skip_connection": {"method": "additive"},
+                },
+            },
+        }
+        _save_legacy_config(checkpoint_file, OmegaConf.to_yaml(legacy_config))
+
+        LegacyCheckpointFile(checkpoint_file).upgrade(trusted=True)
+
+        assert OmegaConf.load(checkpoint_file.config_path) == {
+            "model": {
+                "decoder": {
+                    "_target_": "cryocast.models.decoders.CNNDecoder",
+                    "kernel_size": 5,
+                },
+                "finaliser": {
+                    "mask_type": "active",
+                    "restrict_range": "sigmoid",
+                    "restrict_range_max": 1.0,
+                    "skip_connection": {"method": "additive"},
+                },
+            },
+        }
+
+    def test_moves_skip_connection_weights_from_decoder(self, tmp_path: Path) -> None:
+        """Rename skip connection weights and clear the optimizer state that uses them.
+
+        The optimizer state refers to parameters by their order, which this changes.
+        """
+        path = tmp_path / "checkpoints" / "last.ckpt"
+        path.parent.mkdir()
+        weight, other = torch.ones(2), torch.zeros(2)
+        param_groups = [{"lr": 1e-3, "params": [0, 1]}]
+        torch.save(
+            {
+                "state_dict": {
+                    "decoder.conv.weight": other,
+                    "decoder.skip_connection.fusion.weight": weight,
+                },
+                "optimizer_states": [
+                    {"state": {0: {"exp_avg": other}}, "param_groups": param_groups}
+                ],
+            },
+            path,
+        )
+
+        LegacyCheckpointFile(CheckpointFile(path)).upgrade()
+
+        upgraded = CheckpointFile(path).load_dict()
+        assert upgraded["state_dict"].keys() == {
+            "decoder.conv.weight",
+            "finaliser.skip_connection.fusion.weight",
+        }
+        assert torch.equal(
+            upgraded["state_dict"]["finaliser.skip_connection.fusion.weight"], weight
+        )
+        assert upgraded["optimizer_states"] == [
+            {"state": {}, "param_groups": param_groups}
+        ]
+
+    def test_moves_finaliser_options_from_decoder_hyperparameters(
+        self, tmp_path: Path
+    ) -> None:
+        """Move options that the decoder no longer accepts to the finaliser."""
+        path = tmp_path / "checkpoints" / "decoder.epoch=1-step=1.ckpt"
+        path.parent.mkdir()
+        decoder = {"_target_": "cryocast.models.decoders.CNNDecoder", "n_layers": 1}
+        torch.save(
+            {
+                "hyper_parameters": {
+                    "decoder": {
+                        **decoder,
+                        "mask_type": "active",
+                        "restrict_range": "sigmoid",
+                        "skip_connection": {"method": "additive"},
+                    }
+                }
+            },
+            path,
+        )
+
+        LegacyCheckpointFile(CheckpointFile(path)).upgrade()
+
+        assert CheckpointFile(path).load_dict()["hyper_parameters"] == {
+            "decoder": decoder,
+            "finaliser": {
+                "mask_type": "active",
+                "restrict_range": "sigmoid",
+                "skip_connection": {"method": "additive"},
+            },
+        }
+
     def test_upgrades_several_checkpoints_from_one_run(self, tmp_path: Path) -> None:
         """Upgrade every checkpoint in a run, with its model config upgraded once."""
         checkpoint_files = [
@@ -659,7 +806,7 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade(trusted=True)
 
-        checkpoint = CheckpointFile(path).load()
+        checkpoint = CheckpointFile(path).load_dict()
         assert checkpoint["callbacks"]["best_score"] == 0.25
         assert type(checkpoint["callbacks"]["best_score"]) is float
 
@@ -678,7 +825,7 @@ class TestUpgrade:
 
         LegacyCheckpointFile(CheckpointFile(path)).upgrade()
 
-        upgraded = CheckpointFile(path).load()["state_dict"]
+        upgraded = CheckpointFile(path).load_dict()["state_dict"]
         assert upgraded._metadata == state_dict._metadata  # type: ignore[attr-defined]
 
     def test_leaves_files_unchanged_if_upgrade_would_not_load_safely(

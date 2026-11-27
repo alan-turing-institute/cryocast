@@ -128,7 +128,7 @@ class ModelService:
 
         """
         # Load the checkpoint first, so that an outdated one fails before anything else
-        checkpoint = checkpoint_file.load()
+        ckpt_dict = checkpoint_file.load_dict()
 
         # Use the config that the checkpoint was trained with, where available
         combined_cfg = checkpoint_file.merge_config(config)
@@ -157,7 +157,7 @@ class ModelService:
             weights_only=True,
             **non_checkpoint_kwargs,
         )
-        builder.model_.checkpoint_epoch = checkpoint.get("epoch")
+        builder.model_.checkpoint_epoch = ckpt_dict.get("epoch")
         builder._verify_model_matches_data()
         return builder
 
@@ -519,12 +519,19 @@ class ModelService:
         """Train a model in a single stage.
 
         If this ModelService was loaded from a checkpoint, training resumes from it.
+
+        Raises:
+            ValueError: If the model has a frozen decoder, which single-stage training
+                cannot train.
+
         """
-        if self.model.multistage_only:
+        if isinstance(self.model, EncodeProcessDecode) and self.model.decoder.frozen:
             msg = (
-                "This model cannot be trained in standard mode. The most likely "
-                "cause is that the decoder must be pretrained before processor "
-                "training. Use `cryocast train --multistage` instead."
+                "The decoder is frozen, so single-stage training cannot train it. "
+                "This happens if the processor computes its loss in latent space and "
+                "loss_weights.reconstruction and loss_weights.prediction are both 0. "
+                "Either set one of these weights to a value greater than 0, or train "
+                "with `--multistage`."
             )
             raise ValueError(msg)
         if self.checkpoint_file:
@@ -606,21 +613,20 @@ class ModelService:
                 "Skipping training for decoder. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            with checkpoint_file.suggest_upgrade_on_failure():
-                return DecoderStage.load_from_checkpoint(
-                    checkpoint_file.path,
-                    decoder=self.config["model"]["decoder"],
-                    encoders=encoder_models,
-                    map_location="cpu",  # Lightning will move this to the correct device
-                    mask_dir=str(self.data_module.mask_directory),
-                    metrics=self.config["reporting"]["metrics"],
-                    target_dataset_name=self.data_module.target_group_name,
-                    target_variable_indices=self.data_module.target_variable_indices,
-                    weights_only=True,
-                )
+            return checkpoint_file.load_model(
+                DecoderStage,
+                decoder=self.config["model"]["decoder"],
+                finaliser=self.config["model"].get("finaliser"),
+                encoders=encoder_models,
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
+                target_dataset_name=self.data_module.target_group_name,
+                target_variable_indices=self.data_module.target_variable_indices,
+            )
 
         decoder_model = DecoderStage.from_template(
             decoder=self.config["model"]["decoder"],
+            finaliser=self.config["model"].get("finaliser"),
             encoders=encoder_models,
             output_space=self.data_module.output_space,
             target_dataset_name=self.data_module.target_group_name,
@@ -635,7 +641,7 @@ class ModelService:
         trainer = self._fit(model=decoder_model, config=train_cfg, job_stage="decoder")
         checkpoint_file = self._save_stage_checkpoint(trainer, "decoder")
         # Reload the best weights into the decoder model
-        decoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
+        decoder_model.load_state_dict(checkpoint_file.load_dict()["state_dict"])
         return decoder_model
 
     def train_stage_encoders(
@@ -662,17 +668,14 @@ class ModelService:
                     encoder.name,
                     checkpoint_file.path,
                 )
-                with checkpoint_file.suggest_upgrade_on_failure():
-                    encoder_models.append(
-                        EncoderStage.load_from_checkpoint(
-                            checkpoint_file.path,
-                            latitudes_fn=lambda: self.data_module.latitudes,
-                            longitudes_fn=lambda: self.data_module.longitudes,
-                            map_location="cpu",  # Lightning will move this to the correct device
-                            metrics=self.config["reporting"]["metrics"],
-                            weights_only=True,
-                        )
+                encoder_models.append(
+                    checkpoint_file.load_model(
+                        EncoderStage,
+                        latitudes_fn=lambda: self.data_module.latitudes,
+                        longitudes_fn=lambda: self.data_module.longitudes,
+                        metrics=self.config["reporting"]["metrics"],
                     )
+                )
                 continue
 
             encoder_model = EncoderStage.from_template(
@@ -707,7 +710,7 @@ class ModelService:
                 trainer, f"encoder-{encoder.name}"
             )
             # Reload the best weights into the encoder model
-            encoder_model.load_state_dict(checkpoint_file.load()["state_dict"])
+            encoder_model.load_state_dict(checkpoint_file.load_dict()["state_dict"])
             encoder_models.append(encoder_model)
 
         return encoder_models
@@ -725,6 +728,8 @@ class ModelService:
         log.info("Loaded pretrained weights for processor.")
         model.decoder.load_state_dict(processor_model.decoder.state_dict())
         log.info("Loaded pretrained weights for decoder.")
+        model.finaliser.load_state_dict(processor_model.finaliser.state_dict())
+        log.info("Loaded pretrained weights for finaliser.")
         trainer = self._fit(config=train_cfg, job_stage="finetune")
         self._save_stage_checkpoint(trainer, "finetune")
         return trainer
@@ -745,22 +750,18 @@ class ModelService:
                 "Skipping training for processor. Loaded checkpoint from %s.",
                 checkpoint_file.path,
             )
-            with checkpoint_file.suggest_upgrade_on_failure():
-                return ProcessorStage.load_from_checkpoint(
-                    checkpoint_file.path,
-                    decoder_model=decoder_model,
-                    map_location="cpu",  # Lightning will move this to the correct device
-                    mask_dir=str(self.data_module.mask_directory),
-                    metrics=self.config["reporting"]["metrics"],
-                    processor=self.config["model"]["processor"],
-                    weights_only=True,
-                )
-
+            return checkpoint_file.load_model(
+                ProcessorStage,
+                decoder_model=decoder_model,
+                mask_dir=str(self.data_module.mask_directory),
+                metrics=self.config["reporting"]["metrics"],
+                processor=self.config["model"]["processor"],
+            )
         processor_model = ProcessorStage.from_template(
             processor=self.config["model"]["processor"],
             decoder_model=decoder_model,
+            rollout_strategy=cast("EncodeProcessDecode", self.model).rollout_strategy,
             mask_dir=str(self.data_module.mask_directory),
-            rollout_space=cast("EncodeProcessDecode", self.model).rollout_space,
         )
         log.info(
             "Training processor: history (%d, %d, %d, %d) -> forecast (%d, %d, %d, %d)",
@@ -774,5 +775,5 @@ class ModelService:
         )
         checkpoint_file = self._save_stage_checkpoint(trainer, "processor")
         # Reload the best weights into the processor model
-        processor_model.load_state_dict(checkpoint_file.load()["state_dict"])
+        processor_model.load_state_dict(checkpoint_file.load_dict()["state_dict"])
         return processor_model

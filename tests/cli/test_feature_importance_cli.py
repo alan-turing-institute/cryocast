@@ -12,9 +12,9 @@ class TestFeatureImportanceCLI:
             expected_patterns=[
                 r"Usage: cryocast feature-importance \[OPTIONS\] \[overrides\]...",
                 r"Fit a Random Forest and print input variables ranked by importance",
-                r"overrides\s+<str>\s+One or more space-separated Hydra config overrides",
+                r"overrides\.\.\.\s+<list\[str\]>\s+One or more space-separated Hydra config overrides",
                 r"--config-name\s+<str>\s+Name of a file to load from the config",
-                r"--help\s+-h\s+Show this message and exit.",
+                r"--help\s+-h\s+<bool>\s+Show this message and exit.",
             ],
         )
 

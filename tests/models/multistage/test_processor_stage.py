@@ -5,8 +5,16 @@ import torch
 from omegaconf import DictConfig
 
 from cryocast.models.multistage import DecoderStage, EncoderStage, ProcessorStage
+from cryocast.models.objectives import LatentObjective
 from cryocast.models.processors import BaseProcessor
-from cryocast.types import DataSpace, ProcessorOutput, RolloutSpace, TensorNTCHW
+from cryocast.types import (
+    DataSpace,
+    ProcessorOutput,
+    RolloutSpace,
+    RolloutStrategy,
+    SkipAnchorType,
+    TensorNTCHW,
+)
 
 
 class _CaptureLatentLossProcessor(BaseProcessor):
@@ -93,8 +101,8 @@ class TestProcessorStage:
         cfg_output_space: DictConfig,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # training_step only honours ProcessorOutput.loss for a processor that declares
-        # computes_loss_in_latent_space=True; otherwise it goes through self(batch).
+        # training_step only honours ProcessorOutput.loss with a LatentObjective;
+        # otherwise it goes through self(batch).
         fixed_loss = torch.tensor(0.5)
         processor = processor_stage.processor
         n_forecast_steps = processor_stage.n_forecast_steps
@@ -105,7 +113,9 @@ class TestProcessorStage:
         ) -> ProcessorOutput:
             return ProcessorOutput(prediction=x[:, -n_forecast_steps:], loss=fixed_loss)
 
-        monkeypatch.setattr(processor, "computes_loss_in_latent_space", True)
+        monkeypatch.setattr(
+            processor_stage, "objective", LatentObjective(processor_stage)
+        )
         monkeypatch.setattr(processor, "rollout", fixed_loss_rollout)
         batch_size = 2
         batch = {
@@ -160,6 +170,7 @@ class TestProcessorStage:
                 {"_target_": f"{__name__}.{_CaptureLatentLossProcessor.__name__}"}
             ),
             decoder_model=decoder_stage,
+            rollout_strategy=RolloutStrategy.from_options(),
         )
 
         name = cfg_input_space["name"]
@@ -179,18 +190,30 @@ class TestProcessorStage:
         assert capture.target.shape[2] == processor_stage.processor.data_space.channels
 
     @pytest.mark.parametrize(
-        "rollout_space",
-        [RolloutSpace.LATENT, RolloutSpace.PHYSICAL],
-        ids=["latent", "physical"],
+        "expected",
+        [
+            pytest.param(
+                RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.INITIAL),
+                id="latent-initial",
+            ),
+            pytest.param(
+                RolloutStrategy(RolloutSpace.LATENT, SkipAnchorType.PREVIOUS),
+                id="latent-previous",
+            ),
+            pytest.param(
+                RolloutStrategy(RolloutSpace.PHYSICAL, SkipAnchorType.PREVIOUS),
+                id="physical-previous",
+            ),
+        ],
     )
-    def test_from_template_forwards_rollout_space(
+    def test_from_template_forwards_rollout_strategy(
         self,
         encoder_stage: EncoderStage,
         *,
         cfg_decoder: DictConfig,
         cfg_input_space: DictConfig,
         cfg_processor: DictConfig,
-        rollout_space: RolloutSpace,
+        expected: RolloutStrategy,
     ) -> None:
         # Physical rollout requires the target dataset to also be a model input
         decoder_stage = DecoderStage.from_template(
@@ -205,26 +228,27 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
-            rollout_space=rollout_space,
+            rollout_strategy=expected,
         )
 
-        assert processor_stage.rollout_space is rollout_space
-        assert processor_stage.hparams["rollout_space"] == rollout_space
+        assert processor_stage.rollout_strategy == expected
+        # The resolved options are saved, so that a checkpoint reloads the same strategy
+        assert processor_stage.hparams["rollout_space"] == expected.space
+        assert processor_stage.hparams["skip_anchor"] == expected.anchor
 
-    def test_extract_anchor_returns_tensor_when_decoder_has_skip_connection(
+    def test_from_template_copies_frozen_finaliser_from_decoder_stage(
         self,
         encoder_stage: EncoderStage,
         *,
         cfg_processor: DictConfig,
         cfg_output_space: DictConfig,
     ) -> None:
+        # The gated skip connection has weights
         decoder_stage = DecoderStage.from_template(
             decoder=DictConfig(
-                {
-                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
-                    "skip_connection": {"method": "additive"},
-                }
+                {"_target_": "cryocast.models.decoders.NaiveLinearDecoder"}
             ),
+            finaliser={"skip_connection": {"method": "gated"}},
             encoders=[encoder_stage],
             output_space=DataSpace.from_dict(cfg_output_space),
             target_dataset_name="target",
@@ -233,15 +257,22 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
+            rollout_strategy=RolloutStrategy.from_options(),
         )
         target = torch.rand(
             2, 1, cfg_output_space["channels"], *cfg_output_space["shape"]
         )
 
-        anchor = processor_stage._extract_anchor(target)
+        anchor = processor_stage._anchor_nchw(target)
 
+        # The skip connection comes from the DecoderStage, so there is an anchor
         assert anchor is not None
         assert torch.equal(anchor, target[:, -1, [0]])
+        # The skip connection weights must not train
+        assert processor_stage.finaliser.frozen
+        assert all(
+            not param.requires_grad for param in processor_stage.finaliser.parameters()
+        )
 
     def test_encoders_and_decoder_parameters_are_frozen(
         self, processor_stage: ProcessorStage
@@ -278,6 +309,7 @@ class TestProcessorStage:
         processor_stage = ProcessorStage.from_template(
             processor=cfg_processor,
             decoder_model=decoder_stage,
+            rollout_strategy=RolloutStrategy.from_options(),
         )
 
         assert processor_stage.hemisphere == decoder_stage.hemisphere

@@ -52,8 +52,19 @@ class RolloutSpace(StrEnum):
     PHYSICAL = "physical"
 
 
+class SkipAnchorType(StrEnum):
+    """Enum for the anchor that a finaliser skip connection adds to each forecast step.
+
+    - INITIAL: every step uses the last observed frame as its anchor
+    - PREVIOUS: each step uses the output of the previous step as its anchor
+    """
+
+    INITIAL = "initial"
+    PREVIOUS = "previous"
+
+
 class SkipConnectionType(StrEnum):
-    """Enum for decoder skip connection types."""
+    """Enum for finaliser skip connection types."""
 
     ADDITIVE = "additive"
     CONVOLUTIONAL = "convolutional"

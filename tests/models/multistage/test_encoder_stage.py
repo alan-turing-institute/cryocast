@@ -7,66 +7,24 @@ import pytest
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from cryocast.model_service.checkpoints import CheckpointFile, LegacyCheckpointFile
 from cryocast.models import EncodeProcessDecode
 from cryocast.models.multistage import EncoderStage
 from cryocast.types import DataSpace
 
 
 class TestEncoderStage:
-    def test_forward_ignores_skip_connection_persistence_requirement(
-        self,
-        cfg_encoders: DictConfig,
-        cfg_input_space: DictConfig,
-        cfg_optimizer: DictConfig,
-        cfg_scheduler: DictConfig,
-        cfg_lr_scheduler: DictConfig,
-        cfg_loss: DictConfig,
-        cfg_metrics: list[dict[str, Any]],
+    def test_forward_reconstructs_input_without_finaliser(
+        self, encoder_stage: EncoderStage, cfg_input_space: DictConfig
     ) -> None:
-        encoder_stage = EncoderStage(
-            channel_names=["channel-0", "channel-1", "channel-2", "channel-3"],
-            data_space_in=DataSpace.from_dict(cfg_input_space),
-            encoder=cfg_encoders["test-input"],
-            decoder=DictConfig(
-                {
-                    "_target_": "cryocast.models.decoders.NaiveLinearDecoder",
-                    "skip_connection": {"method": "additive"},
-                }
-            ),
-            latent_space=cfg_encoders["latent_space"],
-            hemisphere="north",
-            input_spaces=[cfg_input_space],
-            n_forecast_steps=1,
-            n_history_steps=1,
-            name="test-input_encoder",
-            optimizer=cfg_optimizer,
-            output_space=cfg_input_space,
-            scheduler=cfg_scheduler,
-            lr_scheduler=cfg_lr_scheduler,
-            loss=cfg_loss,
-            metrics=cfg_metrics,
-        )
-
-        assert encoder_stage.decoder.skip_connection is None
-
         batch_size = 2
-        result = encoder_stage(
-            {
-                "target": torch.rand(
-                    batch_size,
-                    1,
-                    cfg_input_space["channels"],
-                    *cfg_input_space["shape"],
-                )
-            }
-        )
+        shape = (batch_size, 1, cfg_input_space["channels"], *cfg_input_space["shape"])
 
-        assert result.shape == (
-            batch_size,
-            1,
-            cfg_input_space["channels"],
-            *cfg_input_space["shape"],
-        )
+        result = encoder_stage({"target": torch.rand(shape)})
+
+        # The disposable decoder has no finaliser, so it needs no persistence
+        assert not hasattr(encoder_stage, "finaliser")
+        assert result.shape == shape
 
     def test_process_batch_extracts_first_timestep(
         self, encoder_stage: EncoderStage, cfg_input_space: DictConfig
@@ -112,6 +70,40 @@ class TestEncoderStage:
 
         assert isinstance(encoder_stage.hparams["data_space_in"], dict)
         assert loaded.encoder.data_space_in == encoder_stage.encoder.data_space_in
+
+    def test_upgraded_legacy_checkpoint_loads(
+        self,
+        encoder_stage: EncoderStage,
+        cfg_metrics: list[dict[str, Any]],
+        tmp_path: Path,
+    ) -> None:
+        """Finaliser options in the decoder of an encoder stage are removed."""
+        hyper_parameters = dict(encoder_stage.hparams)
+        hyper_parameters["decoder"] = {
+            **hyper_parameters["decoder"],
+            "mask_type": "active",
+            "restrict_range": "sigmoid",
+            "skip_connection": {"method": "additive"},
+        }
+        path = tmp_path / "checkpoints" / "encoder-test-input.epoch=1-step=1.ckpt"
+        path.parent.mkdir()
+        torch.save(
+            {
+                "hyper_parameters": hyper_parameters,
+                "pytorch-lightning_version": lightning.__version__,
+                "state_dict": encoder_stage.state_dict(),
+            },
+            path,
+        )
+
+        checkpoint_file = LegacyCheckpointFile(CheckpointFile(path)).upgrade()
+        checkpoint_file.load_dict()
+        loaded = EncoderStage.load_from_checkpoint(
+            checkpoint_file.path, metrics=cfg_metrics, weights_only=True
+        )
+
+        assert "finaliser" not in loaded.hparams
+        assert loaded.hparams["decoder"] == encoder_stage.hparams["decoder"]
 
     def test_dataset_name_returns_input_space_name(
         self, encoder_stage: EncoderStage

@@ -1,14 +1,15 @@
 import copy
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import hydra
 import torch
 from omegaconf import DictConfig
-from typing_extensions import override
 
 from cryocast.losses import LeadTimeWeightedLoss
 from cryocast.models import BaseModel
+from cryocast.models.finalisers import Finaliser
 from cryocast.types import DataSpace, TensorNTCHW
 
 from .encoder_stage import EncoderStage
@@ -29,10 +30,15 @@ class DecoderStage(BaseModel):
         encoders: list[EncoderStage],
         target_dataset_name: str,
         target_variable_indices: list[int],
+        finaliser: Mapping[str, Any] | None = None,
         mask_dir: str | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialise a DecoderStage with multiple frozen encoders and a trainable decoder."""
+        """Initialise a DecoderStage with frozen encoders and a trainable decoder.
+
+        The finaliser is trained with the decoder, since a learned skip connection has
+        weights.
+        """
         super().__init__(
             mask_dir=mask_dir,
             target_variable_indices=target_variable_indices,
@@ -81,11 +87,15 @@ class DecoderStage(BaseModel):
             decoder,
             data_space_in=combined_latent_space,
             data_space_out=self.output_space,
-            mask_dir=mask_dir,
+        )
+
+        # Add a finaliser, which is trained with the decoder
+        self.finaliser = Finaliser(
+            data_space=self.output_space, mask_dir=mask_dir, **(finaliser or {})
         )
 
     @classmethod
-    def from_template(
+    def from_template(  # noqa: PLR0913
         cls,
         *,
         decoder: DictConfig,
@@ -93,11 +103,13 @@ class DecoderStage(BaseModel):
         output_space: DataSpace,
         target_dataset_name: str,
         target_variable_indices: list[int],
+        finaliser: Mapping[str, Any] | None = None,
         mask_dir: str | None = None,
     ) -> "DecoderStage":
         """Create a DecoderStage from a list of trained EncoderStages."""
         return cls(
             decoder=decoder,
+            finaliser=finaliser,
             encoders=encoders,
             target_dataset_name=target_dataset_name,
             target_variable_indices=target_variable_indices,
@@ -121,14 +133,15 @@ class DecoderStage(BaseModel):
         - squeeze time dimension from each input to get [NCHW]
         - encode each dataset with its corresponding frozen encoder
         - concatenate latent representations along the channel dimension
-        - decode to target space via rollout() so masking/restrict_range apply
+        - decode to target space
+        - apply the finaliser, with the persistence entry as the skip anchor
         """
         latents = [
             encoder(inputs[name].squeeze(1))
             for name, encoder in zip(self.encoder_names, self.encoders, strict=True)
         ]
-        combined = torch.cat(latents, dim=1).unsqueeze(1)
-        return self.decoder.rollout(combined, inputs["persistence"])
+        raw = self.decoder(torch.cat(latents, dim=1))
+        return self.finaliser(raw, anchor=inputs["persistence"].squeeze(1)).unsqueeze(1)
 
     def process_batch(
         self,
@@ -155,12 +168,3 @@ class DecoderStage(BaseModel):
                 :, -2, self.target_variable_indices, :, :
             ].unsqueeze(1),
         }
-
-    @override
-    def train(self, mode: bool = True) -> "DecoderStage":
-        """Set training mode, but keep the frozen encoders in eval mode."""
-        super().train(mode)
-        if mode:
-            for encoder in self.encoders:
-                encoder.eval()
-        return self

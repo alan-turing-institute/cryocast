@@ -62,9 +62,8 @@ class BaseEncoder(Freezable):
     def rollout(self, x: TensorNTCHW) -> TensorNTCHW:
         """Encode input space into latent space across multiple timesteps.
 
-        The default implementation simply calls `self.forward` on each time slice
-        simultaneously by reshaping the input to combine the batch and time dimensions,
-        before reshaping back.
+        The default implementation calls `self.forward` on all time slices at once, by
+        combining the batch and time dimensions and then splitting them again.
 
         Note that this also increases the effective batch size for any batch
         normalisation layers in the encoder.
@@ -76,13 +75,7 @@ class BaseEncoder(Freezable):
             TensorNTCHW with (batch_size, n_timeslices, latent_channels, latent_height, latent_width)
 
         """
-        # Although all inputs will have n_history_steps timeslices, we also want to be
-        # able to encode our target, with n_forecast_steps timeslices, during processor
-        # training. In order to cover both cases, we take n_timeslices from the input.
-        batch_size, n_timeslices = x.shape[0], x.shape[1]
-        return self(x.reshape(-1, *self.data_space_in.chw)).reshape(
-            batch_size, n_timeslices, *self.data_space_out.chw
-        )
+        return self(x.flatten(0, 1)).unflatten(0, x.shape[:2])
 
     def verify_output_channels(
         self, device: torch.device | None = None, dtype: torch.dtype = torch.float32
