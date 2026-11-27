@@ -11,7 +11,11 @@ from cryocast.models.common import ExponentialRelaxation
 from cryocast.models.decoders import BaseDecoder
 from cryocast.models.encoders import BaseEncoder
 from cryocast.models.finalisers import Finaliser
-from cryocast.models.objectives import TrainingObjective, build_training_objective
+from cryocast.models.objectives import (
+    LatentObjective,
+    TrainingObjective,
+    build_training_objective,
+)
 from cryocast.models.processors import BaseProcessor
 from cryocast.types import (
     DataSpace,
@@ -466,6 +470,47 @@ class EncodeProcessDecode(BaseModel):
         if self.rollout_strategy.is_physical:
             return self._forward_rollout_physical(inputs)
         return self._forward_rollout_latent(inputs)
+
+    @override
+    def on_fit_start(self) -> None:
+        """Measure the latent statistics, if needed, before the first optimiser step.
+
+        The processor then trains with fixed statistics from the start, and EMA
+        weight averaging only ever sees these fixed values.
+        """
+        super().on_fit_start()
+        normaliser = getattr(self.processor, "latent_normaliser", None)
+        datamodule = getattr(self.trainer, "datamodule", None)
+        if normaliser is None or normaliser.is_fitted:
+            return
+        if not isinstance(self.objective, LatentObjective):
+            msg = (
+                "Measuring the latent statistics needs a LatentObjective, but the "
+                f"objective is {type(self.objective).__name__}."
+            )
+            raise TypeError(msg)
+        if datamodule is None:
+            msg = "Measuring the latent statistics needs a datamodule."
+            raise RuntimeError(msg)
+        log.info("Measuring latent statistics over %d batches.", normaliser.n_batches)
+        # Use the same modes as training, e.g. frozen encoders stay in eval mode
+        was_training = self.training
+        self.train()
+        dataloader = datamodule.train_dataloader()
+        with torch.no_grad(), self.trainer.precision_plugin.forward_context():
+            # Start the dataloader again if it has fewer than n_batches batches
+            while not normaliser.is_fitted and len(dataloader) > 0:
+                for batch in dataloader:
+                    processed = self.process_batch(
+                        self._apply_batch_transfer_handler(batch)
+                    )
+                    normaliser.update(
+                        self._encode_inputs(processed),
+                        self.objective._encode_future_inputs(self, processed),
+                    )
+                    if normaliser.is_fitted:
+                        break
+        self.train(was_training)
 
     @override
     def training_step(

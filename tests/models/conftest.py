@@ -1,6 +1,8 @@
+from collections.abc import Callable
 from typing import Any
 
 import pytest
+import torch
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -129,3 +131,36 @@ def cfg_scheduler() -> DictConfig:
             "end_factor": 0.8,
         }
     )
+
+
+@pytest.fixture
+def make_latents() -> Callable[..., torch.Tensor]:
+    """Return a function that makes [N, T, C, H, W] latents with a known mean and std.
+
+    The latents have 2 channels on a 16 x 16 grid.
+    """
+
+    def _make(
+        mean: tuple[float, ...] = (5.0, -2.0),
+        std: tuple[float, ...] = (3.0, 0.5),
+        n_steps: int = 2,
+        seed: int = 438,
+    ) -> torch.Tensor:
+        generator = torch.Generator().manual_seed(seed)
+        noise = torch.randn(4, n_steps, len(mean), 16, 16, generator=generator)
+        return noise * torch.tensor(std).view(1, 1, -1, 1, 1) + torch.tensor(mean).view(
+            1, 1, -1, 1, 1
+        )
+
+    return _make
+
+
+@pytest.fixture
+def per_channel_stats() -> Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]:
+    """Return a function giving the per-channel mean and std of [N, T, C, H, W] latents."""
+
+    def _stats(latent: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        values = latent.transpose(0, 2).flatten(1)
+        return values.mean(dim=1), values.std(dim=1, unbiased=False)
+
+    return _stats
