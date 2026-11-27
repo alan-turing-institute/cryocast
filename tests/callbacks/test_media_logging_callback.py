@@ -265,6 +265,23 @@ class TestInit:
         assert callback.make_video_plots is False
         assert callback.prefix == "eval"
 
+    def test_static_plots_with_no_lead_time_raise(self) -> None:
+        """Refuse static plots when plot_spec selects no lead time for them."""
+        with pytest.raises(ValueError, match="selects no lead time"):
+            MediaLoggingCallback(
+                make_static_plots=True,
+                plot_spec=PlotSpec(show_first_lead=False, show_last_lead=False),
+            )
+
+    def test_no_lead_time_is_allowed_without_static_plots(self) -> None:
+        """Accept a plot_spec with no lead time when static plots are off."""
+        callback = MediaLoggingCallback(
+            make_static_plots=False,
+            plot_spec=PlotSpec(show_first_lead=False, show_last_lead=False),
+        )
+
+        assert callback.make_static_plots is False
+
 
 class TestCacheBatch:
     """Tests for cache_batch."""

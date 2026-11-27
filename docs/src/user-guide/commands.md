@@ -152,11 +152,11 @@ To plot static images or animations of the raw input data, add the following to 
 ```yaml
 evaluate:
   callbacks:
-    plotting:
+    media_logging:
       make_input_plots: true
 ```
 
-Output directories, styling, and animation parameters can be altered by changing `config.evaluate.callbacks.plotting.plot_spec`.
+Styling, animation parameters and the lead times of the static images can be altered by changing `config.evaluate.callbacks.media_logging.plot_spec`.
 Any of these can be overridden at the command line.
 
 ## `checkpoint upgrade`

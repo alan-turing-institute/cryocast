@@ -176,6 +176,27 @@ class TestPlotSpec:
         assert result.video_fps == 5
         assert result.include_difference is True
 
+    @pytest.mark.parametrize(
+        ("first", "last", "n_leads", "expected"),
+        [
+            (False, True, 90, [89]),
+            (True, False, 90, [0]),
+            (True, True, 90, [0, 89]),
+            (True, True, 1, [0]),
+        ],
+    )
+    def test_static_lead_indices(
+        self, *, first: bool, last: bool, n_leads: int, expected: list[int]
+    ) -> None:
+        """Select the first and/or last lead time, with no duplicates."""
+        spec = PlotSpec(show_first_lead=first, show_last_lead=last)
+
+        assert spec.static_lead_indices(n_leads) == expected
+
+    def test_static_lead_indices_default_is_last(self) -> None:
+        """Show only the last lead time by default."""
+        assert PlotSpec().static_lead_indices(90) == [89]
+
 
 class TestModelStepOutput:
     """Tests for ModelStepOutput."""

@@ -97,11 +97,31 @@ Once evaluation completes, the run appears in the W&B project `evaluate` under t
 
 | Key | Contents |
 |-----|----------|
-| `output_static` | Static images of forecast output. |
+| `output_static` | Static images of forecast output at the first and last lead times. |
 | `output_video` | Animated forecast output. |
 | `input_static` | Static images of the raw input data (if `make_input_plots: true`). |
 | `input_video` | Animated raw input data (if `make_input_plots: true`). |
 | `Custom Charts` | Per-forecast-day metrics, allowing skill to be assessed at longer lead times. |
+
+Two plot settings select the lead times of the static images:
+
+| Setting | Evaluation default | Training default |
+|---------|--------------------|------------------|
+| `show_first_lead` | `true` | `false` |
+| `show_last_lead` | `true` | `true` |
+
+Training shows only the last lead time, because most errors in a long rollout show there.
+Static input images (`input_static`) use the same lead times.
+
+To change a setting, override it on the command line.
+For training runs, use `train` in place of `evaluate`:
+
+```bash
+uv run cryocast evaluate ... ++evaluate.callbacks.media_logging.plot_spec.show_first_lead=false
+```
+
+If `make_static_plots` is `true`, set at least one of the two settings to `true`.
+If not, the callback stops with a `ValueError`.
 
 ### How to interpret forecast days and example videos
 

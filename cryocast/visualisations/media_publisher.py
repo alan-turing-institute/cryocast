@@ -46,14 +46,14 @@ class MediaPublisher:
         """Build a publisher bound to one dataset/plot_spec/land_mask context.
 
         Args:
-            plot_spec: Plotting specification (difference settings, timestep, etc.).
+            plot_spec: Plotting specification (difference settings, lead times, etc.).
             land_mask: Land mask to apply when rendering panels.
             model_name: Model name, shown in the footer if given.
             trained_epochs: The number of epochs trained for.
             training_metadata: Description of the data that the model was trained on.
 
         """
-        self.idx_date = plot_spec.selected_timestep
+        self.plot_spec = plot_spec
         self.panel_renderer = PanelRenderer(
             land_mask,
             replace(training_metadata, model=model_name, trained_epochs=trained_epochs),
@@ -203,7 +203,7 @@ class MediaPublisher:
         *,
         prefix: str | None = None,
     ) -> None:
-        """Log a static plot of each input variable on the selected date.
+        """Log a static plot of each input variable on each selected lead date.
 
         Args:
             inputs: Map from input group name to its channel names and its [T, C, H, W]
@@ -214,21 +214,22 @@ class MediaPublisher:
 
         """
         try:
-            when = dates[self.idx_date]
             log_path = self._log_path(prefix, "input_static")
-            date_key = iso_from_date(when)
             images: dict[str, list[ImageFile]] = {}
-            for group_name, (channel_names, data) in inputs.items():
-                for idx_channel, v_name in enumerate(channel_names):
-                    variable_name = f"{group_name}:{v_name}"
-                    # Render a single-panel static image for this variable
-                    images[f"{date_key}-{variable_name}"] = [
-                        self.panel_renderer.static_singlet(
-                            data[self.idx_date, idx_channel],
-                            when=when,
-                            variable_name=variable_name,
-                        )
-                    ]
+            for idx_date in self.plot_spec.static_lead_indices(len(dates)):
+                when = dates[idx_date]
+                date_key = iso_from_date(when)
+                for group_name, (channel_names, data) in inputs.items():
+                    for idx_channel, v_name in enumerate(channel_names):
+                        variable_name = f"{group_name}:{v_name}"
+                        # Render a single-panel static image for this variable
+                        images[f"{date_key}-{variable_name}"] = [
+                            self.panel_renderer.static_singlet(
+                                data[idx_date, idx_channel],
+                                when=when,
+                                variable_name=variable_name,
+                            )
+                        ]
             # Log input images
             self._log_images(images, image_loggers, log_path)
         except (InvalidArrayError, IndexError, ValueError, MemoryError, OSError) as exc:
@@ -249,9 +250,10 @@ class MediaPublisher:
     ) -> None:
         """Create and log static output plots, including climatology when available.
 
-        When a matching entry is present, also logs a standardised uncertainty
-        (z-score) plot and a calendar-day-mean (climatology) map for the plotted
-        date and channel.
+        Logs one set of plots for each lead time that the PlotSpec selects. When a
+        matching entry is present, also logs a standardised uncertainty (z-score)
+        plot and a calendar-day-mean (climatology) map for each plotted date and
+        channel.
 
         Args:
             outputs: ModelStepOutput containing the ground truth and prediction arrays.
@@ -270,45 +272,46 @@ class MediaPublisher:
         """
         try:
             log_path = self._log_path(prefix, "output_static")
-            date_key = iso_from_date(forecast_dates[self.idx_date])
             images: dict[str, list[ImageFile]] = {}
-            # Use all channels from the first batch -> [H,W]
-            for idx_channel in range(outputs.target.shape[2]):
-                ground_truth: ArrayHW = (
-                    outputs.target[0, self.idx_date, idx_channel]
-                    .detach()
-                    .float()
-                    .cpu()
-                    .numpy()
-                )
-                prediction: ArrayHW = (
-                    outputs.prediction[0, self.idx_date, idx_channel]
-                    .detach()
-                    .float()
-                    .cpu()
-                    .numpy()
-                )
-                variable_name = self._channel_name(channel_names or [], idx_channel)
-                images.update(
-                    {
-                        f"{date_key}-{variable_name}-{suffix}": [image]
-                        for suffix, image in self._render_multipanel_media(
-                            climatology=self._select_climatology(
-                                climatology, idx_channel, self.idx_date
-                            ),
-                            forecast_date=forecast_dates[self.idx_date],
-                            ground_truth=ground_truth,
-                            history_ctx=Timespan(history_dates),
-                            compare_truth_climatology=compare_truth_climatology,
-                            prediction=prediction,
-                            render=self.panel_renderer.static_triplet,
-                            uncertainty=self._select_uncertainty(
-                                uncertainties, idx_channel, self.idx_date
-                            ),
-                            variable_name=variable_name,
-                        ).items()
-                    }
-                )
+            for idx_date in self.plot_spec.static_lead_indices(len(forecast_dates)):
+                date_key = iso_from_date(forecast_dates[idx_date])
+                # Use all channels from the first batch -> [H,W]
+                for idx_channel in range(outputs.target.shape[2]):
+                    ground_truth: ArrayHW = (
+                        outputs.target[0, idx_date, idx_channel]
+                        .detach()
+                        .float()
+                        .cpu()
+                        .numpy()
+                    )
+                    prediction: ArrayHW = (
+                        outputs.prediction[0, idx_date, idx_channel]
+                        .detach()
+                        .float()
+                        .cpu()
+                        .numpy()
+                    )
+                    variable_name = self._channel_name(channel_names or [], idx_channel)
+                    images.update(
+                        {
+                            f"{date_key}-{variable_name}-{suffix}": [image]
+                            for suffix, image in self._render_multipanel_media(
+                                climatology=self._select_climatology(
+                                    climatology, idx_channel, idx_date
+                                ),
+                                forecast_date=forecast_dates[idx_date],
+                                ground_truth=ground_truth,
+                                history_ctx=Timespan(history_dates),
+                                compare_truth_climatology=compare_truth_climatology,
+                                prediction=prediction,
+                                render=self.panel_renderer.static_triplet,
+                                uncertainty=self._select_uncertainty(
+                                    uncertainties, idx_channel, idx_date
+                                ),
+                                variable_name=variable_name,
+                            ).items()
+                        }
+                    )
             # Log output images
             self._log_images(images, image_loggers, log_path)
         except (InvalidArrayError, IndexError, ValueError, MemoryError, OSError) as exc:
