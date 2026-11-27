@@ -4,5 +4,6 @@ defaults:
     - full_floatnorth_argo_25p0km_1999_2025_24h_v2
     - full_sicnorth_osisaf_25p0km_1979_2025_24h_v1
     - full_weathernorth_era5_25p0km_1979_2025_24h_v3
+    - full_sitnorth_cs2smos_25p0km_2010_2025_24h_v1
   - split: full_dataset
   - _self_

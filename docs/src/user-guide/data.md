@@ -6,8 +6,9 @@ The northern and southern hemispheres are treated as separate datasets.
 - OSI SAF sea ice concentration (serving as both a model input and a forecast target)
 - ERA5 atmospheric reanalysis fields (e.g. temperature, wind, radiation)
 - Argo ocean float observations (e.g. surface and sub-surface ocean state)
+- CS2SMOS sea ice thickness (northern hemisphere, freeze season only)
 
-Each dataset has a "full" (multi-decadal) and a "sample" (2-3 year) variant, with the resolution and date range encoded into the filename, following [Anemoi conventions](https://anemoi.readthedocs.io/projects/registry/en/stable/naming-conventions.html).
+Each dataset has a "full" (multi-decadal) and a "sample" (2-5 year) variant, with the resolution and date range encoded into the filename, following [Anemoi conventions](https://anemoi.readthedocs.io/projects/registry/en/stable/naming-conventions.html).
 
 ## OSI SAF data
 
@@ -84,3 +85,33 @@ and contain the following variables:
 - `PSAL`: practical salinity
 
 Missing values (where no float profile is available at a grid cell) are filled with a sentinel value of `99` rather than left as `NaN`.
+
+## CS2SMOS sea ice thickness
+
+Arctic sea ice thickness is taken from the [AWI CS2SMOS](https://spaces.awi.de/confluence/x/DwVmEQ) product (v2.06), which merges CryoSat-2 radar altimetry with SMOS L-band radiometry.
+It is distributed on the same 25 km EASE2 grid as the sea ice concentration records, so no reprojection is needed.
+Files are downloaded anonymously from `ftp://ftp.awi.de/sea_ice/product/cryosat2_smos/v206/nh/`.
+
+Each daily file is a 7-day running mean centred on the file date, and the dataset indexes files by that centre date.
+The value for a given date therefore includes observations from up to three days later; when thickness is used as a model input, the most recent history steps overlap the start of the forecast period.
+Satellite thickness retrievals are only possible during the freeze season (mid-October to mid-April), so summers are listed as missing dates.
+
+The datasets are detailed in:
+
+- `cryocast/config/data/datasets/full_sitnorth_cs2smos_25p0km_2010_2025_24h_v1.yaml`
+- `cryocast/config/data/datasets/samp_sitnorth_cs2smos_25p0km_2020_2024_24h_v1.yaml`
+
+and contain all variables in the product, of which these are used as model inputs:
+
+- `analysis_sea_ice_thickness`: merged sea ice thickness (m)
+- `analysis_sea_ice_thickness_unc`: uncertainty on the merged sea ice thickness (m)
+
+Open water and land have no thickness, so missing values are filled with `0` for thickness and the other non-uncertainty variables (including `sea_ice_concentration` and `sea_ice_type`), and with a sentinel value of `99` for uncertainties.
+
+Both are part of the `full_north` and `sample_north` data groups, so `cryocast datasets create` with those groups also downloads them.
+They are only opened and used as inputs when selected by the variables config, so runs that do not select thickness do not need the thickness store.
+To train with thickness, select the thickness variables and allow the thickness group to be missing, so that summer days are filled with a constant (in normalised units) rather than dropping every window that touches a summer:
+
+```bash
+cryocast train data=sample_north variables=sic-osisaf-sit-cs2smos data/allow_missing=sit-cs2smos
+```

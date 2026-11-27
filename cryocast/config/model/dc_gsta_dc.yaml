@@ -40,6 +40,13 @@ encoders:
     latent_channels: 16
     pixel_shuffle: true
     stride: 3
+  sit-cs2smos:
+    _target_: cryocast.models.encoders.DeepCompressionEncoder
+    hid_channels: [24, 48]
+    hid_blocks: [1, 1]
+    latent_channels: 16
+    pixel_shuffle: true
+    stride: 3
 
 processor:
   _target_: cryocast.models.processors.GSTAProcessor

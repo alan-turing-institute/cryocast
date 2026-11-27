@@ -4,7 +4,9 @@ import pytest
 import yaml
 
 DATASETS_DIR = Path(__file__).parents[2] / "cryocast" / "config" / "data" / "datasets"
-YAML_FILES = sorted(DATASETS_DIR.glob("*.yaml"))
+YAML_FILES = sorted(
+    p for p in DATASETS_DIR.glob("*.yaml") if not p.name.endswith("local.yaml")
+)
 
 
 class TestConfigFiles:

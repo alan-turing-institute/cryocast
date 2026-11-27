@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from collections.abc import Iterator, Mapping
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -160,8 +161,9 @@ class CommonDataModule(LightningDataModule):
         Only include requested variables for each dataset group. If no variables are
         requested for a dataset group, ignore it.
         """
+        # Variable names are read lazily, so unselected groups are never opened
         requested_variables = self._variable_selection.filter_requested(
-            {name: ds.variable_names for name, ds in self.datasets_unfiltered.items()}
+            _VariableNamesByGroup(self.datasets_unfiltered)
         )
         return {
             ds_name: self.datasets_unfiltered[ds_name].subset(variables=variable_names)
@@ -414,3 +416,22 @@ class CommonDataModule(LightningDataModule):
         """Construct validation dataloader."""
         dataset = self._build_dataset(self.val_periods, stage="validation")
         return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)
+
+
+class _VariableNamesByGroup(Mapping[str, list[str]]):
+    """Map dataset group names to variable names, opening each group only on access.
+
+    This lets configured but unselected dataset groups be absent from disk.
+    """
+
+    def __init__(self, datasets: Mapping[str, SingleDataset]) -> None:
+        self._datasets = datasets
+
+    def __getitem__(self, name: str) -> list[str]:
+        return list(self._datasets[name].variable_names)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._datasets)
+
+    def __len__(self) -> int:
+        return len(self._datasets)

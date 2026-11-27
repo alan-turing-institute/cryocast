@@ -1,0 +1,83 @@
+full-sitnorth-cs2smos-25p0km-2010-2025-24h-v1:
+  name: full-sitnorth-cs2smos-25p0km-2010-2025-24h-v1
+  group_as: sit-cs2smos
+  description: Sea ice thickness from merged CryoSat-2/SMOS (AWI CS2SMOS v2.06) for northern hemisphere
+  attribution: AWI/ESA
+  licence: CC-BY-4.0
+
+  # CS2SMOS is a freeze-season-only product (mid-October to mid-April). Each daily file
+  # is a 7-day running window centred on the file date, so we index files by their
+  # centre date. Dates with no file (summers and a few gaps) are listed as missing.
+  dates:
+    start: '2010-10-24T12:00:00'
+    end: '2025-04-12T12:00:00'
+    frequency: 24h
+    missing:
+    - start: 2011-04-13T12:00:00
+      end: 2011-10-17T12:00:00
+    - start: 2012-04-13T12:00:00
+      end: 2012-10-17T12:00:00
+    - start: 2013-04-13T12:00:00
+      end: 2013-10-17T12:00:00
+    - start: 2014-04-13T12:00:00
+      end: 2014-10-17T12:00:00
+    - start: 2015-04-13T12:00:00
+      end: 2015-10-17T12:00:00
+    - start: 2016-04-13T12:00:00
+      end: 2016-10-17T12:00:00
+    - start: 2017-04-13T12:00:00
+      end: 2017-10-17T12:00:00
+    - start: 2018-04-13T12:00:00
+      end: 2018-10-17T12:00:00
+    - start: 2019-04-13T12:00:00
+      end: 2019-10-17T12:00:00
+    - start: 2020-04-13T12:00:00
+      end: 2020-10-17T12:00:00
+    - start: 2021-04-13T12:00:00
+      end: 2021-10-17T12:00:00
+    - start: 2022-04-13T12:00:00
+      end: 2022-10-17T12:00:00
+    - start: 2023-04-13T12:00:00
+      end: 2023-10-17T12:00:00
+    - start: 2024-04-13T12:00:00
+      end: 2024-10-17T12:00:00
+    - start: 2025-02-07T12:00:00
+      end: 2025-02-13T12:00:00
+    - '2025-04-08T12:00:00'
+
+  # Keep normalisation statistics within the training split.
+  statistics:
+    end: '2021-12-31T12:00:00'
+
+  input:
+    pipe:
+      # AWI CS2SMOS v2.06, 25 km EASE2 (identical grid to OSI-SAF EASE2-250)
+      # https://spaces.awi.de/confluence/x/DwVmEQ
+      - ftp:
+          url: ftp://ftp.awi.de/sea_ice/product/cryosat2_smos/v206/nh/{date:strftime(%Y)}/{date:strftime(%m)}/W_XX-ESA,SMOS_CS2,NH_25KM_EASE2_{date:strftimedelta(-72h;%Y%m%d)}_{date:strftimedelta(72h;%Y%m%d)}_r_v206_01_l4sit.nc
+
+      # Open water / land have no thickness: replace NaNs with 0 for thickness-like
+      # variables and 99 for uncertainty variables
+      - nan-to-num:
+          variables:
+            - analysis_sea_ice_thickness
+            - background_sea_ice_thickness
+            - weighted_mean_sea_ice_thickness
+            - smos_sea_ice_thickness
+            - cryosat_sea_ice_thickness
+            - innovation
+            - sea_ice_concentration
+            - sea_ice_type
+            - correlation_length_scale
+          replace_with: 0.0
+      - nan-to-num:
+          variables:
+            - analysis_sea_ice_thickness_unc
+            - smos_sea_ice_thickness_uncertainty
+            - cryosat_sea_ice_thickness_uncertainty
+          replace_with: 99
+
+      # Set the geography to EASE2 25km grid
+      - set-geography:
+          crs: "EPSG:6931"
+          resolution: "25p0km"

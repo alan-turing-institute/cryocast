@@ -12,6 +12,8 @@ encoders:
     _target_: cryocast.models.encoders.NaiveLinearEncoder
   sic-ssmis:
     _target_: cryocast.models.encoders.NaiveLinearEncoder
+  sit-cs2smos:
+    _target_: cryocast.models.encoders.NaiveLinearEncoder
 
 processor:
   _target_: cryocast.models.processors.UNetProcessor
