@@ -8,7 +8,7 @@ The northern and southern hemispheres are treated as separate datasets.
 - Argo ocean float observations (e.g. surface and sub-surface ocean state)
 - CS2SMOS sea ice thickness (northern hemisphere, freeze season only)
 
-Each dataset has a "full" (multi-decadal) and/or a "sample" (2-3 year) variant (sea ice thickness currently has a sample variant only), with the resolution and date range encoded into the filename, following [Anemoi conventions](https://anemoi.readthedocs.io/projects/registry/en/stable/naming-conventions.html).
+Each dataset has a "full" (multi-decadal) and/or a "sample" (2-3 year) variant, with the resolution and date range encoded into the filename, following [Anemoi conventions](https://anemoi.readthedocs.io/projects/registry/en/stable/naming-conventions.html).
 
 ## OSI SAF data
 
@@ -94,38 +94,22 @@ Files are downloaded anonymously from `ftp://ftp.awi.de/sea_ice/product/cryosat2
 
 Each daily file is a 7-day running mean centred on the file date, and the dataset indexes files by that centre date.
 Satellite thickness retrievals are only possible during the freeze season (mid-October to mid-April), so summers are listed as missing dates.
-Because training windows are only drawn from dates available in every input dataset, models using thickness are trained and evaluated on freeze-season windows only.
 
-The sample dataset (November-March, winters 2019/20 to 2022/23) is detailed in:
+The datasets are detailed in:
 
-- `cryocast/config/data/datasets/samp_sitnorth_cs2smos_25p0km_2019_2023_24h_v1.yaml`
+- `cryocast/config/data/datasets/full_sitnorth_cs2smos_25p0km_2010_2025_24h_v1.yaml`
+- `cryocast/config/data/datasets/samp_sitnorth_cs2smos_25p0km_2020_2024_24h_v1.yaml`
 
-and contains all variables in the product, of which these are used as model inputs:
+and contain all variables in the product, of which these are used as model inputs:
 
 - `analysis_sea_ice_thickness`: merged sea ice thickness (m)
 - `analysis_sea_ice_thickness_unc`: uncertainty on the merged sea ice thickness (m)
 
 Open water and land have no thickness, so missing thickness values are filled with `0` and missing uncertainties with a sentinel value of `99`.
 
-It is paired with a matching freeze-season SSMIS sea ice concentration sample covering the same dates:
-
-- `cryocast/config/data/datasets/samp_sicnorth_ssmis_25p0km_2019_2023_24h_v1.yaml`
-
-Both datasets keep their normalisation statistics within the training winters.
-Create them (this also generates the land and active-cell masks) before training:
+Both are part of the `full_north` and `sample_north` data groups, but are only used as inputs when selected by the variables config.
+To train with thickness, select the thickness variables and allow the thickness group to be missing, so that summer days are filled with a constant (in normalised units) rather than dropping every window that touches a summer:
 
 ```bash
-cryocast datasets create --config-name sample_north_sit
+cryocast train data=sample_north variables=sic-osisaf-sit-cs2smos data/allow_missing=sit-cs2smos
 ```
-
-To train on sea ice concentration plus thickness, use the `sample_north_sit` config.
-This uses the freeze-season `sample_sit_winters` split, where each winter is listed as its own period, so that a SIC-only baseline trained by dropping the thickness inputs uses the same split windows:
-
-```bash
-cryocast train --config-name sample_north_sit
-cryocast train --config-name sample_north_sit '~variables.input.sit-cs2smos'
-```
-
-Any encode-process-decode `model=` choice can be used, with thickness encoded by the same encoder type as sea ice concentration.
-Because the training periods contain no April-October dates, the calendar-day climatology cannot be built, so climatology-based metrics and `model=climatology` are unavailable.
-Models without per-group encoders (`persistence`, `climatology`, `ddpm`) are also not supported.
